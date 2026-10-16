@@ -24,7 +24,7 @@ public sealed class DownloadManager
     private readonly ConcurrentDictionary<string, DownloadTrack> _active = new();
 
     public DownloadManager(
-        TabManager tabs,
+        BrowserWindowManager windows,
         DownloadRepository repository,
         SettingsService settings,
         ILogger<DownloadManager> logger)
@@ -36,7 +36,10 @@ public sealed class DownloadManager
         // 启动时把上次异常退出遗留的「下载中」标记为失败，避免列表里出现永远转圈的幽灵项。
         _repository.MarkInProgressAsFailed();
 
-        tabs.TabCreated += (_, tab) => tab.DownloadStarting += OnDownloadStarting;
+        // 逐窗口订阅：闭包里记住这个窗口的 TabManager，才能判断下载来自普通还是无痕窗口。
+        windows.TabManagerCreated += (_, manager) =>
+            manager.TabCreated += (_, tab) =>
+                tab.DownloadStarting += (_, e) => OnDownloadStarting(manager, e);
     }
 
     /// <summary>下载列表发生变化（进度/状态），供界面实时刷新。</summary>
@@ -56,8 +59,16 @@ public sealed class DownloadManager
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OnDownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs e)
+    private void OnDownloadStarting(TabManager manager, CoreWebView2DownloadStartingEventArgs e)
     {
+        if (manager.IsIncognito)
+        {
+            // 无痕窗口的下载**不入库**：下载记录会留在本地 SQLite 里，那正是无痕要避免的。
+            // 这里也不接管，交给 WebView2 自带的下载提示条，用户仍能看到进度。
+            _logger.LogInformation("无痕窗口开始下载 {Url}（不记录）", e.DownloadOperation.Uri);
+            return;
+        }
+
         // 关掉 WebView2 内建的下载提示条，统一由内部页面承载（与 Chrome 一致）。
         e.Handled = true;
 

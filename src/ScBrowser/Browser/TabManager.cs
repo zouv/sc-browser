@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
+using ScBrowser.Services;
 using ScBrowser.Storage;
 
 namespace ScBrowser.Browser;
@@ -16,15 +17,30 @@ public sealed class TabManager
     private readonly ILogger<TabManager> _logger;
     private int _nextId = 1;
 
+    /// <summary>当前应用主题；新标签初始化后据此设置颜色方案与默认底色。</summary>
+    private AppliedTheme _webTheme = new("System", IsDark: false);
+
+    /// <summary>无痕会话的控制器选项；普通会话为 <c>null</c>。首次创建标签时生成并复用。</summary>
+    private CoreWebView2ControllerOptions? _controllerOptions;
+    private bool _controllerOptionsReady;
+
     public TabManager(
         BrowserEnvironmentProvider environment,
         HistoryRepository history,
-        ILogger<TabManager> logger)
+        ILogger<TabManager> logger,
+        BrowserSessionKind sessionKind = BrowserSessionKind.Normal)
     {
         _environment = environment;
         _history = history;
         _logger = logger;
+        SessionKind = sessionKind;
     }
+
+    /// <summary>本标签页集合所属窗口的会话类型（普通 / 无痕）。</summary>
+    public BrowserSessionKind SessionKind { get; }
+
+    /// <summary>是否无痕窗口。无痕下不写历史、不参与会话保存。</summary>
+    public bool IsIncognito => SessionKind == BrowserSessionKind.Incognito;
 
     /// <summary>当前所有标签页，按标签条顺序排列。</summary>
     public ObservableCollection<BrowserTab> Tabs { get; } = [];
@@ -47,6 +63,9 @@ public sealed class TabManager
     /// <summary>最后一个标签被关闭——由外壳决定是否随之退出。</summary>
     public event EventHandler? LastTabClosed;
 
+    /// <summary>最近关闭的标签（Ctrl+Shift+T 用）。</summary>
+    public ClosedTabHistory ClosedTabs { get; } = new();
+
     /// <summary>收到来自任意标签内部页面的 JS 消息（由 <see cref="WebMessageRouter"/> 订阅）。</summary>
     public event EventHandler<TabWebMessageEventArgs>? WebMessageReceived;
 
@@ -59,19 +78,56 @@ public sealed class TabManager
         ?? Tabs.FirstOrDefault(t => t.Core is not null)?.Core?.Profile;
 
     /// <summary>
+    /// 把应用主题同步给网页内容（<c>prefers-color-scheme</c> 随应用主题走）。
+    /// <para>
+    /// 颜色方案是 profile 级设置，而全应用只有一个 profile，所以设一次即对全部标签生效；
+    /// 仍然逐个标签设置，是为了不依赖「之前一定设过」这个隐含前提。
+    /// </para>
+    /// </summary>
+    public void ApplyWebTheme(AppliedTheme theme)
+    {
+        _webTheme = theme;
+
+        foreach (var tab in Tabs)
+        {
+            ApplyWebTheme(tab);
+        }
+    }
+
+    /// <summary>
     /// 新建标签页并导航到 <paramref name="url"/>。
     /// </summary>
-    public async Task<BrowserTab> CreateAsync(string url, bool activate = true)
+    /// <param name="url">起始地址。</param>
+    /// <param name="activate">是否切换过去。</param>
+    /// <param name="insertAt">插入位置（标签条上的下标）；<c>null</c> 表示追加到末尾。</param>
+    public async Task<BrowserTab> CreateAsync(string url, bool activate = true, int? insertAt = null)
     {
         var tab = new BrowserTab(_nextId++);
 
         Tabs.Add(tab);
+        if (insertAt is { } index && index >= 0 && index < Tabs.Count - 1)
+        {
+            // 「在右侧新增标签页」：先追加再挪位，避免为插入单独写一套初始化流程。
+            Tabs.Move(Tabs.Count - 1, index);
+        }
+
         Host?.AttachTab(tab);
 
         try
         {
             var environment = await _environment.GetAsync().ConfigureAwait(true);
-            await tab.InitializeAsync(environment).ConfigureAwait(true);
+
+            // 控制器选项按会话类型生成一次后复用（同窗口所有标签共用一套 profile）。
+            if (!_controllerOptionsReady)
+            {
+                _controllerOptions = BrowserSession.CreateControllerOptions(environment, SessionKind);
+                _controllerOptionsReady = true;
+            }
+
+            await tab.InitializeAsync(environment, _controllerOptions).ConfigureAwait(true);
+
+            // CoreWebView2 就绪后才能拿到 profile 设置颜色方案，所以放在这里。
+            ApplyWebTheme(tab);
         }
         catch (Exception ex)
         {
@@ -131,6 +187,9 @@ public sealed class TabManager
             return;
         }
 
+        // 记进「最近关闭」，供 Ctrl+Shift+T 还原；必须在 Dispose 之前取状态。
+        ClosedTabs.Push(tab.DisplayUrl, tab.Title);
+
         var index = Tabs.IndexOf(tab);
         var wasActive = ReferenceEquals(tab, ActiveTab);
         var wasLast = Tabs.Count == 1;
@@ -157,6 +216,18 @@ public sealed class TabManager
             ActiveTab = null;                       // 强制 Activate 走完整切换流程
             Activate(next);
         }
+    }
+
+    /// <summary>重开最近关闭的标签页（Ctrl+Shift+T）；没有可还原的记录时返回 <c>null</c>。</summary>
+    public async Task<BrowserTab?> ReopenLastClosedAsync()
+    {
+        if (!ClosedTabs.TryPop(out var entry))
+        {
+            return null;
+        }
+
+        _logger.LogDebug("重开已关闭的标签页 → {Url}", entry.Url);
+        return await CreateAsync(entry.Url, activate: true).ConfigureAwait(true);
     }
 
     /// <summary>关闭当前标签页。</summary>
@@ -222,6 +293,30 @@ public sealed class TabManager
         Tabs.Move(oldIndex, newIndex);
     }
 
+    /// <summary>把当前应用主题写进某个标签的 profile；失败只记日志，不影响浏览。</summary>
+    private void ApplyWebTheme(BrowserTab tab)
+    {
+        if (tab.Core?.Profile is not { } profile)
+        {
+            return;
+        }
+
+        try
+        {
+            profile.PreferredColorScheme = WebTheme.Resolve(_webTheme.Name);
+
+            // 页面自己上色前的底色也跟着主题，否则深色下新建标签会闪一下白。
+            // 注意：这个属性挂在 WPF 的 WebView2 控件上（对应的 CoreWebView2Controller.DefaultBackgroundColor
+            // 在 WPF 封装里就是它），不是 CoreWebView2 上的属性。
+            tab.View.DefaultBackgroundColor = WebTheme.DefaultBackground(_webTheme.IsDark);
+        }
+        catch (Exception ex)
+        {
+            // profile 已被释放等边界情况：主题同步失败不值得让标签创建失败。
+            _logger.LogError(ex, "同步网页颜色方案失败（主题 {Theme}）", _webTheme.Name);
+        }
+    }
+
     private void WireTabEvents(BrowserTab tab)
     {
         tab.NewWindowRequested += async (_, e) =>
@@ -242,15 +337,24 @@ public sealed class TabManager
         tab.WebMessageReceived += (_, e) => WebMessageReceived?.Invoke(this, new TabWebMessageEventArgs(tab, e));
 
         tab.NavigationFinished += (_, _) => RecordHistory(tab);
+
+        // 导航失败只在界面上挂一条提示，日志里此前什么都没有——排障时看不到，这里补上。
+        tab.NavigationFailed += (_, status) =>
+            _logger.LogWarning("标签页 {TabId} 导航失败：{Status}", tab.Id, status);
     }
 
     /// <summary>
     /// 记录一次历史访问。
     /// 内部页面（browser://）、about:、本地 file:// 不入历史——与 Chrome 一致，
-    /// 这些不是「用户访问的网站」。
+    /// 这些不是「用户访问的网站」。无痕窗口一律不记录。
     /// </summary>
     private void RecordHistory(BrowserTab tab)
     {
+        if (IsIncognito)
+        {
+            return;
+        }
+
         var url = tab.DisplayUrl;
         if (string.IsNullOrWhiteSpace(url)
             || InternalPageRegistry.IsInternalPage(url)

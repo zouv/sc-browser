@@ -93,6 +93,9 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>一次导航成功完成（用于记录历史）。失败导航不触发。</summary>
     public event EventHandler? NavigationFinished;
 
+    /// <summary>一次导航失败（携带 WebView2 的错误状态名），供调用方写日志。</summary>
+    public event EventHandler<string>? NavigationFailed;
+
     /// <summary>渲染进程异常退出（用于错误页与恢复）。</summary>
     public event EventHandler<CoreWebView2ProcessFailedEventArgs>? ProcessFailed;
 
@@ -105,10 +108,24 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>
     /// 绑定 WebView2 环境并接线全部事件。必须在控件已挂入可视化树之后调用。
     /// </summary>
-    public async Task InitializeAsync(CoreWebView2Environment environment)
+    /// <param name="environment">全应用共用的那一个环境。</param>
+    /// <param name="controllerOptions">
+    /// 控制器选项；无痕窗口传 InPrivate 选项，普通窗口传 <c>null</c>（沿用默认 profile）。
+    /// </param>
+    public async Task InitializeAsync(
+        CoreWebView2Environment environment,
+        CoreWebView2ControllerOptions? controllerOptions = null)
     {
-        // 复用同一个环境 → 与其它标签共享 Cookie / 缓存 / 扩展安装态。
-        await View.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+        // 复用同一个环境 → 与其它标签共享 Cookie / 缓存 / 扩展安装态；
+        // 无痕则靠 controllerOptions 换一套内存 profile。
+        if (controllerOptions is null)
+        {
+            await View.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+        }
+        else
+        {
+            await View.EnsureCoreWebView2Async(environment, controllerOptions).ConfigureAwait(true);
+        }
 
         _core = View.CoreWebView2;
         ConfigureSettings(_core.Settings);
@@ -131,6 +148,94 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         settings.IsScriptEnabled = true;
     }
 
+    /// <summary>失败提示延迟多久才落地（毫秒）。</summary>
+    private const int NavigationErrorDelayMs = 700;
+
+    /// <summary>首次导航失败后隔多久自动重试（毫秒）。</summary>
+    private const int FirstNavigationRetryDelayMs = 400;
+
+    /// <summary>用于作废「已排队但尚未落地」的错误提示。</summary>
+    private int _errorVersion;
+
+    /// <summary>本标签是否成功导航过（用于日志标注首次导航失败）。</summary>
+    private bool _hasNavigated;
+
+    /// <summary>首次导航是否已经自动重试过（只重试一次，避免掩盖真实故障）。</summary>
+    private bool _retriedFirstNavigation;
+
+    /// <summary>导航恢复正常（开始新导航或成功完成）时清掉错误并作废未落地的提示。</summary>
+    private void ClearNavigationError()
+    {
+        _errorVersion++;
+        LastError = null;
+    }
+
+    /// <summary>
+    /// 标签的首次导航失败时自动重试一次。
+    /// <para>
+    /// 首次导航最容易撞上 WebView2 冷启动时的偶发失败（新开窗口、新建标签时尤其明显）——
+    /// 直接挂错误条的表现就是用户看到的「闪一下」。重试成功则用户完全无感；
+    /// 重试仍失败才走正常的错误提示，所以真实故障（站点挂了、域名解析不了）不会被掩盖。
+    /// </para>
+    /// </summary>
+    private bool TryRetryFirstNavigation(CoreWebView2 core)
+    {
+        if (_hasNavigated || _retriedFirstNavigation || Core?.Source is not { Length: > 0 } source)
+        {
+            return false;
+        }
+
+        _retriedFirstNavigation = true;
+        _ = RetryFirstNavigationAsync(source);
+        return true;
+    }
+
+    private async Task RetryFirstNavigationAsync(string failedSource)
+    {
+        await Task.Delay(FirstNavigationRetryDelayMs).ConfigureAwait(true);
+
+        // 期间已经成功、或用户又发起了别的导航 → 放弃这次重试。
+        if (_disposed || _hasNavigated || Core?.Source != failedSource)
+        {
+            return;
+        }
+
+        try
+        {
+            // 内部页面要按逻辑地址重走一遍，否则会丢掉 browser:// 的显示地址。
+            Navigate(_logicalUrl ?? failedSource);
+        }
+        catch (Exception)
+        {
+            // 标签可能已被关闭；重试失败也不该抛到 UI 线程。
+        }
+    }
+
+    /// <summary>
+    /// 记一次导航失败，但<b>延迟</b>再显示。
+    /// <para>
+    /// 为什么不当场显示：WebView2 冷启动、被后续导航取代的请求，都可能在「失败」后几毫秒内
+    /// 就成功，立刻挂红条的表现就是用户看到的「闪一下」（新开窗口时最明显）。
+    /// 延迟一小会儿后如果这次失败仍是最新的一次（版本号没被作废），才认定是真失败；
+    /// 真失败（主机解析不了等）只是晚几百毫秒出现，不影响可用性。
+    /// </para>
+    /// </summary>
+    private async void ReportNavigationError(CoreWebView2WebErrorStatus status)
+    {
+        var version = ++_errorVersion;
+        var wasFirst = !_hasNavigated;
+        await Task.Delay(NavigationErrorDelayMs).ConfigureAwait(true);
+
+        if (version != _errorVersion || _disposed)
+        {
+            return;
+        }
+
+        LastError = $"导航失败：{status}";
+        // 日志带上地址与「是不是该标签的首次导航」——排障时最想知道的正是这两点。
+        NavigationFailed?.Invoke(this, $"{status} → {DisplayUrl}{(wasFirst ? "（首个导航）" : string.Empty)}");
+    }
+
     private void WireEvents(CoreWebView2 core)
     {
         core.SourceChanged += (_, _) => UpdateUrlFromCore();
@@ -139,7 +244,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         core.NavigationStarting += (_, _) =>
         {
             IsLoading = true;
-            LastError = null;
+            ClearNavigationError();
         };
 
         core.NavigationCompleted += (_, e) =>
@@ -148,12 +253,22 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
             UpdateHistoryState();
             if (e.IsSuccess)
             {
+                _hasNavigated = true;
                 UpdateUrlFromCore();
+                ClearNavigationError();
                 NavigationFinished?.Invoke(this, EventArgs.Empty);
+            }
+            else if (e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled)
+            {
+                // 被新导航取代、或用户按了停止：这不是「错误」，不该给用户挂红条。
+            }
+            else if (TryRetryFirstNavigation(core))
+            {
+                // 首次导航的偶发失败已经排了重试，先不打扰用户。
             }
             else
             {
-                LastError = $"导航失败：{e.WebErrorStatus}";
+                ReportNavigationError(e.WebErrorStatus);
             }
         };
 
@@ -385,6 +500,15 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
     private async Task UpdateFaviconAsync(CoreWebView2 core)
     {
+        // 内部页面没有 favicon——它们是 file:// 页面，Chromium 不会去取站标（实测
+        // FaviconChanged 根本不触发），于是标签条上会一直挂着通用的地球字形。
+        // 这里用应用图标兜底，让内部页面的标签也有品牌标识。
+        if (InternalPageRegistry.IsInternalPage(DisplayUrl))
+        {
+            Favicon = BrandIcon.Value;
+            return;
+        }
+
         try
         {
             await using var stream = await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png)
@@ -410,6 +534,22 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
             Favicon = null;
         }
     }
+
+    /// <summary>内部页面用的品牌图标（懒加载 + 冻结，供所有标签共享）。</summary>
+    private static readonly Lazy<ImageSource?> BrandIcon = new(() =>
+    {
+        try
+        {
+            var icon = new BitmapImage(new Uri("pack://application:,,,/Assets/sc-browser.ico"));
+            icon.Freeze();
+            return icon;
+        }
+        catch (Exception)
+        {
+            // 取不到图标只是少个装饰，不该影响标签创建。
+            return null;
+        }
+    });
 
     public void Dispose()
     {

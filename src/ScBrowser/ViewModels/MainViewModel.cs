@@ -18,18 +18,38 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly TabManager _tabs;
     private readonly BookmarkRepository _bookmarks;
     private readonly SettingsService _settings;
+    private readonly HistoryRepository _history;
 
-    public MainViewModel(TabManager tabs, BookmarkRepository bookmarks, SettingsService settings)
+    public MainViewModel(
+        TabManager tabs,
+        BookmarkRepository bookmarks,
+        SettingsService settings,
+        HistoryRepository history)
     {
         _tabs = tabs;
         _bookmarks = bookmarks;
         _settings = settings;
+        _history = history;
 
         _tabs.ActiveTabChanged += (_, tab) => HandleActiveTabChanged(tab);
     }
 
+    /// <summary>地址栏下拉的候选行。</summary>
+    public ObservableCollection<SuggestionItem> Suggestions { get; } = [];
+
+    private int _selectedSuggestion = -1;
+
+    /// <summary>当前键盘高亮的候选；没有则为 <c>null</c>。</summary>
+    public SuggestionItem? SelectedSuggestion =>
+        _selectedSuggestion >= 0 && _selectedSuggestion < Suggestions.Count
+            ? Suggestions[_selectedSuggestion]
+            : null;
+
     /// <summary>标签条的数据源（与 <see cref="TabManager.Tabs"/> 同一集合实例）。</summary>
     public ObservableCollection<BrowserTab> Tabs => _tabs.Tabs;
+
+    /// <summary>本窗口是否无痕（驱动标签条上的「无痕」徽标与窗口标题）。</summary>
+    public bool IsIncognito => _tabs.IsIncognito;
 
     /// <summary>当前激活标签。</summary>
     [ObservableProperty]
@@ -47,13 +67,122 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _isActiveTabBookmarked;
 
-    /// <summary>窗口标题（跟随激活标签）。</summary>
-    public string WindowTitle => ActiveTab is null
-        ? "sc-browser"
-        : $"{ActiveTab.Title} — sc-browser";
+    /// <summary>窗口标题（跟随激活标签；无痕窗口带前缀以示区分）。</summary>
+    public string WindowTitle
+    {
+        get
+        {
+            var title = ActiveTab is null ? "ScBrowser" : $"{ActiveTab.Title} — ScBrowser";
+            return IsIncognito ? "无痕：" + title : title;
+        }
+    }
 
     /// <summary>主页地址（取自设置）。</summary>
     public string HomePageUrl => _settings.Current.HomePage;
+
+    /// <summary>按输入内容重算地址栏下拉（本地历史 + 「使用 XX 搜索」行）。</summary>
+    public void UpdateSuggestions(string? query)
+    {
+        var text = query ?? string.Empty;
+
+        // 「↓ 选中候选后回填地址」同样会走到这里（输入框文本变化）。
+        // 那种情况下新文本正好等于当前高亮项的地址，此时必须保持列表与高亮不动——
+        // 否则会形成「回填 → 重建列表 → 清空高亮」的回路，表现为「↓ 只能按一次」。
+        if (SelectedSuggestion is { } current
+            && string.Equals(current.Url, text, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // 历史查询交给 SQL 过滤（url/title LIKE），这里多取一些供排序挑选。
+        var history = _history.Query(
+            string.IsNullOrWhiteSpace(text) ? null : text,
+            OmniboxSuggestions.MaxItems * 4);
+
+        Suggestions.Clear();
+        foreach (var item in OmniboxSuggestions.Build(text, history, _settings.Current.SearchTemplate))
+        {
+            Suggestions.Add(item);
+        }
+
+        SetSelectedSuggestion(-1);
+    }
+
+    /// <summary>上下键移动高亮；同时把地址栏文本换成该项地址（Chrome 的行为）。</summary>
+    public void MoveSuggestionSelection(int delta)
+    {
+        if (Suggestions.Count == 0)
+        {
+            return;
+        }
+
+        var next = _selectedSuggestion + delta;
+
+        // 从「未选中」按上键 → 落到最后一项；按下键 → 落到第一项。
+        if (_selectedSuggestion < 0)
+        {
+            next = delta > 0 ? 0 : Suggestions.Count - 1;
+        }
+
+        if (next < 0 || next >= Suggestions.Count)
+        {
+            SetSelectedSuggestion(-1);
+            AddressBarText = ActiveTab?.DisplayUrl ?? string.Empty;
+            IsAddressBarEditing = false;
+            return;
+        }
+
+        SetSelectedSuggestion(next);
+        AddressBarText = Suggestions[next].Url;
+        // 让「地址栏跟随页面地址」的逻辑别把候选文本冲掉。
+        IsAddressBarEditing = true;
+    }
+
+    /// <summary>清空下拉（导航或失焦时）。</summary>
+    public void ClearSuggestions()
+    {
+        Suggestions.Clear();
+        SetSelectedSuggestion(-1);
+    }
+
+    /// <summary>
+    /// 回车：有高亮候选就打开它，否则按地址栏内容照常导航（地址/搜索词判定在
+    /// <see cref="BrowserTab.NavigateFromAddressBar"/> 里）。
+    /// </summary>
+    public void NavigateOrCommitSuggestion()
+    {
+        if (SelectedSuggestion is { } item)
+        {
+            NavigateToSuggestion(item);
+            return;
+        }
+
+        GoCommand.Execute(null);
+    }
+
+    /// <summary>打开某一项候选（回车或鼠标点击）。</summary>
+    public void NavigateToSuggestion(SuggestionItem item)
+    {
+        IsAddressBarEditing = false;
+        AddressBarText = item.Url;
+        ActiveTab?.NavigateFromAddressBar(item.Url);
+        ClearSuggestions();
+    }
+
+    private void SetSelectedSuggestion(int index)
+    {
+        if (_selectedSuggestion >= 0 && _selectedSuggestion < Suggestions.Count)
+        {
+            Suggestions[_selectedSuggestion].IsSelected = false;
+        }
+
+        _selectedSuggestion = index;
+
+        if (index >= 0 && index < Suggestions.Count)
+        {
+            Suggestions[index].IsSelected = true;
+        }
+    }
 
     // --------------------------------------------------------------------- //
     // 标签页命令
@@ -73,6 +202,87 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void CloseTab(BrowserTab? tab) => _tabs.Close(tab ?? ActiveTab!);
+
+    /// <summary>重开最近关闭的标签页（Ctrl+Shift+T）。</summary>
+    [RelayCommand]
+    private async Task ReopenClosedTabAsync()
+    {
+        if (await _tabs.ReopenLastClosedAsync().ConfigureAwait(true) is null)
+        {
+            // 没有可还原的记录时退回「开新标签」——与 Chrome 在空栈时的观感一致：按了总有反应。
+            await NewTabAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>在该标签右侧新增标签页（标签右键菜单）。</summary>
+    [RelayCommand]
+    private Task NewTabToRightAsync(BrowserTab? tab)
+    {
+        if (tab is null || !Tabs.Contains(tab))
+        {
+            return NewTabAsync();
+        }
+
+        return _tabs.CreateAsync(InternalPageRegistry.NewTabUrl, activate: true, insertAt: Tabs.IndexOf(tab) + 1);
+    }
+
+    /// <summary>重新加载指定标签页（标签右键菜单）。</summary>
+    [RelayCommand]
+    private void ReloadTab(BrowserTab? tab) => tab?.Reload();
+
+    /// <summary>
+    /// 在右侧新建当前页面的拷贝页（标签右键菜单的「复制」）。
+    /// 与 Chrome 的「复制标签页」同义：地址照搬，但页面状态是新的。
+    /// </summary>
+    [RelayCommand]
+    private Task DuplicateTabAsync(BrowserTab? tab)
+    {
+        if (tab is null || !Tabs.Contains(tab))
+        {
+            return Task.CompletedTask;
+        }
+
+        var url = string.IsNullOrWhiteSpace(tab.DisplayUrl) ? InternalPageRegistry.NewTabUrl : tab.DisplayUrl;
+        return _tabs.CreateAsync(url, activate: true, insertAt: Tabs.IndexOf(tab) + 1);
+    }
+
+    /// <summary>关闭除该标签外的其它标签（标签右键菜单）。</summary>
+    [RelayCommand]
+    private void CloseOtherTabs(BrowserTab? tab)
+    {
+        if (tab is null)
+        {
+            return;
+        }
+
+        foreach (var other in Tabs.Where(t => !ReferenceEquals(t, tab)).ToList())
+        {
+            _tabs.Close(other);
+        }
+
+        _tabs.Activate(tab);
+    }
+
+    /// <summary>关闭该标签右侧的所有标签（标签右键菜单）。</summary>
+    [RelayCommand]
+    private void CloseTabsToRight(BrowserTab? tab)
+    {
+        if (tab is null)
+        {
+            return;
+        }
+
+        var index = Tabs.IndexOf(tab);
+        if (index < 0)
+        {
+            return;
+        }
+
+        foreach (var other in Tabs.Skip(index + 1).ToList())
+        {
+            _tabs.Close(other);
+        }
+    }
 
     [RelayCommand]
     private Task ReopenInNewTabAsync(string? url)
@@ -147,22 +357,39 @@ public sealed partial class MainViewModel : ObservableObject
 
     // --------------------------------------------------------------------- //
     // 内部页面快捷入口
+    //
+    // 一律**开新标签页**而不是覆盖当前页——与 Chrome 的 Ctrl+J / Ctrl+H / 菜单项一致：
+    // 用户按快捷键的意图是「顺手看一眼」，把正在读的页面顶掉是很讨厌的行为。
     // --------------------------------------------------------------------- //
 
     [RelayCommand]
-    private void OpenHistory() => ActiveTab?.Navigate("browser://history");
+    private Task OpenHistoryAsync() => OpenInternalPageAsync("browser://history");
 
     [RelayCommand]
-    private void OpenBookmarks() => ActiveTab?.Navigate("browser://bookmarks");
+    private Task OpenBookmarksAsync() => OpenInternalPageAsync("browser://bookmarks");
 
     [RelayCommand]
-    private void OpenSettings() => ActiveTab?.Navigate("browser://settings");
+    private Task OpenSettingsAsync() => OpenInternalPageAsync("browser://settings");
 
     [RelayCommand]
-    private void OpenExtensions() => ActiveTab?.Navigate("browser://extensions");
+    private Task OpenExtensionsAsync() => OpenInternalPageAsync("browser://extensions");
 
     [RelayCommand]
-    private void OpenDownloads() => ActiveTab?.Navigate("browser://downloads");
+    private Task OpenDownloadsAsync() => OpenInternalPageAsync("browser://downloads");
+
+    /// <summary>打开一个内部页面；已开着的同一个内部页面直接激活，不再堆叠重复标签。</summary>
+    private Task OpenInternalPageAsync(string url)
+    {
+        var existing = _tabs.Tabs.FirstOrDefault(
+            t => string.Equals(t.DisplayUrl, url, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            _tabs.Activate(existing);
+            return Task.CompletedTask;
+        }
+
+        return _tabs.CreateAsync(url, activate: true);
+    }
 
     // --------------------------------------------------------------------- //
 

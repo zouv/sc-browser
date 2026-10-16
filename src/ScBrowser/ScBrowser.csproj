@@ -9,13 +9,21 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>ScBrowser</AssemblyName>
     <RootNamespace>ScBrowser</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <LangVersion>latest</LangVersion>
     <!-- WebView2 运行时随程序分发；本机已装 Edge，此处不引入 fixed runtime -->
     <Platforms>AnyCPU;x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
+    <!-- 应用图标：嵌进 exe 供资源管理器/任务栏使用（WPF 窗口默认继承 exe 图标）。
+         矢量设计源与各尺寸导出见 docs/icons/（SVG 是源，改设计后重新导出 .ico） -->
+    <ApplicationIcon>Assets\sc-browser.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- 图标同时作为 WPF 资源，便于窗口显式引用（见 MainWindow.xaml 的 Icon） -->
+  <ItemGroup>
+    <Resource Include="Assets\sc-browser.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

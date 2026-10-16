@@ -19,19 +19,13 @@ namespace ScBrowser.Browser;
 /// </summary>
 public sealed class ExtensionService
 {
-    private readonly TabManager _tabs;
     private readonly ILogger<ExtensionService> _logger;
 
-    public ExtensionService(TabManager tabs, ILogger<ExtensionService> logger)
-    {
-        _tabs = tabs;
-        _logger = logger;
-    }
+    public ExtensionService(ILogger<ExtensionService> logger) => _logger = logger;
 
-    /// <summary>列出当前 profile 已安装的扩展。</summary>
-    public async Task<IReadOnlyList<ExtensionInfo>> ListAsync()
+    /// <summary>列出该 profile 已安装的扩展。</summary>
+    public async Task<IReadOnlyList<ExtensionInfo>> ListAsync(CoreWebView2Profile? profile)
     {
-        var profile = GetProfile();
         if (profile is null)
         {
             return [];
@@ -46,7 +40,7 @@ public sealed class ExtensionService
     }
 
     /// <summary>从解包目录安装扩展。</summary>
-    public async Task<ExtensionInfo> InstallFromFolderAsync(string folderPath)
+    public async Task<ExtensionInfo> InstallFromFolderAsync(CoreWebView2Profile? profile, string folderPath)
     {
         if (!Directory.Exists(folderPath))
         {
@@ -60,8 +54,10 @@ public sealed class ExtensionService
                 Path.Combine(folderPath, "manifest.json"));
         }
 
-        var profile = GetProfile()
-            ?? throw new InvalidOperationException("浏览器尚未初始化，暂时无法安装扩展。");
+        if (profile is null)
+        {
+            throw new InvalidOperationException("浏览器尚未初始化，暂时无法安装扩展。");
+        }
 
         var extension = await profile.AddBrowserExtensionAsync(folderPath).ConfigureAwait(true);
         _logger.LogInformation("已安装扩展 {Name}（{Id}）来源 {Path}", extension.Name, extension.Id, folderPath);
@@ -73,7 +69,7 @@ public sealed class ExtensionService
     /// 从 <c>.crx</c> 文件安装：先解包到受管目录，再按解包目录安装。
     /// 扩展目录归应用统一管理（<c>%LOCALAPPDATA%\sc-browser\Extensions</c>）。
     /// </summary>
-    public async Task<ExtensionInfo> InstallFromCrxAsync(string crxPath)
+    public async Task<ExtensionInfo> InstallFromCrxAsync(CoreWebView2Profile? profile, string crxPath)
     {
         if (!File.Exists(crxPath))
         {
@@ -91,13 +87,13 @@ public sealed class ExtensionService
         await Task.Run(() => CrxPackage.ExtractTo(crxPath, targetDirectory)).ConfigureAwait(true);
 
         _logger.LogInformation("CRX 已解包到 {Directory}", targetDirectory);
-        return await InstallFromFolderAsync(targetDirectory).ConfigureAwait(true);
+        return await InstallFromFolderAsync(profile, targetDirectory).ConfigureAwait(true);
     }
 
     /// <summary>卸载扩展。</summary>
-    public async Task RemoveAsync(string extensionId)
+    public async Task RemoveAsync(CoreWebView2Profile? profile, string extensionId)
     {
-        var extension = await FindAsync(extensionId).ConfigureAwait(true);
+        var extension = await FindAsync(profile, extensionId).ConfigureAwait(true);
         if (extension is null)
         {
             return;
@@ -108,9 +104,9 @@ public sealed class ExtensionService
     }
 
     /// <summary>启用 / 停用扩展。立即对当前所有已打开页面生效。</summary>
-    public async Task SetEnabledAsync(string extensionId, bool enabled)
+    public async Task SetEnabledAsync(CoreWebView2Profile? profile, string extensionId, bool enabled)
     {
-        var extension = await FindAsync(extensionId).ConfigureAwait(true);
+        var extension = await FindAsync(profile, extensionId).ConfigureAwait(true);
         if (extension is null)
         {
             return;
@@ -120,9 +116,10 @@ public sealed class ExtensionService
         _logger.LogInformation("扩展 {Id} 已{Action}", extensionId, enabled ? "启用" : "停用");
     }
 
-    private async Task<CoreWebView2BrowserExtension?> FindAsync(string extensionId)
+    private static async Task<CoreWebView2BrowserExtension?> FindAsync(
+        CoreWebView2Profile? profile,
+        string extensionId)
     {
-        var profile = GetProfile();
         if (profile is null)
         {
             return null;
@@ -132,9 +129,7 @@ public sealed class ExtensionService
         return extensions.FirstOrDefault(e => string.Equals(e.Id, extensionId, StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// 取当前 profile。扩展是按 profile 管理的，而 profile 要从一个已存在的
-    /// CoreWebView2 实例上取——所以要求至少有一个标签页已初始化。
-    /// </summary>
-    private CoreWebView2Profile? GetProfile() => _tabs.Profile;
+    // 说明：本服务不持有 TabManager。扩展是「按 profile」管理的，而应用可能同时开着
+    // 普通与无痕窗口（两者 profile 不同），所以 profile 由调用方从「发起操作的那个标签页」
+    // 上取（BrowserTab.Core.Profile）后传进来——比服务自己猜一个 profile 更准。
 }

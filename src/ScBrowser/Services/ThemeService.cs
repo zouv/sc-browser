@@ -4,6 +4,9 @@ using ScBrowser.Interop;
 
 namespace ScBrowser.Services;
 
+/// <summary>一次已生效的主题：原始取值（System/Light/Dark）与解析后的深浅。</summary>
+public readonly record struct AppliedTheme(string Name, bool IsDark);
+
 /// <summary>
 /// 主题切换：把 <c>App.Resources</c> 里的颜色字典整体换成浅色/深色版本。
 /// <para>
@@ -18,6 +21,16 @@ public sealed class ThemeService
 
     /// <summary>当前是否为深色（供内部页面推送主题用）。</summary>
     public bool IsDark { get; private set; }
+
+    /// <summary>
+    /// 主题已应用（携带原始取值与解析后的深浅）。
+    /// <para>
+    /// 外壳之外的地方（例如网页内容的颜色方案）靠它跟着一起变——订阅放在组合根
+    /// <c>App</c> 里，这样「主题生效」只有 <see cref="Apply"/> 一个入口，
+    /// 不会因为新增调用点而漏同步。
+    /// </para>
+    /// </summary>
+    public event EventHandler<AppliedTheme>? Applied;
 
     /// <summary>应用主题；<paramref name="theme"/> 取 <c>System</c> / <c>Light</c> / <c>Dark</c>。</summary>
     public void Apply(string theme)
@@ -37,6 +50,8 @@ public sealed class ThemeService
         {
             NativeMethods.ApplyDarkMode(window, dark);
         }
+
+        Applied?.Invoke(this, new AppliedTheme(theme, dark));
     }
 
     private static void SwapDictionary(string source)

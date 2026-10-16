@@ -18,16 +18,12 @@
 }
 
 .brand-mark {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  display: grid;
-  place-items: center;
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  /* 图标本身已是圆角方块，这里只需要定尺寸——不要再加背景/圆角，否则会给图标描一圈底 */
+  width: 72px;
+  height: 72px;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .brand-name {

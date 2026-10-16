@@ -33,6 +33,24 @@ public sealed class AppSettings
 
     /// <summary>关闭窗口时保留会话（下次可恢复）。</summary>
     public bool RememberSessionOnExit { get; set; } = true;
+
+    // ---- 窗口几何（记忆上次的尺寸与位置）----
+    // 用可空 double 而不是 NaN 表示「未保存」：System.Text.Json 默认拒绝写出 NaN。
+
+    /// <summary>窗口宽度（逻辑像素）。</summary>
+    public double? WindowWidth { get; set; }
+
+    /// <summary>窗口高度（逻辑像素）。</summary>
+    public double? WindowHeight { get; set; }
+
+    /// <summary>窗口左上角 X（屏幕坐标）；为空则启动时居中。</summary>
+    public double? WindowLeft { get; set; }
+
+    /// <summary>窗口左上角 Y（屏幕坐标）；为空则启动时居中。</summary>
+    public double? WindowTop { get; set; }
+
+    /// <summary>关闭时是否为最大化。</summary>
+    public bool WindowMaximized { get; set; }
 }
 
 /// <summary>

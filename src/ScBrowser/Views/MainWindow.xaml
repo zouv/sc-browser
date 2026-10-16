@@ -7,77 +7,224 @@
         MinWidth="640" MinHeight="420"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}"
-        WindowStartupLocation="CenterScreen">
+        Icon="/Assets/sc-browser.ico"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="CanResize">
+
+    <!-- =================================================================== -->
+    <!-- 自定义窗口边框（去掉系统标题栏）                                      -->
+    <!--                                                                     -->
+    <!-- 用 WindowChrome 而不是 AllowsTransparency="True"：后者会让 WPF 自己    -->
+    <!-- 画窗口、丢掉 DWM 的投影/圆角/贴靠，还得自己补缩放边框与命中测试。       -->
+    <!--                                                                     -->
+    <!-- CaptionHeight = 标签条高度：整条标签条交给系统当「标题栏」做命中测试，   -->
+    <!-- 于是拖拽移动、拖到屏幕边缘贴靠（Aero Snap）、双击最大化、右键系统菜单    -->
+    <!-- 全部由系统原生提供，不必手写 DragMove（DragMove 没有贴靠与多屏 DPI 处理）。-->
+    <!-- 代价是标签条里的交互控件必须显式标 IsHitTestVisibleInChrome，           -->
+    <!-- 否则点击会被当成拖标题栏——见下方各按钮与 Controls.xaml 里的样式。       -->
+    <!-- =================================================================== -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="38"
+                      ResizeBorderThickness="6"
+                      CornerRadius="0"
+                      GlassFrameThickness="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
 
     <!-- =================================================================== -->
     <!-- 外壳布局：标签条（上） → 工具栏（上） → 内容区（填满）                -->
     <!-- 内容区只放 WebView2；任何需要盖在网页上的浮层走独立窗口（airspace）。 -->
+    <!--                                                                     -->
+    <!-- Margin="2,0,2,2"：四周留出一圈「边框带」，它同时承担两件事——          -->
+    <!-- ① 视觉上给页面一个边框，网页不再直接顶到窗口边缘；                     -->
+    <!-- ② 真正让窗口可缩放：WindowChrome 的缩放命中区落在这一圈上，而它必须是   -->
+    <!--    WPF 自绘的（WebView2 是独立子 HWND，会吃掉落在自己身上的鼠标事件，   -->
+    <!--    缩放带若压在网页上就永远轮不到系统做命中测试）。顶边不内缩，          -->
+    <!--    标签条本身就是标题栏、直接顶到窗口上沿。                            -->
     <!-- =================================================================== -->
-    <DockPanel LastChildFill="True">
+    <DockPanel x:Name="RootLayout" LastChildFill="True" Margin="2,0,2,2">
 
-        <!-- ============ 标签条 ============ -->
+        <!-- ============ 标签条 + 窗口按钮 ============ -->
         <Border DockPanel.Dock="Top"
+                Height="38"
                 Background="{DynamicResource TabStripBackgroundBrush}"
-                Padding="6,0,6,0">
-            <StackPanel Orientation="Horizontal">
-                <ItemsControl ItemsSource="{Binding Tabs}" VerticalAlignment="Bottom">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button Style="{StaticResource BrowserTabButtonStyle}"
-                                    Command="{Binding DataContext.ActivateTabCommand,
-                                              RelativeSource={RelativeSource AncestorType=Window}}"
-                                    CommandParameter="{Binding}"
-                                    ToolTip="{Binding Title}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
+                Padding="6,0,0,0">
+            <DockPanel LastChildFill="True">
 
-                                    <!-- 图标：有 favicon 显示图片，否则退化为 globe 字形 -->
-                                    <Grid Grid.Column="0" Width="16" Height="16" Margin="0,0,8,0">
-                                        <TextBlock Text="&#xE774;"
-                                                   FontFamily="{StaticResource IconFontFamily}"
-                                                   FontSize="12"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center" />
-                                        <Image Source="{Binding Favicon}" Stretch="Uniform" />
-                                    </Grid>
+                <!-- 窗口控制按钮：Dock=Right 先占位，标签再多也不会把它们挤出窗口 -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource CaptionButtonStyle}"
+                            Content="&#xE921;"
+                            ToolTip="最小化"
+                            Click="MinimizeButton_Click" />
 
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding Title}"
-                                               TextTrimming="CharacterEllipsis"
-                                               VerticalAlignment="Center"
-                                               Margin="0,0,6,0" />
-
-                                    <Button Grid.Column="2"
-                                            Style="{StaticResource TabCloseButtonStyle}"
-                                            Content="&#xE711;"
-                                            ToolTip="关闭标签页"
-                                            Command="{Binding DataContext.CloseTabCommand,
+                    <!-- 最大化 / 还原 双态按钮（与工具栏「刷新/停止」同一套写法） -->
+                    <Button Style="{StaticResource CaptionButtonStyle}"
+                            ToolTip="最大化 / 还原"
+                            Click="MaximizeRestoreButton_Click">
+                        <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="10">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="&#xE922;" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WindowState,
                                                       RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding}" />
-                                </Grid>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                                                     Value="Maximized">
+                                            <Setter Property="Text" Value="&#xE923;" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
 
-                <!-- 新建标签 -->
-                <Button Style="{StaticResource ToolbarButtonStyle}"
-                        Content="&#xE710;"
-                        Margin="4,4,0,0"
-                        VerticalAlignment="Top"
-                        ToolTip="新建标签页 (Ctrl+T)"
-                        Command="{Binding NewTabCommand}" />
-            </StackPanel>
+                    <Button Style="{StaticResource CloseCaptionButtonStyle}"
+                            Content="&#xE8BB;"
+                            ToolTip="关闭"
+                            Click="CloseButton_Click" />
+                </StackPanel>
+
+                <!-- 无痕徽标：只在无痕窗口出现，随窗口创建即定，故用一次性绑定 -->
+                <Border DockPanel.Dock="Left"
+                        Margin="8,0,4,0"
+                        Padding="8,3"
+                        VerticalAlignment="Center"
+                        CornerRadius="10"
+                        Background="{DynamicResource TabActiveBackgroundBrush}"
+                        Visibility="{Binding IsIncognito, Converter={StaticResource BoolToVisibility}}"
+                        ToolTip="无痕窗口：不记录历史、不保存会话，Cookie 与站点数据在关闭窗口后丢弃">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE727;"
+                                   FontFamily="{StaticResource IconFontFamily}"
+                                   FontSize="13"
+                                   Margin="0,0,6,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock Text="无痕"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 标签滚动区：横向溢出时不再压到窗口按钮上，而是可滚动（滚轮/触控板） -->
+                <ScrollViewer HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Disabled"
+                              Focusable="False">
+                    <!-- Background=Transparent 让空白处参与命中测试（同时也是标题栏区域，
+                         拖空白处仍是移动窗口）。 -->
+                    <StackPanel Orientation="Horizontal"
+                                Background="Transparent">
+                        <ItemsControl x:Name="TabItems" ItemsSource="{Binding Tabs}" VerticalAlignment="Bottom">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource BrowserTabButtonStyle}"
+                                            Command="{Binding DataContext.ActivateTabCommand,
+                                                      RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="{Binding Title}"
+                                            MouseDown="TabButton_MouseDown"
+                                            PreviewMouseLeftButtonDown="TabButton_PreviewMouseLeftButtonDown"
+                                            PreviewMouseMove="TabButton_PreviewMouseMove"
+                                            PreviewMouseLeftButtonUp="TabButton_PreviewMouseLeftButtonUp">
+                                        <Button.ContextMenu>
+                                            <ContextMenu Style="{StaticResource BrowserMenuStyle}">
+                                                <ContextMenu.Resources>
+                                                    <Style TargetType="MenuItem"
+                                                           BasedOn="{StaticResource BrowserMenuItemStyle}" />
+                                                </ContextMenu.Resources>
+
+                                                <MenuItem Header="在右侧新增标签页" Click="TabMenu_NewTabRight">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="&#xE710;"
+                                                                   Style="{StaticResource BrowserMenuIconStyle}" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+
+                                                <Separator />
+
+                                                <MenuItem Header="重新加载" InputGestureText="Ctrl+R"
+                                                          Click="TabMenu_Reload">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="&#xE72C;"
+                                                                   Style="{StaticResource BrowserMenuIconStyle}" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="复制" Click="TabMenu_Duplicate"
+                                                          ToolTip="在右侧新建当前页面的拷贝页">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="&#xE8C8;"
+                                                                   Style="{StaticResource BrowserMenuIconStyle}" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+
+                                                <Separator />
+
+                                                <MenuItem Header="关闭标签页" InputGestureText="Ctrl+W"
+                                                          Click="TabMenu_Close">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="&#xE711;"
+                                                                   Style="{StaticResource BrowserMenuIconStyle}" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="关闭其他标签页" Click="TabMenu_CloseOthers" />
+                                                <MenuItem Header="关闭右侧标签页" Click="TabMenu_CloseRight" />
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- 图标：有 favicon 显示图片，否则退化为 globe 字形 -->
+                                            <Grid Grid.Column="0" Width="16" Height="16" Margin="0,0,8,0">
+                                                <TextBlock Text="&#xE774;"
+                                                           FontFamily="{StaticResource IconFontFamily}"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                                                <Image Source="{Binding Favicon}" Stretch="Uniform" />
+                                            </Grid>
+
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Title}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0" />
+
+                                            <Button Grid.Column="2"
+                                                    Style="{StaticResource TabCloseButtonStyle}"
+                                                    Content="&#xE711;"
+                                                    ToolTip="关闭标签页"
+                                                    Command="{Binding DataContext.CloseTabCommand,
+                                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 新建标签 -->
+                        <Button Style="{StaticResource ToolbarButtonStyle}"
+                                Content="&#xE710;"
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Center"
+                                ToolTip="新建标签页 (Ctrl+T)"
+                                Command="{Binding NewTabCommand}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
         </Border>
 
         <!-- ============ 工具栏 ============ -->
@@ -144,8 +291,18 @@
                                    Foreground="{Binding ActiveTab.SecurityState,
                                                 Converter={StaticResource SecurityStateToBrush}}"
                                    Text="{Binding ActiveTab.SecurityState,
-                                          Converter={StaticResource SecurityStateToGlyph}}"
-                                   ToolTip="{Binding ActiveTab.SecurityState}" />
+                                          Converter={StaticResource SecurityStateToGlyph}}">
+                            <TextBlock.ToolTip>
+                                <TextBlock>
+                                    <TextBlock.Text>
+                                        <MultiBinding Converter="{StaticResource SecurityStateTip}">
+                                            <Binding Path="ActiveTab.SecurityState" />
+                                            <Binding Path="ActiveTab.DisplayUrl" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </TextBlock.ToolTip>
+                        </TextBlock>
 
                         <TextBox Grid.Column="1"
                                  x:Name="AddressBar"
@@ -154,6 +311,8 @@
                                  Text="{Binding AddressBarText, UpdateSourceTrigger=PropertyChanged}"
                                  KeyDown="AddressBar_KeyDown"
                                  PreviewKeyDown="AddressBar_PreviewKeyDown"
+                                 TextChanged="AddressBar_TextChanged"
+                                 PreviewMouseLeftButtonDown="AddressBar_PreviewMouseLeftButtonDown"
                                  GotKeyboardFocus="AddressBar_GotKeyboardFocus"
                                  LostKeyboardFocus="AddressBar_LostKeyboardFocus" />
                     </Grid>
@@ -185,15 +344,129 @@
                         Content="&#xE712;" ToolTip="菜单"
                         Click="MenuButton_Click">
                     <Button.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="新建标签页" Command="{Binding NewTabCommand}" />
+                        <!-- 结构对齐 Chrome：新建 → 内容入口 → 缩放 → 应用；每项左侧一枚图标。
+                             「删除浏览数据」跳设置页（清除数据的 UI 在那里），不再另做对话框。 -->
+                        <ContextMenu Style="{StaticResource BrowserMenuStyle}">
+                            <ContextMenu.Resources>
+                                <Style TargetType="MenuItem" BasedOn="{StaticResource BrowserMenuItemStyle}" />
+                            </ContextMenu.Resources>
+
+                            <MenuItem Header="打开新的标签页" InputGestureText="Ctrl+T" Click="Menu_NewTab">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE710;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="打开新的窗口" InputGestureText="Ctrl+N" Click="Menu_NewWindow">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE78B;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="打开新的无痕式窗口" InputGestureText="Ctrl+Shift+N"
+                                      Click="Menu_NewIncognitoWindow">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE727;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+
                             <Separator />
-                            <MenuItem Header="历史记录" Command="{Binding OpenHistoryCommand}" />
-                            <MenuItem Header="书签" Command="{Binding OpenBookmarksCommand}" />
-                            <MenuItem Header="下载内容" Command="{Binding OpenDownloadsCommand}" />
+
+                            <MenuItem Header="历史记录" Click="Menu_History">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE81C;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="下载内容" InputGestureText="Ctrl+J" Click="Menu_Downloads">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE896;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="书签和清单" Click="Menu_Bookmarks">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE734;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="扩展程序" Click="Menu_Extensions">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE71D;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="删除浏览数据…" Click="Menu_ClearBrowsingData">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE74D;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+
                             <Separator />
-                            <MenuItem Header="扩展程序" Command="{Binding OpenExtensionsCommand}" />
-                            <MenuItem Header="设置" Command="{Binding OpenSettingsCommand}" />
+
+                            <!-- 缩放行：内联「− 百分比 ＋」，点百分比本身重置为 100%。
+                                 排版对齐 Chrome——− / 百分比 / ＋ 三格等宽居中，格间用细竖线分隔，
+                                 百分比居中显示；否则符号与数字会挤成一团、与左侧文字的空隙也不均。
+                                 StaysOpenOnClick 否则点一下菜单就关了，没法连续调。 -->
+                            <MenuItem StaysOpenOnClick="True">
+                                <!-- 图标必须走 MenuItem.Icon（与其它菜单项同一列、同一样式）；
+                                     塞进 Header 会多缩进一列，看上去就与别的图标对不齐。 -->
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE71E;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                                <MenuItem.Header>
+                                    <Grid Width="252" Margin="0,1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0" Text="缩放" VerticalAlignment="Center" />
+
+                                        <Button Grid.Column="1" Style="{StaticResource ToolbarButtonStyle}"
+                                                Width="30" Height="28" Content="&#xE738;"
+                                                ToolTip="缩小 (Ctrl+-)" Click="MenuZoomOut" />
+
+                                        <Border Grid.Column="2" Width="1" Height="16"
+                                                Background="{DynamicResource SeparatorBrush}"
+                                                VerticalAlignment="Center" />
+
+                                        <Button Grid.Column="3" Width="62" Height="28"
+                                                Background="Transparent" BorderThickness="0"
+                                                Cursor="Hand" Click="MenuZoomReset"
+                                                ToolTip="重置为 100% (Ctrl+0)">
+                                            <TextBlock Text="{Binding ActiveTab.View.ZoomFactor, StringFormat={}{0:P0}}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        </Button>
+
+                                        <Border Grid.Column="4" Width="1" Height="16"
+                                                Background="{DynamicResource SeparatorBrush}"
+                                                VerticalAlignment="Center" />
+
+                                        <Button Grid.Column="5" Style="{StaticResource ToolbarButtonStyle}"
+                                                Width="30" Height="28" Content="&#xE710;"
+                                                ToolTip="放大 (Ctrl++)" Click="MenuZoomIn" />
+                                    </Grid>
+                                </MenuItem.Header>
+                            </MenuItem>
+
+                            <Separator />
+
+                            <MenuItem Header="关于 ScBrowser" Click="Menu_About">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE946;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="设置" Click="Menu_Settings">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE713;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="退出" InputGestureText="Alt+F4" Click="Menu_Exit">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE7E8;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
@@ -205,15 +478,20 @@
                 Background="{DynamicResource DangerBrush}"
                 Padding="12,6"
                 Visibility="{Binding ActiveTab.LastError,
-                             Converter={StaticResource NonEmptyToVisibility}}">
-            <TextBlock Text="{Binding ActiveTab.LastError}"
+                             Converter={StaticResource NonEmptyToVisibility},
+                             FallbackValue=Collapsed,
+                             TargetNullValue=Collapsed}">
+            <TextBlock Text="{Binding ActiveTab.LastError, FallbackValue=''}"
                        Foreground="White"
                        TextWrapping="Wrap" />
         </Border>
 
         <!-- ============ 内容区（WebView2 容器） ============ -->
-        <controls:BrowserContentHost x:Name="ContentHost"
-                                     Background="{DynamicResource WindowBackgroundBrush}" />
+        <!-- 1px 描边把网页与外壳分开；颜色令牌随主题走，所以深浅色下都不刺眼。 -->
+        <Border x:Name="ContentFrame" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="1">
+            <controls:BrowserContentHost x:Name="ContentHost"
+                                         Background="{DynamicResource WindowBackgroundBrush}" />
+        </Border>
 
     </DockPanel>
 </Window>

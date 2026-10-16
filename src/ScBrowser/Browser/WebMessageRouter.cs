@@ -33,7 +33,7 @@ public sealed class WebMessageRouter
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly TabManager _tabs;
+    private readonly BrowserWindowManager _windows;
     private readonly HistoryRepository _history;
     private readonly BookmarkRepository _bookmarks;
     private readonly ExtensionService _extensions;
@@ -43,7 +43,7 @@ public sealed class WebMessageRouter
     private readonly ILogger<WebMessageRouter> _logger;
 
     public WebMessageRouter(
-        TabManager tabs,
+        BrowserWindowManager windows,
         HistoryRepository history,
         BookmarkRepository bookmarks,
         ExtensionService extensions,
@@ -52,7 +52,7 @@ public sealed class WebMessageRouter
         ThemeService theme,
         ILogger<WebMessageRouter> logger)
     {
-        _tabs = tabs;
+        _windows = windows;
         _history = history;
         _bookmarks = bookmarks;
         _extensions = extensions;
@@ -61,7 +61,10 @@ public sealed class WebMessageRouter
         _theme = theme;
         _logger = logger;
 
-        _tabs.WebMessageReceived += (_, e) => _ = HandleAsync(e.Tab, e.Args);
+        // 逐窗口订阅：闭包里记住这个窗口的 TabManager，供「在哪个窗口开新标签」这类
+        // 与窗口相关的操作使用（无痕窗口的标签必须开在无痕窗口里）。
+        _windows.TabManagerCreated += (_, manager) =>
+            manager.WebMessageReceived += (_, e) => _ = HandleAsync(manager, e.Tab, e.Args);
 
         // 下载进度变化 → 推给所有内部页面（订阅了 downloads.changed 的页面自会刷新）。
         _downloads.Changed += (_, _) => Broadcast("downloads.changed");
@@ -72,7 +75,7 @@ public sealed class WebMessageRouter
     {
         var json = JsonSerializer.Serialize(new { type, payload }, JsonOptions);
 
-        foreach (var tab in _tabs.Tabs)
+        foreach (var tab in _windows.TabManagers.SelectMany(m => m.Tabs))
         {
             try
             {
@@ -86,7 +89,10 @@ public sealed class WebMessageRouter
         }
     }
 
-    private async Task HandleAsync(BrowserTab tab, CoreWebView2WebMessageReceivedEventArgs args)
+    private async Task HandleAsync(
+        TabManager manager,
+        BrowserTab tab,
+        CoreWebView2WebMessageReceivedEventArgs args)
     {
         string? requestId = null;
         try
@@ -109,7 +115,7 @@ public sealed class WebMessageRouter
                 ? payloadProp
                 : default;
 
-            var result = await DispatchAsync(tab, type, payload).ConfigureAwait(true);
+            var result = await DispatchAsync(manager, tab, type, payload).ConfigureAwait(true);
 
             if (requestId is not null)
             {
@@ -126,7 +132,11 @@ public sealed class WebMessageRouter
         }
     }
 
-    private async Task<object?> DispatchAsync(BrowserTab tab, string type, JsonElement payload)
+    private async Task<object?> DispatchAsync(
+        TabManager manager,
+        BrowserTab tab,
+        string type,
+        JsonElement payload)
     {
         switch (type)
         {
@@ -147,7 +157,7 @@ public sealed class WebMessageRouter
                     var url = GetString(payload, "url");
                     if (!string.IsNullOrWhiteSpace(url))
                     {
-                        await _tabs.CreateAsync(url, activate: GetBool(payload, "active", true)).ConfigureAwait(true);
+                        await manager.CreateAsync(url, activate: GetBool(payload, "active", true)).ConfigureAwait(true);
                     }
 
                     return null;
@@ -216,7 +226,7 @@ public sealed class WebMessageRouter
 
             // ---------------- 扩展 ----------------
             case "extensions.list":
-                return await _extensions.ListAsync().ConfigureAwait(true);
+                return await _extensions.ListAsync(ProfileOf(tab)).ConfigureAwait(true);
 
             case "extensions.installFromFolder":
                 {
@@ -226,7 +236,7 @@ public sealed class WebMessageRouter
                         return null;
                     }
 
-                    var info = await _extensions.InstallFromFolderAsync(folder).ConfigureAwait(true);
+                    var info = await _extensions.InstallFromFolderAsync(ProfileOf(tab), folder).ConfigureAwait(true);
                     Broadcast("extensions.changed");
                     return info;
                 }
@@ -239,19 +249,22 @@ public sealed class WebMessageRouter
                         return null;
                     }
 
-                    var info = await _extensions.InstallFromCrxAsync(crx).ConfigureAwait(true);
+                    var info = await _extensions.InstallFromCrxAsync(ProfileOf(tab), crx).ConfigureAwait(true);
                     Broadcast("extensions.changed");
                     return info;
                 }
 
             case "extensions.remove":
-                await _extensions.RemoveAsync(GetString(payload, "id") ?? string.Empty).ConfigureAwait(true);
+                await _extensions.RemoveAsync(ProfileOf(tab), GetString(payload, "id") ?? string.Empty).ConfigureAwait(true);
                 Broadcast("extensions.changed");
                 return null;
 
             case "extensions.setEnabled":
                 await _extensions
-                    .SetEnabledAsync(GetString(payload, "id") ?? string.Empty, GetBool(payload, "enabled", true))
+                    .SetEnabledAsync(
+                        ProfileOf(tab),
+                        GetString(payload, "id") ?? string.Empty,
+                        GetBool(payload, "enabled", true))
                     .ConfigureAwait(true);
                 Broadcast("extensions.changed");
                 return null;
@@ -299,7 +312,7 @@ public sealed class WebMessageRouter
                 };
 
             case "app.clearBrowsingData":
-                await ClearBrowsingDataAsync(payload).ConfigureAwait(true);
+                await ClearBrowsingDataAsync(tab, payload).ConfigureAwait(true);
                 return null;
 
             default:
@@ -307,9 +320,16 @@ public sealed class WebMessageRouter
         }
     }
 
-    private async Task ClearBrowsingDataAsync(JsonElement payload)
+    /// <summary>
+    /// 取发起消息的那个标签页所属的 profile。
+    /// 扩展与浏览数据都是「按 profile」的，而普通/无痕窗口的 profile 不同——
+    /// 从标签上取才保证操作落在用户当前所在的会话里。
+    /// </summary>
+    private static CoreWebView2Profile? ProfileOf(BrowserTab tab) => tab.Core?.Profile;
+
+    private async Task ClearBrowsingDataAsync(BrowserTab tab, JsonElement payload)
     {
-        var profile = _tabs.Profile
+        var profile = ProfileOf(tab)
             ?? throw new InvalidOperationException("浏览器尚未初始化。");
 
         // CoreWebView2BrowsingDataKinds 没有 None 成员，用 0 值作为空集起点（[Flags] 语义）。

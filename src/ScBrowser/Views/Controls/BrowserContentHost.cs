@@ -15,7 +15,7 @@ namespace ScBrowser.Views.Controls;
 /// <para>
 /// <b>airspace 提示</b>：WebView2 是基于 HWND 的控件，任何 WPF 元素都无法绘制在它之上。
 /// 因此本控件只负责「填满内容区」，一切需要盖在网页之上的浮层（地址栏下拉等）
-/// 必须走独立的顶层窗口，见 <c>Views/OverlayWindow</c>。
+/// 必须走独立的顶层窗口（本项目尚未实现这类浮层，见 <c>ROADMAP.md</c> P1-5）。
 /// </para>
 /// </summary>
 public sealed class BrowserContentHost : Grid, IBrowserTabHost

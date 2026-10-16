@@ -49,16 +49,22 @@ public partial class App : Application
         // 1) 建表（幂等）
         services.GetRequiredService<BrowserDatabase>().Initialize();
 
-        // 2) 应用主题：必须在主窗口显示前，避免先亮后暗闪一下
+        // 2) 应用主题：必须在主窗口显示前，避免先亮后暗闪一下。
+        //    主题不只换 WPF 颜色字典——网页内容的 prefers-color-scheme 也要跟着走，
+        //    订阅在这里而不是让 ThemeService 去依赖窗口/标签层（服务层不该反向依赖浏览器层）。
         var settings = services.GetRequiredService<SettingsService>();
-        services.GetRequiredService<ThemeService>().Apply(settings.Current.Theme);
+        var theme = services.GetRequiredService<ThemeService>();
+        var windows = services.GetRequiredService<BrowserWindowManager>();
+        theme.Applied += (_, applied) => windows.ApplyWebTheme(applied);
+        theme.Apply(settings.Current.Theme);
 
-        // 3) 触发订阅式服务构造——它们靠构造函数订阅事件，不被别处引用就不会被创建
-        _ = services.GetRequiredService<DownloadManager>();   // 订阅各标签的下载事件
+        // 3) 触发订阅式服务构造——它们靠构造函数订阅事件，不被别处引用就不会被创建。
+        //    顺序要紧：这两个都订阅 BrowserWindowManager.TabManagerCreated，
+        //    必须在创建第一个窗口之前完成订阅，否则会漏掉首个窗口的标签页。
+        _ = services.GetRequiredService<DownloadManager>();   // 订阅各窗口的下载事件
         _ = services.GetRequiredService<WebMessageRouter>();  // 订阅内部页面消息
 
-        var window = services.GetRequiredService<MainWindow>();
-        window.Show();
+        windows.CreateWindow(new BrowserWindowOptions(IsPrimary: true)).Show();
     }
 
     private static void ConfigureServices(HostBuilderContext context, IServiceCollection services)
@@ -78,17 +84,14 @@ public partial class App : Application
         services.AddSingleton<StartupCommandRunner>();
 
         // ---- 浏览器引擎层 ----
+        // 注意：TabManager / MainViewModel / MainWindow 都是「一个窗口一份」，
+        // 由 BrowserWindowManager 手工组装，**不注册到容器**——否则容器会给出
+        // 单例或错误的实例，多窗口下立刻出错。
         services.AddSingleton<BrowserEnvironmentProvider>();
-        services.AddSingleton<TabManager>();
+        services.AddSingleton<BrowserWindowManager>();
         services.AddSingleton<ExtensionService>();
         services.AddSingleton<DownloadManager>();
         services.AddSingleton<WebMessageRouter>();
-
-        // ---- 视图模型 ----
-        services.AddSingleton<MainViewModel>();
-
-        // ---- 视图 ----
-        services.AddSingleton<MainWindow>();
     }
 
     /// <summary>
@@ -102,7 +105,7 @@ public partial class App : Application
             Log.Fatal(args.Exception, "UI 线程未处理异常");
             MessageBox.Show(
                 $"发生了未处理的错误：\n\n{args.Exception.Message}",
-                "sc-browser",
+                "ScBrowser",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             args.Handled = true;

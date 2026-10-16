@@ -73,3 +73,47 @@ public sealed class NonEmptyStringToVisibilityConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>
+/// 安全状态 + 当前地址 → 安全图标的悬停提示。
+/// <para>
+/// 之所以还要地址：<see cref="SecurityState.Unknown"/> 有两种截然不同的成因——
+/// 内部页面（<c>browser://</c>）与本地文件本来就不经过网络，而普通网页显示未知则意味着
+/// 尚未收到安全事件。以前直接把枚举名（<c>Unknown</c>）当提示显示，用户只会看到一句莫名其妙的英文。
+/// </para>
+/// </summary>
+public sealed class SecurityStateToTipConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var state = values.Length > 0 && values[0] is SecurityState s ? s : SecurityState.Unknown;
+        var url = values.Length > 1 ? values[1] as string : null;
+        return Describe(state, url);
+    }
+
+    public object[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+
+    /// <summary>纯函数部分，可直接单测。</summary>
+    public static string Describe(SecurityState state, string? url)
+    {
+        if (InternalPageRegistry.IsInternalPage(url))
+        {
+            return "内部页面：由 ScBrowser 自身提供，不经过网络";
+        }
+
+        if (url?.StartsWith("file://", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return "本地文件：不经过网络";
+        }
+
+        return state switch
+        {
+            SecurityState.Secure => "连接是安全的（HTTPS）",
+            SecurityState.Neutral => "此连接未加密（HTTP）",
+            SecurityState.Insecure => "此连接有部分内容不安全",
+            SecurityState.Danger => "此连接不安全，请勿在此输入敏感信息",
+            _ => "连接安全性未知（尚未收到该页面的安全信息）",
+        };
+    }
+}

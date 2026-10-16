@@ -1,0 +1,83 @@
+<Window x:Class="ScBrowser.Views.AddressBarPopup"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        ResizeMode="NoResize"
+        SizeToContent="Height"
+        Focusable="False"
+        SnapsToDevicePixels="True">
+
+    <!-- =================================================================== -->
+    <!-- 地址栏下拉（omnibox 建议）                                           -->
+    <!--                                                                     -->
+    <!-- 为什么必须是一个独立窗口：WebView2 是 HWND 控件，WPF 元素盖不到它上面   -->
+    <!-- （airspace）。下拉要悬在网页之上，就只能开顶层窗口。                    -->
+    <!-- ShowActivated=False + 内容 Focusable=False：弹出时不抢焦点，地址栏继续   -->
+    <!-- 接收键盘输入，↑/↓/Enter/Esc 仍由主窗口处理。                          -->
+    <!-- =================================================================== -->
+    <Border Background="{DynamicResource ToolbarBackgroundBrush}"
+            BorderBrush="{DynamicResource SeparatorBrush}"
+            BorderThickness="1"
+            CornerRadius="10"
+            Margin="0,0,10,10"
+            Padding="0,6">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.34" Color="Black" />
+        </Border.Effect>
+
+        <ItemsControl ItemsSource="{Binding Suggestions}" Focusable="False">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border x:Name="Row"
+                            Margin="5,1"
+                            Padding="9,7"
+                            CornerRadius="6"
+                            Background="Transparent"
+                            MouseLeftButtonUp="Row_MouseLeftButtonUp">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Glyph}"
+                                       FontFamily="{StaticResource IconFontFamily}"
+                                       FontSize="13"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Title}"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding DisplayUrl}"
+                                       MaxWidth="320"
+                                       Margin="16,0,0,0"
+                                       FontSize="12"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </Grid>
+                    </Border>
+
+                    <DataTemplate.Triggers>
+                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                            <Setter TargetName="Row" Property="Background"
+                                    Value="{DynamicResource TabHoverBackgroundBrush}" />
+                        </DataTrigger>
+                    </DataTemplate.Triggers>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Border>
+</Window>

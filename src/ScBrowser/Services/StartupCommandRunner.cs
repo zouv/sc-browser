@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Extensions.Logging;
+using Microsoft.Web.WebView2.Core;
 using ScBrowser.Browser;
 
 namespace ScBrowser.Services;
@@ -25,8 +26,11 @@ public sealed class StartupCommandRunner
         _logger = logger;
     }
 
-    /// <summary>执行命令行请求。必须在至少有一个标签页初始化完成后调用（扩展按 profile 管理）。</summary>
-    public async Task RunAsync()
+    /// <summary>
+    /// 执行命令行请求。必须在至少有一个标签页初始化完成后调用（扩展按 profile 管理）——
+    /// profile 由调用方从首个标签页上取（见 <c>MainWindow.OnLoaded</c>）。
+    /// </summary>
+    public async Task RunAsync(CoreWebView2Profile? profile)
     {
         var args = Environment.GetCommandLineArgs();
 
@@ -56,24 +60,24 @@ public sealed class StartupCommandRunner
                 continue;
             }
 
-            await InstallAsync(path).ConfigureAwait(true);
+            await InstallAsync(profile, path).ConfigureAwait(true);
         }
     }
 
-    private async Task InstallAsync(string path)
+    private async Task InstallAsync(CoreWebView2Profile? profile, string path)
     {
         try
         {
             if (Directory.Exists(path))
             {
-                var info = await _extensions.InstallFromFolderAsync(path).ConfigureAwait(true);
+                var info = await _extensions.InstallFromFolderAsync(profile, path).ConfigureAwait(true);
                 _logger.LogInformation("命令行安装扩展成功：{Name}（{Id}）", info.Name, info.Id);
                 return;
             }
 
             if (File.Exists(path) && Path.GetExtension(path).Equals(".crx", StringComparison.OrdinalIgnoreCase))
             {
-                var info = await _extensions.InstallFromCrxAsync(path).ConfigureAwait(true);
+                var info = await _extensions.InstallFromCrxAsync(profile, path).ConfigureAwait(true);
                 _logger.LogInformation("命令行安装 CRX 成功：{Name}（{Id}）", info.Name, info.Id);
                 return;
             }
