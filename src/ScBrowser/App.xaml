@@ -1,0 +1,20 @@
+<Application x:Class="ScBrowser.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:common="clr-namespace:ScBrowser.Common">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 顺序有讲究：先颜色令牌，后控件样式（样式用 DynamicResource 引用令牌） -->
+                <ResourceDictionary Source="Themes/Theme.Light.xaml" />
+                <ResourceDictionary Source="Themes/Controls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- 全局转换器 -->
+            <common:SecurityStateToGlyphConverter x:Key="SecurityStateToGlyph" />
+            <common:SecurityStateToBrushConverter x:Key="SecurityStateToBrush" />
+            <common:InverseBooleanConverter x:Key="InverseBoolean" />
+            <common:NonEmptyStringToVisibilityConverter x:Key="NonEmptyToVisibility" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

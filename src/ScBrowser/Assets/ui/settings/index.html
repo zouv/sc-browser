@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <title>设置</title>
+  <link rel="stylesheet" href="../common/base.css" />
+  <link rel="stylesheet" href="settings.css" />
+</head>
+
+<body>
+  <div class="page">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">设置</h1>
+        <p class="page-subtitle">改动即时生效并自动保存</p>
+      </div>
+    </header>
+
+    <!-- 外观 -->
+    <section class="card">
+      <h2 class="card-title">外观</h2>
+      <div class="field">
+        <label for="theme">主题</label>
+        <select class="input" id="theme">
+          <option value="System">跟随系统</option>
+          <option value="Light">浅色</option>
+          <option value="Dark">深色</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- 搜索与启动 -->
+    <section class="card">
+      <h2 class="card-title">搜索与启动</h2>
+      <div class="field">
+        <label for="search-template">搜索引擎地址模板</label>
+        <input class="input" id="search-template" type="text" spellcheck="false"
+               placeholder="https://www.bing.com/search?q={0}" />
+        <p class="hint"><code>{0}</code> 会被替换为 URL 编码后的查询词。</p>
+      </div>
+      <div class="field">
+        <label for="home-page">主页</label>
+        <input class="input" id="home-page" type="text" spellcheck="false" />
+        <p class="hint">点击工具栏主页按钮时打开；填 <code>browser://newtab</code> 表示新标签页。</p>
+      </div>
+      <div class="field row">
+        <label for="restore-session">启动时恢复上次的标签页</label>
+        <label class="switch">
+          <input type="checkbox" id="restore-session" />
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="field row">
+        <label for="remember-session">退出时保存会话</label>
+        <label class="switch">
+          <input type="checkbox" id="remember-session" />
+          <span class="switch-track"></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- 下载 -->
+    <section class="card">
+      <h2 class="card-title">下载</h2>
+      <div class="field">
+        <label for="downloads-folder">下载目录</label>
+        <input class="input" id="downloads-folder" type="text" spellcheck="false"
+               placeholder="留空则使用系统「下载」文件夹" />
+      </div>
+    </section>
+
+    <!-- 扩展 -->
+    <section class="card">
+      <h2 class="card-title">扩展程序</h2>
+      <div class="field row">
+        <label for="enable-extensions">启用浏览器扩展</label>
+        <label class="switch">
+          <input type="checkbox" id="enable-extensions" />
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <p class="hint warn">该开关在 WebView2 环境创建时生效，<strong>改动需要重启应用</strong>。</p>
+    </section>
+
+    <!-- 隐私 -->
+    <section class="card">
+      <h2 class="card-title">隐私与数据</h2>
+      <p class="hint">选择要清除的内容，然后点击清除。此操作不可撤销。</p>
+      <div class="checkbox-list">
+        <label><input type="checkbox" id="clear-cache" /> 缓存的图片与文件</label>
+        <label><input type="checkbox" id="clear-cookies" /> Cookie 及网站登录状态</label>
+        <label><input type="checkbox" id="clear-storage" /> 网站存储数据（LocalStorage / IndexedDB）</label>
+      </div>
+      <button class="btn btn-danger" id="clear-now">清除所选数据</button>
+    </section>
+
+    <!-- 关于 -->
+    <section class="card">
+      <h2 class="card-title">关于</h2>
+      <dl class="info" id="app-info">
+        <dt>版本</dt><dd id="info-version">—</dd>
+        <dt>用户数据目录</dt><dd id="info-userdata" class="mono">—</dd>
+        <dt>扩展目录</dt><dd id="info-extensions" class="mono">—</dd>
+        <dt>书签与历史数据库</dt><dd id="info-db" class="mono">—</dd>
+        <dt>日志目录</dt><dd id="info-logs" class="mono">—</dd>
+      </dl>
+    </section>
+  </div>
+
+  <script src="../common/browser-api.js"></script>
+  <script src="settings.js"></script>
+</body>
+
+</html>

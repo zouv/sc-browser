@@ -1,0 +1,219 @@
+<Window x:Class="ScBrowser.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:ScBrowser.Views.Controls"
+        Title="{Binding WindowTitle}"
+        Width="1280" Height="820"
+        MinWidth="640" MinHeight="420"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        WindowStartupLocation="CenterScreen">
+
+    <!-- =================================================================== -->
+    <!-- 外壳布局：标签条（上） → 工具栏（上） → 内容区（填满）                -->
+    <!-- 内容区只放 WebView2；任何需要盖在网页上的浮层走独立窗口（airspace）。 -->
+    <!-- =================================================================== -->
+    <DockPanel LastChildFill="True">
+
+        <!-- ============ 标签条 ============ -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource TabStripBackgroundBrush}"
+                Padding="6,0,6,0">
+            <StackPanel Orientation="Horizontal">
+                <ItemsControl ItemsSource="{Binding Tabs}" VerticalAlignment="Bottom">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource BrowserTabButtonStyle}"
+                                    Command="{Binding DataContext.ActivateTabCommand,
+                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding Title}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 图标：有 favicon 显示图片，否则退化为 globe 字形 -->
+                                    <Grid Grid.Column="0" Width="16" Height="16" Margin="0,0,8,0">
+                                        <TextBlock Text="&#xE774;"
+                                                   FontFamily="{StaticResource IconFontFamily}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                        <Image Source="{Binding Favicon}" Stretch="Uniform" />
+                                    </Grid>
+
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Title}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,6,0" />
+
+                                    <Button Grid.Column="2"
+                                            Style="{StaticResource TabCloseButtonStyle}"
+                                            Content="&#xE711;"
+                                            ToolTip="关闭标签页"
+                                            Command="{Binding DataContext.CloseTabCommand,
+                                                      RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}" />
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- 新建标签 -->
+                <Button Style="{StaticResource ToolbarButtonStyle}"
+                        Content="&#xE710;"
+                        Margin="4,4,0,0"
+                        VerticalAlignment="Top"
+                        ToolTip="新建标签页 (Ctrl+T)"
+                        Command="{Binding NewTabCommand}" />
+            </StackPanel>
+        </Border>
+
+        <!-- ============ 工具栏 ============ -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource ToolbarBackgroundBrush}"
+                Padding="8,6,8,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Style="{StaticResource ToolbarButtonStyle}"
+                        Content="&#xE72B;" ToolTip="后退 (Alt+←)"
+                        IsEnabled="{Binding ActiveTab.CanGoBack, FallbackValue=False}"
+                        Command="{Binding BackCommand}" />
+
+                <Button Grid.Column="1" Style="{StaticResource ToolbarButtonStyle}"
+                        Content="&#xE72A;" ToolTip="前进 (Alt+→)"
+                        IsEnabled="{Binding ActiveTab.CanGoForward, FallbackValue=False}"
+                        Command="{Binding ForwardCommand}" />
+
+                <!-- 刷新 / 停止 双态按钮 -->
+                <Button Grid.Column="2" Style="{StaticResource ToolbarButtonStyle}"
+                        ToolTip="刷新 (F5) / 停止"
+                        Command="{Binding ReloadCommand}">
+                    <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="&#xE72C;" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ActiveTab.IsLoading}" Value="True">
+                                        <Setter Property="Text" Value="&#xE711;" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Button>
+
+                <Button Grid.Column="3" Style="{StaticResource ToolbarButtonStyle}"
+                        Content="&#xE80F;" ToolTip="主页"
+                        Command="{Binding HomeCommand}" />
+
+                <!-- 地址栏：安全图标 + 输入框 -->
+                <Border Grid.Column="4" Margin="6,0,6,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Width="28"
+                                   TextAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontSize="13"
+                                   FontFamily="{StaticResource IconFontFamily}"
+                                   Foreground="{Binding ActiveTab.SecurityState,
+                                                Converter={StaticResource SecurityStateToBrush}}"
+                                   Text="{Binding ActiveTab.SecurityState,
+                                          Converter={StaticResource SecurityStateToGlyph}}"
+                                   ToolTip="{Binding ActiveTab.SecurityState}" />
+
+                        <TextBox Grid.Column="1"
+                                 x:Name="AddressBar"
+                                 Style="{StaticResource AddressBarTextBoxStyle}"
+                                 FontFamily="Segoe UI"
+                                 Text="{Binding AddressBarText, UpdateSourceTrigger=PropertyChanged}"
+                                 KeyDown="AddressBar_KeyDown"
+                                 PreviewKeyDown="AddressBar_PreviewKeyDown"
+                                 GotKeyboardFocus="AddressBar_GotKeyboardFocus"
+                                 LostKeyboardFocus="AddressBar_LostKeyboardFocus" />
+                    </Grid>
+                </Border>
+
+                <!-- 书签星标：未收藏为空心星，已收藏为实心星 + 强调色 -->
+                <Button Grid.Column="5" Style="{StaticResource ToolbarButtonStyle}"
+                        ToolTip="收藏此页 (Ctrl+D)"
+                        Command="{Binding ToggleBookmarkCommand}">
+                    <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="&#xE734;" />
+                                <Setter Property="Foreground" Value="{DynamicResource IconBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsActiveTabBookmarked}" Value="True">
+                                        <Setter Property="Text" Value="&#xE735;" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Button>
+
+                <!-- 主菜单 -->
+                <Button Grid.Column="6" x:Name="MenuButton"
+                        Style="{StaticResource ToolbarButtonStyle}"
+                        Content="&#xE712;" ToolTip="菜单"
+                        Click="MenuButton_Click">
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="新建标签页" Command="{Binding NewTabCommand}" />
+                            <Separator />
+                            <MenuItem Header="历史记录" Command="{Binding OpenHistoryCommand}" />
+                            <MenuItem Header="书签" Command="{Binding OpenBookmarksCommand}" />
+                            <MenuItem Header="下载内容" Command="{Binding OpenDownloadsCommand}" />
+                            <Separator />
+                            <MenuItem Header="扩展程序" Command="{Binding OpenExtensionsCommand}" />
+                            <MenuItem Header="设置" Command="{Binding OpenSettingsCommand}" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- ============ 导航错误提示条 ============ -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource DangerBrush}"
+                Padding="12,6"
+                Visibility="{Binding ActiveTab.LastError,
+                             Converter={StaticResource NonEmptyToVisibility}}">
+            <TextBlock Text="{Binding ActiveTab.LastError}"
+                       Foreground="White"
+                       TextWrapping="Wrap" />
+        </Border>
+
+        <!-- ============ 内容区（WebView2 容器） ============ -->
+        <controls:BrowserContentHost x:Name="ContentHost"
+                                     Background="{DynamicResource WindowBackgroundBrush}" />
+
+    </DockPanel>
+</Window>

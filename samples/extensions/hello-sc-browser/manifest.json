@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Hello sc-browser",
+  "version": "1.0.0",
+  "description": "用于验证 sc-browser 扩展加载能力的示例扩展：在每个页面右下角注入一个角标。",
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

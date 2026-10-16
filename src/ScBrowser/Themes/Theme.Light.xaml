@@ -1,0 +1,27 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ===================================================================== -->
+    <!-- 浅色主题 · 颜色令牌                                                     -->
+    <!-- 键名与 Themes/Theme.Dark.xaml 必须一一对应，否则运行时换肤会缺键。      -->
+    <!-- ===================================================================== -->
+
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F1F3F4" />
+    <SolidColorBrush x:Key="TabStripBackgroundBrush" Color="#DEE1E6" />
+    <SolidColorBrush x:Key="TabActiveBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="TabInactiveBackgroundBrush" Color="#00000000" />
+    <SolidColorBrush x:Key="TabHoverBackgroundBrush" Color="#D0D4DA" />
+    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="SeparatorBrush" Color="#C4C7CC" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#202124" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#5F6368" />
+    <SolidColorBrush x:Key="AddressBarBackgroundBrush" Color="#F1F3F4" />
+    <SolidColorBrush x:Key="AddressBarBorderBrush" Color="#00000000" />
+    <SolidColorBrush x:Key="AddressBarFocusBorderBrush" Color="#1A73E8" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#1A73E8" />
+    <SolidColorBrush x:Key="IconBrush" Color="#5F6368" />
+    <SolidColorBrush x:Key="IconDisabledBrush" Color="#BDC1C6" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#D93025" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#188038" />
+
+</ResourceDictionary>

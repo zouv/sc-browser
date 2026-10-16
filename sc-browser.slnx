@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ScBrowser/ScBrowser.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ScBrowser.Tests/ScBrowser.Tests.csproj" />
+  </Folder>
+</Solution>

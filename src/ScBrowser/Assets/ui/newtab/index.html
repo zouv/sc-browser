@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>新标签页</title>
+  <link rel="stylesheet" href="../common/base.css" />
+  <link rel="stylesheet" href="newtab.css" />
+</head>
+
+<body>
+  <main class="newtab">
+    <div class="brand">
+      <div class="brand-mark">sc</div>
+      <div class="brand-name">sc-browser</div>
+    </div>
+
+    <form class="search" id="search-form" autocomplete="off">
+      <span class="search-icon">&#xE721;</span>
+      <input class="input search-input"
+             id="search-input"
+             type="text"
+             placeholder="搜索或输入网址"
+             autofocus />
+    </form>
+
+    <nav class="quick-links" id="quick-links">
+      <a class="quick-link" href="#" data-target="browser://history">
+        <span class="quick-icon">&#xE81C;</span>
+        <span>历史记录</span>
+      </a>
+      <a class="quick-link" href="#" data-target="browser://bookmarks">
+        <span class="quick-icon">&#xE734;</span>
+        <span>书签</span>
+      </a>
+      <a class="quick-link" href="#" data-target="browser://downloads">
+        <span class="quick-icon">&#xE896;</span>
+        <span>下载内容</span>
+      </a>
+      <a class="quick-link" href="#" data-target="browser://extensions">
+        <span class="quick-icon">&#xE71D;</span>
+        <span>扩展程序</span>
+      </a>
+      <a class="quick-link" href="#" data-target="browser://settings">
+        <span class="quick-icon">&#xE713;</span>
+        <span>设置</span>
+      </a>
+    </nav>
+  </main>
+
+  <script src="../common/browser-api.js"></script>
+  <script src="newtab.js"></script>
+</body>
+
+</html>

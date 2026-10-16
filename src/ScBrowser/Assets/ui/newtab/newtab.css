@@ -1,0 +1,91 @@
+/* 新标签页专有样式 */
+
+.newtab {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 40px 24px;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.brand-name {
+  font-size: 20px;
+  color: var(--text-secondary);
+  letter-spacing: 0.4px;
+}
+
+.search {
+  position: relative;
+  width: min(620px, 100%);
+}
+
+.search-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  font-size: 14px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.search-input {
+  height: 46px;
+  padding-left: 44px;
+  font-size: 15px;
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.quick-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 108px;
+  padding: 16px 8px;
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: background 0.12s ease;
+}
+
+.quick-link:hover {
+  background: var(--hover);
+  text-decoration: none;
+}
+
+.quick-icon {
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  font-size: 20px;
+  color: var(--text-secondary);
+}

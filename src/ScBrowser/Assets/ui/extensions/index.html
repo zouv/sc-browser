@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <title>扩展程序</title>
+  <link rel="stylesheet" href="../common/base.css" />
+  <link rel="stylesheet" href="extensions.css" />
+</head>
+
+<body>
+  <div class="page">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">扩展程序</h1>
+        <p class="page-subtitle" id="summary">加载中…</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn" id="open-folder">打开扩展目录</button>
+        <button class="btn" id="install-folder">加载已解压的扩展</button>
+        <button class="btn btn-primary" id="install-crx">安装 .crx 包</button>
+      </div>
+    </header>
+
+    <div class="notice">
+      <strong>关于扩展支持的能力边界</strong>
+      <ul>
+        <li>WebView2 只能加载<strong>已解压</strong>的扩展（含 <code>manifest.json</code> 的目录）。
+          选择 <code>.crx</code> 时，本应用会先把它解包到受管目录再加载。</li>
+        <li>没有扩展商店，扩展也不会自动更新；来源与安全性需自行把关。</li>
+        <li>扩展安装后<strong>不要改动其目录内的文件</strong>，否则它会被自动卸载——改完请重新安装。</li>
+        <li>部分依赖浏览器专有能力的扩展（如 <code>chrome.tabs</code>、部分后台页 API）可能无法完整工作。</li>
+      </ul>
+    </div>
+
+    <div class="list" id="list"></div>
+  </div>
+
+  <script src="../common/browser-api.js"></script>
+  <script src="extensions.js"></script>
+</body>
+
+</html>

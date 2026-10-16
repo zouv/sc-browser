@@ -1,0 +1,47 @@
+# ================= .NET / C# =================
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# 构建产物
+[Dd]ebug/
+[Rr]elease/
+publish/
+artifacts/
+*.nupkg
+
+# ================= 测试 / 覆盖率 =================
+TestResults/
+[Tt]est[Rr]esult*/
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# ================= 运行时数据（绝不入库）=================
+# 这些默认落在 %LOCALAPPDATA%\sc-browser，仅当有人把数据目录改到仓库内时才会出现
+data/
+*.log
+logs/
+*.db
+*.db-shm
+*.db-wal
+session.json
+settings.json
+
+# ================= 环境变量 / 密钥 =================
+.env
+.env.*
+!.env.example
+
+# ================= 工具缓存 =================
+.pytest_cache/
+.cache/
+.runtime/
