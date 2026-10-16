@@ -18,7 +18,7 @@
 ## 状态快照
 
 - **最近更新**：2026-10-16
-- **整体状态**：✅ 无进行中的开发任务（连续三批需求全部完结，未 commit）
+- **整体状态**：✅ 无进行中的开发任务（v0.2.0 已发布并推送远程）
 - **当前分支（必填）**：`main`（v0.1.0 已作为根提交入库；后续开发建议开 feature 分支）
 - **最后验证状态**：`sh manager.sh verify` ✅（构建 -warnaserror + **90/90** 单测 + 文档体检）。
   实跑逐项验过（`PrintWindow` 抓窗 / `WM_NCHITTEST` 探测 / UI Automation 驱动 + 前台窗口守卫的键盘模拟）：
@@ -30,7 +30,9 @@
   · **未能实跑的部分**（鼠标驱动，无合规的自动化手段）：中键关闭标签、拖拽重排的**实际拖拽动作**、
   标签右键菜单的点击、鼠标点地址栏触发下拉——其中拖拽的下标换算已用 `TabReorder` 单测覆盖，
   其余为「XAML 接线 + 代码审读」级别，接手时如需确认请人工点一遍。
-- **改动尚未 commit**（工作区：本轮交互改造 + 前两轮的外观/工程化改动）。
+- **已发布**：`v0.2.0` 已 commit / push / 打 Release
+  （https://github.com/zouv/sc-browser/releases/tag/v0.2.0 ，含自包含与依赖框架两个单文件包）；
+  工作区干净，无未提交改动。
 
 ---
 
@@ -60,11 +62,11 @@
 
 ## 下一步（Next Steps）
 
-1. **提交本批改动**（建议按主题拆 3~4 个 commit）：外观（图标/自绘外壳/深色同步）、工程化（行尾 + bat），
-   交互（标签页/多窗口+无痕/菜单/地址栏下拉）。
-2. `ARCHITECTURE.md` 已按 AGENTS §1.1 拆分：§3 链路详解移到 [`arch/flows.md`](arch/flows.md)
-   （主文件 332 行）；§2 任务反查表还留在主文件里，下次再涨就先拆它。
-3. 仍需明确指示才推送远程（见下）。
+1. 产品功能候选见 `ROADMAP.md` §🟡 近期规划（P1-1 页内查找、P1-4 会话惰性恢复、P2-* 增强）。
+2. `ARCHITECTURE.md` 已按 AGENTS §1.1 拆分：§3 链路详解在 [`arch/flows.md`](arch/flows.md)
+   （主文件 332 行）；§2 任务反查表仍在主文件，下次再涨就先拆它。
+3. 发布流程（下次发版照做）：`publish.bat` → 把 exe 单独 zip → `gh release create <tag> <zips>`；
+   注意发布脚本必须带 `IncludeAllContentForSelfExtract`（否则内部页面白页）。
 
 ## 如何运行 / 测试（Quick Verify）
 
@@ -114,8 +116,6 @@
 
 ## 待解问题 / 给用户的提问（Open Questions）
 
-- **尚未推送到远程**：仓库已配置 `origin = https://github.com/zouv/sc-browser`，
-  本地提交都还没 push；本轮改动也还没 commit。需要时请明确指示。
 - **无痕的扩展支持未验证**：WebView2 的 InPrivate profile 下扩展行为未实测（普通窗口的扩展链路已验证）。
   如果以后要在无痕里用扩展，先读 `Browser/ExtensionService.cs` 的注释再动手。
 - **行尾属性后加的坑（已修，供备忘）**：行尾规则只管「以后怎么检出」，**不会自动改写已存在的文件**——
