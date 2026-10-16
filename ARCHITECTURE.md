@@ -50,13 +50,15 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 
 | 任务类型 | 该读（仅限） | 可忽略 | 入口小节 |
 |---|---|---|---|
-| 改外壳 UI（标签条/工具栏/地址栏外观与交互） | `Views/MainWindow.xaml(.cs)`、`Themes/*`、`Common/Converters.cs` | Browser/、Storage/、Assets/ | §2.1 |
-| 改标签页行为（导航/事件/安全图标/favicon） | `Browser/BrowserTab.cs`、`Browser/TabManager.cs` | Views/、Assets/、Storage/ | §2.2 |
+| 改外壳 UI（标签条/工具栏/地址栏/窗口按钮） | `Views/MainWindow.xaml(.cs)`、`Themes/*`、`Interop/NativeMethods.cs`、`Common/Converters.cs` | Browser/、Storage/、Assets/ | §2.1、§7 |
+| 改标签页行为（导航/事件/安全图标/favicon/重开/拖拽排序） | `Browser/BrowserTab.cs`、`Browser/TabManager.cs`、`Browser/ClosedTabHistory.cs` | Views/（除非动标签条交互）、Assets/、Storage/ | §2.2 |
+| 多窗口 / 无痕 / 窗口级装配 | `Services/BrowserWindowManager.cs`、`Browser/BrowserSession.cs`、`Views/MainWindow.xaml.cs`（窗口与几何部分） | Storage/、Assets/ | arch/flows.md §3.5 |
+| 改地址栏（解析/下拉建议） | `Browser/AddressBarResolver.cs`、`Services/OmniboxSuggestions.cs`、`Views/AddressBarPopup.xaml(.cs)`、`ViewModels/MainViewModel.cs`（Suggestions 部分） | Storage/、Assets/ | arch/flows.md §3.6 |
 | 加/改内部页面（WebUI） | `Assets/ui/<page>/*`、`Browser/WebMessageRouter.cs`、`Browser/InternalPageRegistry.cs` | Views/、Storage/（除非要新数据） | §2.3、§4 |
 | 加/改数据存储（历史/书签/下载） | `Storage/*` | Views/、Assets/ | §2.4、§4 |
-| 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Assets/ui/extensions/*` | Views/、Storage/ | §2.5、§3.2 |
-| 改主题/设置/会话 | `Services/SettingsService.cs`、`Services/ThemeService.cs`、`Services/SessionStore.cs`、`Themes/*` | Browser/、Storage/ | §2.6 |
-| 改启停/构建/发布（运维） | `manager.sh`、`ScBrowser.csproj`、`docs/02-使用说明.md` | 所有业务代码 | §6 |
+| 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Assets/ui/extensions/*` | Views/、Storage/ | §2.5、arch/flows.md §3.2 |
+| 改主题/设置/会话（含「深色影响网页」） | `Services/SettingsService.cs`、`Services/ThemeService.cs`、`Services/SessionStore.cs`、`Browser/WebTheme.cs`、`Themes/*` | Storage/、Views/ | §2.6、arch/flows.md §3.4 |
+| 改启停/构建/发布（运维） | `manager.sh`、`*.bat`、`.gitattributes`、`ScBrowser.csproj`、`docs/02-使用说明.md` | 所有业务代码 | §6 |
 
 > 跨多个区域的任务才需要跨列读；仍遵循「**先定位函数名，再只读那几个函数**」。
 
@@ -73,11 +75,16 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Infrastructure/AppPaths.cs` | **路径单一源**（用户数据/扩展/日志/DB/会话/WebUI） | 新增落盘位置 |
 | `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作：深色标题栏、圆角窗口 | 新增窗口级原生外观 |
 | `src/ScBrowser/Themes/Theme.{Light,Dark}.xaml` | 颜色令牌（键名必须成对一致） | 调色 / 加令牌 |
-| `src/ScBrowser/Themes/Controls.xaml` | 控件样式（工具栏按钮/标签/地址栏） | 改控件外观 |
+| `src/ScBrowser/Themes/Controls.xaml` | 控件样式（工具栏按钮/标签/窗口按钮/地址栏） | 改控件外观 |
 | `src/ScBrowser/Common/Converters.cs` | 值转换器（安全图标、可空、显隐） | 加绑定转换 |
+| `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作（DWM 深色/圆角、最大化钉工作区） | 加系统级外观/窗口行为 |
+| `src/ScBrowser/Assets/sc-browser.ico` + `docs/icons/` | 应用图标（exe 内嵌 + 窗口 `Icon`）；`docs/icons/` 是设计源（SVG 为源，附各尺寸导出） | 换图标 |
 | `src/ScBrowser/Browser/BrowserEnvironmentProvider.cs` | 创建并缓存**唯一**的 WebView2 环境（含扩展总开关） | 改环境级选项（代理/扩展开关） |
 | `src/ScBrowser/Browser/BrowserTab.cs` | **单标签页**：持有 WebView2 + 全部可观察状态 + 事件接线 | 改单页行为（导航/事件/图标） |
-| `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建/关闭/切换/相邻选择/历史记录 | 改标签生命周期语义 |
+| `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建/关闭/切换/相邻选择/历史记录 + **网页颜色方案** | 改标签生命周期语义 |
+| `src/ScBrowser/Browser/WebTheme.cs` | 应用主题 → `CoreWebView2Profile.PreferredColorScheme` 映射 | 改「深色如何影响网页」 |
+| `src/ScBrowser/Browser/BrowserSession.cs` | 会话类型（普通/无痕）→ WebView2 控制器选项 | 加新的隔离会话 |
+| `src/ScBrowser/Browser/ClosedTabHistory.cs` | 「最近关闭的标签」栈（Ctrl+Shift+T，容量 25） | 改重开策略 |
 | `src/ScBrowser/Browser/IBrowserTabHost.cs` | 内容区宿主抽象（视图层实现，防 TabManager 依赖控件） | 改挂载约定 |
 | `src/ScBrowser/Browser/InternalPageRegistry.cs` | `browser://xxx` → 本地 WebUI 文件映射 | 新增内部页面 |
 | `src/ScBrowser/Browser/AddressBarResolver.cs` | 地址栏输入 → 地址/搜索词判定 | 改地址解析规则 |
@@ -89,13 +96,19 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Storage/Entries.cs` | 数据记录定义（HistoryEntry/BookmarkEntry/DownloadEntry + 状态枚举） | 加字段 |
 | `src/ScBrowser/Storage/{History,Bookmark,Download}Repository.cs` | 三个仓储的读写 | 改查询/写入 |
 | `src/ScBrowser/Services/SettingsService.cs` | 设置读写（JSON）＋ 归一化 ＋ 变更事件 | 加设置项 |
-| `src/ScBrowser/Services/ThemeService.cs` | 运行时换肤（替换颜色字典索引 0） | 改换肤机制 |
+| `src/ScBrowser/Services/ThemeService.cs` | 运行时换肤（替换颜色字典索引 0）+ `Applied` 事件（网页跟着换） | 改换肤机制 |
+| `src/ScBrowser/Services/BrowserWindowManager.cs` | **窗口总管**：按窗口组装 TabManager/MainViewModel/MainWindow，跟踪并聚合跨窗口事件 | 加窗口级能力、会话保存 |
+| `src/ScBrowser/Services/WindowPlacement.cs` | 窗口几何的合法性判断与钳制（纯函数） | 改窗口记忆行为 |
+| `src/ScBrowser/Services/OmniboxSuggestions.cs` | 地址栏下拉候选构建（纯函数：搜索行 / 直接打开 / 历史匹配排序） | 改下拉内容 |
 | `src/ScBrowser/Services/SessionStore.cs` | 会话保存/恢复（JSON） | 改会话内容 |
 | `src/ScBrowser/Services/DownloadManager.cs` | 下载接管、进度节流落盘、列表 | 改下载行为 |
 | `src/ScBrowser/Services/StartupCommandRunner.cs` | 启动命令行参数（`--install-extension`） | 加启动参数 |
 | `src/ScBrowser/ViewModels/MainViewModel.cs` | 外壳状态投影与命令（不碰 WebView2） | 加工具栏/菜单命令 |
-| `src/ScBrowser/Views/MainWindow.xaml(.cs)` | 外壳布局 + 窗口外观 + **键盘快捷键** | 改外壳结构/快捷键 |
+| `src/ScBrowser/Views/MainWindow.xaml(.cs)` | 外壳布局（含自绘窗口边框）+ 窗口外观 + **键盘快捷键** | 改外壳结构/快捷键 |
 | `src/ScBrowser/Views/Controls/BrowserContentHost.cs` | 内容区宿主实现（WebView2 挂载与显示切换） | 改内容区挂载方式 |
+| `src/ScBrowser/Views/AddressBarPopup.xaml(.cs)` | 地址栏下拉浮层（独立顶层窗口，规避 airspace） | 改下拉外观/交互 |
+| `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的落点换算（指针落在哪个槽位，纯函数 + 单测） | 改拖拽落点规则 |
+| `src/ScBrowser/Views/AboutDialog.xaml(.cs)` | 「关于」对话框（图标 / 版本 / 用户数据目录） | 改关于页 |
 | `src/ScBrowser/Assets/ui/**` | **WebUI 内部页面**（HTML/CSS/JS） | 改内部页面 |
 | `src/ScBrowser/Assets/ui/common/browser-api.js` | WebUI 侧消息桥（协议客户端） | 改协议 |
 
@@ -105,8 +118,10 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 |---|---|
 | `tests/ScBrowser.Tests/` | xUnit 单测（地址栏解析、CRX 解包） |
 | `samples/extensions/hello-sc-browser/` | 示例扩展，用于验证扩展加载链路 |
-| `manager.sh` | 统一管理脚本（构建/运行/测试/发布/清理/日志） |
+| `manager.sh` | 统一管理脚本（构建/运行/测试/发布/清理/日志）·**命令语义的单一来源** |
 | `check-docs.sh` | 文档体系机械体检（技术栈无关） |
+| `build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `publish.bat` / `ci.bat` | `manager.sh` 各命令的 Windows 原生等价物（纯 cmd + dotnet，不需要 bash） |
+| `.gitattributes` | 行尾策略：`*.sh`=LF、`*.bat`=CRLF（否则 Windows 上脚本执行失败） |
 
 ---
 
@@ -121,18 +136,30 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 |---|---|---|
 | 工具栏按钮外观 | `Themes/Controls.xaml` 的 `ToolbarButtonStyle` | 用 `DynamicResource` 引颜色令牌 |
 | 标签条项的样式 | `Controls.xaml` 的 `BrowserTabButtonStyle` / `TabCloseButtonStyle` | `IsActive` 触发激活态背景 |
+| 窗口按钮（最小化/最大化/关闭） | `Controls.xaml` 的 `CaptionButtonStyle` / `CloseCaptionButtonStyle` + `MinimizeButton_Click` / `MaximizeRestoreButton_Click` / `CloseButton_Click` | **位于标题栏命中区内，必须 `IsHitTestVisibleInChrome`**，见 §7 |
+| 标签条交互（中键关 / 拖拽重排 / 右键菜单） | `MainWindow.xaml.cs` 的 `TabButton_*` / `TabMenu_*`；菜单命令在 `MainViewModel`（`NewTabToRightCommand` / `DuplicateTabCommand` 等） | 拖拽是**自己捕获鼠标**（不用 `DragDrop`）：`BeginDrag` / `UpdateDragPosition` / `EndDrag`，落点 = 指针所在槽位（`TabReorder.ResolveTargetIndex`） |
+| 窗口记忆（尺寸/位置） | `RestoreWindowPlacement` / `SaveWindowPlacement` + `Services/WindowPlacement.cs` | 只对主窗口生效；最大化存 `RestoreBounds` |
+| 边框带（可视边框 + 缩放区） | `ApplyWindowedFrame`（`OnStateChanged` / `OnLoaded` 里调用） | **最大化时归零**，把视口还给页面，见 §7 |
+| 「关于」对话框 | `Menu_About` → `Views/AboutDialog` | 版本取自程序集，路径取自 `AppPaths` |
+| 多窗口入口 | `OpenNewWindow` / `OpenNewIncognitoWindow` → `BrowserWindowManager.CreateWindow` | 见 §3.5 |
+| 主菜单 | `MenuButton_Click` + XAML 里 `MenuButton.ContextMenu`（分组见注释）+ `Menu_*` 处理器 | 样式：`BrowserMenuStyle` / `BrowserMenuItemStyle` |
+| 自绘窗口边框（无系统标题栏） | XAML 的 `WindowChrome.WindowChrome`（`CaptionHeight=38`）+ `NativeMethods.ClampMaximizedToWorkArea` | 见 §7 的两个坑 |
 | 地址栏回车/失焦行为 | `AddressBar_KeyDown` / `AddressBar_LostKeyboardFocus` | 失焦会恢复显示当前页地址 |
 | 「编辑态」判定 | `AddressBar_PreviewKeyDown` + `IsTextProducingKey` | **不能**用「获得焦点」判定，见 §7 |
 | 键盘快捷键 | `MainWindow.TryHandleShortcut` | 单一 switch，按修饰键分组 |
 | 主菜单项 | `MenuButton_Click` + XAML 里的 `Button.ContextMenu` | |
-| 窗口深色标题栏/圆角 | `NativeMethods.ApplyDarkMode` / `ApplyRoundedCorners` | |
-| 启动/退出钩子 | `MainWindow.OnLoaded` / `OnClosing` | 会话恢复与保存在这里 |
+| 窗口深色标题栏/圆角 | `NativeMethods.ApplyDarkMode` / `ApplyRoundedCorners`（由 `OnStateChanged` 在最大化时改直角） | |
+| 应用图标 | `ScBrowser.csproj` 的 `ApplicationIcon` + `Assets/sc-browser.ico`；窗口用 `Icon="/Assets/sc-browser.ico"` | 设计源在 `docs/icons/`（改设计后重新导出 `.ico` 并覆盖 Assets 里那份） |
+| 启动/退出钩子 | `MainWindow.OnSourceInitialized` / `OnLoaded` / `OnClosing` | 会话恢复与保存在这里 |
 
 ### 2.2 标签页（`Browser/BrowserTab.cs` / `Browser/TabManager.cs`）
 
 | 我要改的东西 | 关键函数 / 锚点 | 备注 |
 |---|---|---|
-| 新增标签 | `TabManager.CreateAsync` | 顺序：入集合 → 挂树 → 初始化 → 接线 → 激活 → 导航 |
+| 新增标签 | `TabManager.CreateAsync` | 顺序：入集合 →（可选挪位）→ 挂树 → 初始化 → 接线 → 激活 → 导航；`insertAt` 供「在右侧新增」 |
+| 重开已关闭的标签 | `TabManager.ReopenLastClosedAsync` + `ClosedTabHistory` | `Close` 时入栈（Dispose 前取状态） |
+| 标签排序 | `TabManager.Move` | 由标签条拖拽调用；下标语义见 §2.1 的 `TabButton_DragOver` |
+| 无痕 / 普通差异 | `TabManager.SessionKind` / `IsIncognito`；`RecordHistory` 直接跳过 | 控制器选项见 `Browser/BrowserSession.cs` |
 | 关闭标签的邻居选择 | `TabManager.Close` | 优先右邻，否则左邻（Chrome 语义） |
 | 页内导航到内部页面 | `BrowserTab.Navigate` + `InternalPageRegistry.ResolveToFileUri` | 内部页面用 `_logicalUrl` 保逻辑地址 |
 | 地址栏显示地址的推导 | `BrowserTab.UpdateUrlFromCore` | 内部页面显示 `browser://xxx` 而非 `file://` |
@@ -184,44 +211,18 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 
 ---
 
-## 3. 重点链路详解（高频改动区 / 容易写错的地方）
+## 3. 重点链路详解（已拆分为分册）
 
-### 3.1 内部页面消息链路（WebUI ↔ 宿主）
+每条链路的「怎么连、为什么这么连、哪里容易写错」都在 [`arch/flows.md`](arch/flows.md)：
 
-- **需求语义**：内部页面（HTML/JS）要能读写历史、书签、扩展、设置等宿主能力。
-- **关键坑**：WebUI 跑在 `file://` 下，不能用 `fetch` 调宿主；必须走 WebView2 消息桥。
-  请求/响应要能配对，否则页面无法 `await` 结果。
-- **正确实现**：
-  1. 页面 `sc.send(type, payload)` → `window.chrome.webview.postMessage({type, requestId, payload})`
-  2. 宿主 `TabManager.WebMessageReceived` → `WebMessageRouter.HandleAsync` → `DispatchAsync`
-  3. 宿主 `WebMessageRouter.Reply` 回 `{type:"response", requestId, ok, result|error}`
-  4. 页面侧按 `requestId` 配对 resolve/reject（含 15s 超时兜底）
-- **调用链**：`Assets/ui/*.js` → `browser-api.js` → WebView2 bridge → `TabManager.WebMessageReceived`
-  → `WebMessageRouter.HandleAsync` → `DispatchAsync` → `Storage/*` 或 `Services/*`
-
-### 3.2 扩展加载与运行
-
-- **需求语义**：能加载解包扩展与 `.crx`，启停/卸载，且在页面上真正生效。
-- **关键坑**（三条，缺一不可）：
-  1. `CoreWebView2EnvironmentOptions.AreBrowserExtensionsEnabled` 必须为 `true`，
-     否则 `AddBrowserExtensionAsync` 返回 `ERROR_NOT_SUPPORTED`。**此选项只在环境创建期生效，改动需重启**。
-  2. 扩展按 **profile** 维度管理，而 profile 只能从已初始化的 `CoreWebView2` 上取
-     → 因此要求至少有一个标签页已就绪（见 `TabManager.Profile`）。
-  3. 扩展内容**不会**被复制到用户数据目录；安装后改动扩展目录内的文件会导致它被自动卸载。
-- **正确实现**：`ExtensionService.InstallFromFolderAsync`（目录）/ `InstallFromCrxAsync`（先 `CrxPackage.ExtractTo` 再走目录安装）
-- **调用链**：`Assets/ui/extensions/extensions.js` → `WebMessageRouter` `extensions.*`
-  → `ExtensionService` → `CoreWebView2Profile.AddBrowserExtensionAsync`
-
-### 3.3 键盘快捷键在网页聚焦时仍然生效
-
-- **需求语义**：焦点在网页里时，Ctrl+T / Ctrl+W / F5 等仍应由外壳处理。
-- **关键坑**：WebView2 是基于 HWND 的控件，键盘事件本不会回到 WPF 输入系统；
-  且若 `AreBrowserAcceleratorKeysEnabled` 为 `true`，WebView2 会先把这些键当浏览器快捷键吃掉。
-- **正确实现**：`BrowserTab.ConfigureSettings` 关闭 `AreBrowserAcceleratorKeysEnabled`；
-  WPF 版 WebView2 内部会把 `CoreWebView2Controller.AcceleratorKeyPressed` 转发成
-  WPF 的 `PreviewKeyDown` / `KeyDown` 重新抛出，因此**只需在 `MainWindow.OnPreviewKeyDown` 处理**，无需反射。
-- **调用链**：按键 → `CoreWebView2Controller_AcceleratorKeyPressed`（WPF 控件内部）
-  → `PreviewKeyDownEvent` → `MainWindow.OnPreviewKeyDown` → `TryHandleShortcut`
+| 小节 | 主题 | 什么时候看 |
+|---|---|---|
+| §3.1 | 内部页面消息链路（WebUI ↔ 宿主） | 改协议 / 加页面能力 |
+| §3.2 | 扩展加载与运行 | 改扩展相关 |
+| §3.3 | 键盘快捷键在网页聚焦时仍然生效 | 改快捷键 |
+| §3.4 | 主题贯穿：应用主题 → 外壳 → 网页内容 | 改主题 |
+| arch/flows.md §3.5 | 多窗口与无痕（一份 vs 共享） | 动窗口/标签的装配 |
+| arch/flows.md §3.6 | 地址栏下拉（omnibox 建议） | 改地址栏 |
 
 ---
 
@@ -263,6 +264,11 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 > **与 docs/02 分工**：本节只留代码/脚本位置指针；具体操作步骤与坑以 [`docs/02-使用说明.md`](docs/02-使用说明.md) 为准。
 
 - **统一入口**：`manager.sh`（`build` / `run` / `start` / `stop` / `test` / `verify` / `publish` / `clean` / `data` / `logs` / `reset`）。
+  **`.bat` 是等价物不是第二份真源**：`build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `publish.bat` / `ci.bat`
+  用纯 cmd + dotnet 重写同一批命令（不依赖 bash）；**改命令语义时两处必须同步**。
+  `verify.bat` / `ci.bat` 的文档体检需 bash，检测到 `sh`（退而求其次 `bash`）才跑，否则只告警不失败。
+- **行尾策略**：`.gitattributes` 钉住 `*.sh`=LF、`*.bat`=CRLF。改脚本时优先按属性办事，
+  别让 Windows 的 `core.autocrlf` 把 `.sh` 检成 CRLF（bash 会报 `No such file or directory` / 变量尾带 `\r` 而假失败）。
 - **路径单一源**：`Infrastructure/AppPaths.cs`；`manager.sh` 中的 `APPDATA_DIR` 必须与其保持一致。
 - **提交前闸门**：`sh manager.sh verify` = 构建(-warnaserror) + 单测 + `check-docs.sh`。
 
@@ -285,4 +291,42 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   自己再写同名方法会 CS0111；本项目把自定义方法命名为 `HandleActiveTabChanged`。
 - **XML 注释里不能出现连续 `--`**：XAML 注释中的装饰线要用 `====`。
 - **`IsKeyboardFocusWithin` 是只读依赖属性**：不能在 XAML 里绑定写回，只能走代码。
+- **自绘外壳的第三个坑：缩放带必须内缩**：WebView2 是独立子 HWND，会吃掉落在它身上的鼠标事件——
+  缩放命中带若压在网页上，`WindowChrome` 的缩放判定永远轮不到。因此根布局留了
+  `Margin="6,0,6,6"` 的内缩带（`MainWindow.xaml`），改布局时别把这圈吃掉，否则窗口又变成拖不动尺寸。
+  **但最大化时必须把它收成 0**：最大化不需要缩放，留着白让出 14×8 px 视口，
+  宽度卡得紧的页面（例如自建面板）会因此冒出滚动条——`MainWindow.ApplyWindowedFrame` 负责切换。
+- **无痕不能用「新环境」实现**：必须同一个 `CoreWebView2Environment` + InPrivate 的
+  `CoreWebView2ControllerOptions`（见 §3.5）。
 - **主题令牌键必须成对存在**：`Theme.Light.xaml` 与 `Theme.Dark.xaml` 键名不一致时，换肤会缺键。
+- **自绘窗口外壳的两个坑**（`WindowStyle=None` + `WindowChrome`）：
+  1. **最大化会被撑出屏幕**：系统仍按「带边框窗口」算最大化尺寸，把隐形缩放边框也算进去，
+     窗口于是溢出屏幕若干像素（本机实测 7px），贴着边缘的内容被裁掉（右侧关闭按钮首当其冲）。
+     解法是在 `WM_GETMINMAXINFO` 里把尺寸钉到显示器工作区（`NativeMethods.ClampMaximizedToWorkArea`），
+     别用「最大化时补 Margin」那种猜边宽的写法，多屏/DPI 变化下会错。
+  2. **标题栏区域内点击会变成拖窗口**：`CaptionHeight` 覆盖的整条标签条都走了标题栏命中测试，
+     里面的按钮/标签必须标 `WindowChrome.IsHitTestVisibleInChrome="True"`（本项目统一写在
+     `Controls.xaml` 的按钮样式里）。验证手法：`SendMessage(hwnd, WM_NCHITTEST, …)` 看返回
+     是 `HTCAPTION` 还是 `HTCLIENT`——比肉眼试点更可靠。
+- **绑定的路径取不到值时，目标属性会退回「类型默认值」**：`Visibility` 的默认值是
+  **Visible**（不是 Collapsed）。所以 `Visibility="{Binding ActiveTab.LastError, Converter=...}"`
+  在 `ActiveTab` 为 `null` 的那一瞬间（新建窗口、首个标签还没建好）会**显示一个没有内容的红条**，
+  随后又消失——看起来就是「开窗时红条闪一下」。凡是靠绑定控制显隐的地方，
+  都要显式写 `FallbackValue=Collapsed`（必要时再加 `TargetNullValue`）。
+- **WebView2 的默认底色也要跟着主题走**：`WebView2.DefaultBackgroundColor` 默认是**白色**，
+  深色主题下新建标签/新窗口会在页面画出来之前先闪一下白底。见
+  `WebTheme.DefaultBackground` + `TabManager.ApplyWebTheme`（与颜色方案一起设）。
+- **拖拽补偿量要用「槽位几何」而不是元素偏移**：标签条是 `ItemsControl + DataTemplate`，
+  对被拖的 Button 调 `VisualTreeHelper.GetOffset` 拿到的是它**相对自己 ContentPresenter** 的偏移
+  （恒为 0），不是标签条坐标——用它算补偿，每次换位标签都会瞬移。正解见
+  `TabReorder.Step`：偏移 = 视觉左边缘 − **落点槽位**左边缘（槽位几何在换位前后不变）。
+- **导航失败提示要延迟落地**：WebView2 冷启动、被后续导航取代的请求，常在「失败」后几毫秒内就成功；
+  立刻挂红条的表现是「闪一下」（新开窗口最容易看到）。`BrowserTab.ReportNavigationError` 的做法是
+  延迟 700ms + 版本号作废（期间任何新导航/成功导航都会作废它），把 `OperationCanceled` 直接排除，
+  并且**标签首次导航失败会自动重试一次**（冷启动偶发失败重试即好，真实故障重试仍失败、照常报错）。
+- **深色「影响网页」要顺着站点走**：把 `CoreWebView2Profile.PreferredColorScheme` 设成 Dark/Light/Auto，
+  让页面的 `prefers-color-scheme` 随应用主题变化即可——声明了深色样式的站点自动变深，
+  没声明的保持原样。**不要**用 CDP 强制反色：会把排版、图片、图表拧坏。
+  内部页面（`browser://*`）的 `common/base.css` 用的是同一个媒体查询，因此一并跟随，无需另推消息。
+- **全应用只有一个 WebView2 profile**：颜色方案是 profile 级设置，设一次即影响所有标签，
+  但新标签仍会显式再设一次（见 `TabManager.ApplyWebTheme`），避免依赖「之前一定设过」的隐含前提。

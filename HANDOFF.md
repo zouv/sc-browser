@@ -18,10 +18,19 @@
 ## 状态快照
 
 - **最近更新**：2026-10-16
-- **整体状态**：✅ 无进行中的开发任务（v0.1.0 已交付并提交）
+- **整体状态**：✅ 无进行中的开发任务（连续三批需求全部完结，未 commit）
 - **当前分支（必填）**：`main`（v0.1.0 已作为根提交入库；后续开发建议开 feature 分支）
-- **最后验证状态**：`sh manager.sh verify` ✅（构建 -warnaserror 0 错误 + 36/36 单测 + 文档体检）；
-  实跑验证 ✅（真实站点导航、Ctrl+T 在网页聚焦下生效、扩展内容脚本注入、历史跨重启持久化）
+- **最后验证状态**：`sh manager.sh verify` ✅（构建 -warnaserror + **90/90** 单测 + 文档体检）。
+  实跑逐项验过（`PrintWindow` 抓窗 / `WM_NCHITTEST` 探测 / UI Automation 驱动 + 前台窗口守卫的键盘模拟）：
+  · `WM_NCHITTEST`：标签条空白 `HTCAPTION`、标签与窗口按钮 `HTCLIENT`、四边/四角为缩放边；
+  · 最大化几何 = 工作区 `2560×1410 @(0,0)`；`WindowChrome` 裁边问题已修；
+  · 多窗口：菜单触发后进程内出现 3 个顶层窗口（普通 / 无痕 / 又一个普通），无痕窗口标题带「无痕：」且标签条有无痕徽标；
+  · 地址栏下拉：输入 `goo` 列出「使用 Bing 搜索」+ 两条历史；`↓↓` 选中历史项后回车 → 标题变为 `Google — sc-browser`；
+  · 窗口几何：`SetWindowPos` 改成 1100×700@(700,220) 后正常关闭 → `settings.json` 写入该几何，重启后精确恢复（随后已还原为默认值）。
+  · **未能实跑的部分**（鼠标驱动，无合规的自动化手段）：中键关闭标签、拖拽重排的**实际拖拽动作**、
+  标签右键菜单的点击、鼠标点地址栏触发下拉——其中拖拽的下标换算已用 `TabReorder` 单测覆盖，
+  其余为「XAML 接线 + 代码审读」级别，接手时如需确认请人工点一遍。
+- **改动尚未 commit**（工作区：本轮交互改造 + 前两轮的外观/工程化改动）。
 
 ---
 
@@ -41,7 +50,7 @@
 
 ## 进行中（半成品 / 未提交）
 
-- （无。工作区全部为新增文件，尚未 `git commit`。）
+- （无。）
 
 ## 阻塞 / 待决策（Blockers）
 
@@ -51,17 +60,20 @@
 
 ## 下一步（Next Steps）
 
-1. （暂无既定下一步。新需求到来时：按 `ARCHITECTURE.md` §0.5 定范围 → 定位函数 → 实施 → 文档同步。）
-2. 若要继续推进产品功能，`ROADMAP.md` §🟡 近期规划 的 P1-1 ~ P1-5 是已评估过的候选。
-
----
+1. **提交本批改动**（建议按主题拆 3~4 个 commit）：外观（图标/自绘外壳/深色同步）、工程化（行尾 + bat），
+   交互（标签页/多窗口+无痕/菜单/地址栏下拉）。
+2. `ARCHITECTURE.md` 已按 AGENTS §1.1 拆分：§3 链路详解移到 [`arch/flows.md`](arch/flows.md)
+   （主文件 332 行）；§2 任务反查表还留在主文件里，下次再涨就先拆它。
+3. 仍需明确指示才推送远程（见下）。
 
 ## 如何运行 / 测试（Quick Verify）
 
-- 构建：`sh manager.sh build`
-- 运行：`sh manager.sh run`（或 `sh manager.sh start` 跑已构建的 exe）
-- 测试：`sh manager.sh test`
-- 提交前闸门：`sh manager.sh verify`（构建 -warnaserror + 单测 + 文档体检）
+- 构建：`sh manager.sh build`（无 bash 环境用 `build.bat`）
+- 运行：`sh manager.sh run`（或 `sh manager.sh start` 跑已构建的 exe）；`run.bat` 为等价物
+- 测试：`sh manager.sh test`（`test.bat`）
+- 提交前闸门：`sh manager.sh verify`（构建 -warnaserror + 单测 + 文档体检）；`verify.bat` 等价
+  （文档体检需 bash，无 `sh`/`bash` 时只告警跳过）
+- 一键 CI：`ci.bat`（clean → verify → publish 自包含单文件到 `artifacts\publish`）；发布另可 `sh manager.sh publish`
 - 看日志：`sh manager.sh logs`
 - 端到端自查技巧：往 `%LOCALAPPDATA%\sc-browser\session.json` 写
   `{"Urls":["browser://extensions"],"ActiveIndex":0,"SavedAt":"2026-10-16T00:00:00+00:00"}` 再启动，
@@ -88,10 +100,24 @@
   自实现 CRX 解包（v2/v3 头解析 + 目录穿越防护）。
 - **内部页面统一走 WebUI（HTML/JS）**：与 Chrome 的 `chrome://` 页面同构，
   复用项目「C#+JS」栈里的 JS 半边，改版快；代价是要额外维护一套消息协议。
+- **无痕不做第二套环境**：WebView2 的 InPrivate 是**控制器/profile 级**能力，
+  所以无痕窗口仍复用全应用那唯一一个 `CoreWebView2Environment`，只换
+  `IsInPrivateModeEnabled` 的控制器选项——「单环境」铁律不破。
+- **per-window 对象不进 DI 容器**：`TabManager` / `MainViewModel` / `MainWindow` 由
+  `BrowserWindowManager` 手工 new。容器表达不了「按会话类型构造」，且单例服务一旦持有
+  某个窗口实例，多窗口下必错。
+- **窗口缩放靠「内缩一圈」而不是加大命中带**：缩放命中带必须落在 WPF 自绘的区域上，
+  因为 WebView2 是独立子 HWND、会吃掉落在它身上的鼠标事件（见 ARCHITECTURE §7）。
+- **下拉/菜单/浮层一律走独立顶层窗口**：airspace 决定的，不是风格选择——WPF 元素盖不到 WebView2 上。
 
 ---
 
 ## 待解问题 / 给用户的提问（Open Questions）
 
 - **尚未推送到远程**：仓库已配置 `origin = https://github.com/zouv/sc-browser`，
-  但本地两个提交都还没 push。需要推送时请明确指示。
+  本地提交都还没 push；本轮改动也还没 commit。需要时请明确指示。
+- **无痕的扩展支持未验证**：WebView2 的 InPrivate profile 下扩展行为未实测（普通窗口的扩展链路已验证）。
+  如果以后要在无痕里用扩展，先读 `Browser/ExtensionService.cs` 的注释再动手。
+- **行尾属性后加的坑（已修，供备忘）**：行尾规则只管「以后怎么检出」，**不会自动改写已存在的文件**——
+  `.gitattributes` 加上 `*.sh = LF` 后，工作区里那份 CRLF 的 `check-docs.sh` 依旧带 `\r` 干活，
+  且 `git status` 显示干净（提交时会被规范化，看不出差异）。要真修必须 `rm` 后 `git checkout -- <file>` 重新落盘。

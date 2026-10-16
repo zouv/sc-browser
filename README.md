@@ -1,81 +1,176 @@
-# sc-browser
+<div align="center">
+  <img src="docs/icons/sc-browser-128.png" width="104" alt="ScBrowser" />
+  <h1>ScBrowser</h1>
+  <p>基于 <b>WPF + Microsoft Edge WebView2</b> 的 Windows 桌面浏览器，支持 Chrome 扩展</p>
 
-基于 **WPF + Microsoft Edge WebView2** 的 Windows 桌面浏览器。
-外壳用 WPF 原生控件实现，网页内容与内部页面由 WebView2 承载，支持 **Chrome 扩展加载**。
+[![平台](https://img.shields.io/badge/platform-Windows%2010%2B-0078D4?style=flat-square&logo=windows&logoColor=white)](#系统要求)
+[![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square&logo=dotnet&logoColor=white)](#从源码构建)
+[![Release](https://img.shields.io/github/v/release/zouv/sc-browser?style=flat-square&color=success&label=release)](../../releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+
+<img src="docs/images/screenshot-newtab.png" width="880" alt="ScBrowser 新标签页" />
+
+</div>
+
+ScBrowser 是一个从零写起的通用浏览器外壳：**外壳用 WPF 原生控件**（而不是再开一个 WebView 承载 UI），
+网页内容与内部页面由 **WebView2** 承载，每个标签页一个独立的 WebView2 实例。
+它同时支持加载 **Chrome 扩展**（含 `.crx` 自动解包），并让**深浅主题贯通到网页内容**。
 
 > 参考项目：[MicrosoftEdge/WebView2Browser](https://github.com/MicrosoftEdge/WebView2Browser)（C++ Win32 示例）。
-> 本项目沿用其多 WebView 思路，但在技术栈与架构上做了三处关键调整——**外壳改 WPF 原生**、
-> **引入分层架构与依赖注入**、**存储改 SQLite**。理由见 [`docs/01-技术栈说明.md`](docs/01-技术栈说明.md)。
+> 本项目沿用其多 WebView 思路，但在技术栈与架构上做了三处关键调整——外壳改 WPF 原生、引入分层架构与依赖注入、
+> 存储改 SQLite。理由见 [`docs/01-技术栈说明.md`](docs/01-技术栈说明.md)。
 
-## 技术栈
+## 特性
 
-C# / .NET 10（`net10.0-windows`）· WPF（外壳 UI）· Microsoft Edge WebView2（网页与内部页面）
-· SQLite（历史/书签/下载）· 原生 HTML/JS/CSS（内部页面 WebUI）。
-> 选型理由与各组件职责分工见 [`docs/01-技术栈说明.md`](docs/01-技术栈说明.md)（单一信息源，勿在此重复维护）。
+**浏览**
+- 多标签：新建 / 关闭（含鼠标中键）/ 切换 / **左键拖拽重排**（跟手 + 实时让位）/ 标签右键菜单
+- 无边框自绘外壳：窗口按钮并入标签条，标签条可拖拽、贴靠（Aero Snap）、双击最大化
+- **`Ctrl+Shift+T` 重开已关闭的标签页**；窗口尺寸与位置记忆
+- 前进 / 后退 / 刷新与停止 / 主页 / 页面缩放 / 页内错误提示条
 
-## 功能
+**地址栏**
+- 网址与搜索词自动判定，聚焦即全选
+- **历史下拉**：按输入实时过滤（地址前缀 > 标题前缀 > 包含，同档优先常访问），
+  ↑/↓ 选择、Enter 打开、Esc 收起；另有「使用 XX 搜索 / 直接打开」一行
+- 页面安全状态图标（HTTPS / HTTP / 危险，悬停有中文说明）
 
-- 多标签浏览（新建/关闭/切换）、前进/后退、刷新/停止、主页、网址与搜索词自动判定
-- 页面安全状态图标、favicon、标题与加载状态同步
-- 历史记录（去重 + 访问计数 + 关键字搜索）· 书签（Ctrl+D 一键收藏）· 下载（进度实时展示）
-- 内部页面：新标签页 / 历史 / 书签 / 下载 / 扩展程序 / 设置
-- **Chrome 扩展**：加载已解压扩展、安装 `.crx`（自动解包）、启用停用、卸载
-- 深浅主题热切换、会话保存与恢复、完整的键盘快捷键
+**多窗口**
+- `Ctrl+N` 新窗口、`Ctrl+Shift+N` **无痕窗口**（标签条带「无痕」徽标）
+- 无痕窗口不记录历史、不保存会话、下载不入库，Cookie 与站点数据关闭即弃
 
-## 快速开始
+**数据**
+- 历史记录（去重 + 访问计数 + 关键字搜索）、书签（`Ctrl+D` 一键收藏）、下载（进度实时展示）
+- 内部页面：新标签页 / 历史 / 书签 / 下载 / 扩展程序 / 设置，全部是随程序分发的本地 WebUI
+- 会话保存与恢复（退出时记住打开的标签页）
+
+**扩展与主题**
+- 加载已解压扩展、安装 `.crx`（自动解包）、启用停用、卸载
+- 深浅主题热切换，**同步影响网页的 `prefers-color-scheme`**（支持深色的站点自动变深，不做强制反色）
+  与 WebView2 的默认底色——深色下新建标签不会白闪
+
+## 下载安装
+
+前往 [Releases](../../releases/latest) 下载（`ScBrowser-vX.Y.Z-win-x64-*.zip`，解压即用）：
+
+| 包 | 体积 | 前置条件 |
+|---|---|---|
+| `selfcontained` | ~145 MB | **无**（自带 .NET 运行时） |
+| `frameworkdep` | 几 MB | 需自行安装 [.NET 10 桌面运行时](https://dotnet.microsoft.com/download/dotnet/10.0) |
+
+首次运行可能遇到 Windows SmartScreen 提示（本程序未做代码签名）：
+点「更多信息」→「仍要运行」即可。
+
+### 系统要求
+
+- **Windows 10 1809+ / Windows 11**
+- **WebView2 运行时**：Win10/11 通常已随 Edge 预装；若缺失，从
+  [微软官网](https://developer.microsoft.com/microsoft-edge/webview2/) 安装 Evergreen 版
+
+## 快捷键
+
+| 快捷键 | 作用 | 快捷键 | 作用 |
+|---|---|---|---|
+| `Ctrl+T` | 新建标签页 | `Ctrl+Shift+T` | 重开已关闭的标签页 |
+| `Ctrl+W` | 关闭标签页 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一个 / 上一个标签页 |
+| `Ctrl+N` | 新建窗口 | `Ctrl+Shift+N` | 新建无痕窗口 |
+| `Ctrl+L` / `Alt+D` | 聚焦地址栏（全选并展开历史下拉） | `Ctrl+R` / `F5` | 刷新 |
+| `Ctrl+Shift+R` | 强制刷新（忽略缓存） | `Ctrl+D` | 收藏当前页 |
+| `Ctrl+H` | 历史记录 | `Ctrl+J` | 下载内容 |
+| `Alt+←` / `Alt+→` | 后退 / 前进 | `Ctrl+1..8` / `Ctrl+9` | 切换到第 N 个 / 最后一个标签页 |
+| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | 放大 / 缩小 / 重置缩放 | `Esc` | 停止加载 / 放弃地址栏编辑 |
+
+> 焦点在网页里时快捷键同样生效（实现方式见 [`ARCHITECTURE.md`](ARCHITECTURE.md) §3.3）。
+
+## 从源码构建
+
+前置：[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。
 
 ```bash
-# 1. 构建
-sh manager.sh build
-
-# 2. 运行（前台，Ctrl-C 退出）
-sh manager.sh run
-
-# 3. 跑测试
-sh manager.sh test
+sh manager.sh build     # 构建（Debug）
+sh manager.sh run       # 前台运行
+sh manager.sh test      # 单元测试
+sh manager.sh verify    # 提交前闸门：构建(-warnaserror) + 单测 + 文档体检
+sh manager.sh publish   # 发布自包含单文件到 artifacts/publish
 ```
 
-> Windows 上也可在 Visual Studio 中直接打开 `sc-browser.slnx` 构建运行（需 VS 2022 17.13+）。
-> 前置条件：**Windows 10 1809+**、**.NET 10 SDK**、**WebView2 运行时**（Win10/11 通常已随 Edge 预装）。
+**不装 bash 也能用**：仓库根提供等价的 Windows 批处理脚本 `build.bat` / `run.bat` / `test.bat` /
+`verify.bat` / `clean.bat` / `publish.bat` / `ci.bat`（纯 cmd + dotnet；`ci.bat` 一键跑完
+「清理 → 闸门 → 自包含单文件发布」）。`manager.sh` 是命令语义的单一来源，两者保持同步。
 
-## 常用命令
-
-```bash
-sh manager.sh help        # 查看全部命令
-sh manager.sh verify      # 提交前闸门：构建(-warnaserror) + 单测 + 文档体检
-sh manager.sh start       # 后台运行已构建的 exe
-sh manager.sh logs        # 跟踪应用日志
-sh manager.sh data        # 查看应用数据目录
-sh manager.sh publish     # 发布自包含单文件到 artifacts/publish
-```
+也可以直接用 Visual Studio 2022（17.13+）打开 `sc-browser.slnx` 构建运行。
 
 ## 项目结构
 
 ```
-src/ScBrowser/            # WPF 应用（Browser 引擎 / Storage 存储 / Services 服务 / Views 视图 / Assets WebUI）
+src/ScBrowser/            # WPF 应用
+  Browser/                #   引擎层：WebView2 环境与标签页、导航、扩展、内部页面注册
+  Services/               #   服务层：窗口总管、设置、主题、会话、下载、地址栏建议
+  Storage/                #   存储层：SQLite（历史 / 书签 / 下载）
+  ViewModels/ Views/      #   外壳层：视图模型与 WPF 视图
+  Assets/ui/              #   内部页面 WebUI（HTML/CSS/JS）
+  Interop/                #   Win32 互操作（DWM、最大化钉工作区）
 tests/ScBrowser.Tests/    # xUnit 单元测试
 samples/extensions/       # 示例 Chrome 扩展（验证扩展加载链路）
-docs/                     # 使用/维护文档（面向人）
-AGENTS.md                 # AI 工作铁律（AI 开工先读）
-ARCHITECTURE.md           # 代码链路图谱（面向 AI）
-ROADMAP.md                # 开发路线图（总体计划与完成度）
-CHANGELOG.md              # 发布变更记录（按版本）
-HANDOFF.md                # 会话接力（进行中状态）
-manager.sh                # 统一管理脚本
+docs/                     # 面向使用者/维护者的文档；icons/ 是应用图标的矢量设计源
 ```
 
-## 已知约束
+## 技术栈与设计取舍
+
+C# / .NET 10（`net10.0-windows`）· WPF（外壳 UI）· Microsoft Edge WebView2（网页与内部页面）
+· SQLite（历史/书签/下载）· 原生 HTML/JS/CSS（内部页面 WebUI）。
+
+几个刻意的选择（完整理由见 [`docs/01-技术栈说明.md`](docs/01-技术栈说明.md) 与
+[`ARCHITECTURE.md`](ARCHITECTURE.md) §7）：
+
+- **外壳用 WPF 原生控件**，不为 UI 再开一个 WebView——省一整套 WebView 环境，
+  焦点/输入法/无障碍/DPI 也更省心。
+- **每个标签页一个 WebView2**（不做单实例复用）：换来切换零延迟与页面状态保留，代价是内存。
+- **全应用只有一个 `CoreWebView2Environment`**：所有标签共享 Cookie/缓存/扩展安装态；
+  无痕窗口也复用同一环境，只换 InPrivate 的 profile。
+- **内部页面走消息桥**而不是 `fetch` 直连宿主（见 `ARCHITECTURE.md` §3.1）。
+- 自绘外壳的两个已知坑（最大化被裁边、缩放命中带被 WebView2 吃掉）都在 §7 记了正确做法。
+
+## 已知限制
 
 - **仅 Windows**：依赖 WPF 与 WebView2。
-- **扩展只能加载「解压后的目录」**（WebView2 平台限制）；`.crx` 由本应用先解包再加载，
-  没有扩展商店、不校验签名、不自动更新。
-- 安装扩展后**不要改动其目录内的文件**，否则该扩展会被 WebView2 自动卸载。
-- 内部页面无法使用 `fetch` 直连宿主，必须走消息桥（见 `ARCHITECTURE.md` §3.1）。
+- **扩展只能加载「解压后的目录」**（WebView2 平台限制）；`.crx` 由本应用先解包再加载。
+  没有扩展商店、不校验签名、不自动更新——**安装扩展即等于信任其代码**。
+- 安装扩展后不要改动其目录内的文件，否则该扩展会被 WebView2 自动卸载。
+- 无痕窗口内不记录下载（这是刻意的）。
+- 尚无密码保存、自动填充、多用户配置（见 [ROADMAP](ROADMAP.md)）。
+
+## 常见问题
+
+- **页面空白 / 打不开**：先确认 WebView2 运行时已安装；再看日志
+  （`%LOCALAPPDATA%\sc-browser\logs`，或 `sh manager.sh logs`）搜 `[ERR]` / `[FTL]`。
+- **扩展没生效**：确认「设置 → 扩展程序」里的总开关为开（该开关是环境创建期参数，改动需重启应用）。
+- **数据在哪 / 怎么备份或重置**：全部位于 `%LOCALAPPDATA%\sc-browser`（`sh manager.sh data` 查看，
+  `sh manager.sh reset` 重置）。
+- 更多排查见 [`docs/02-使用说明.md`](docs/02-使用说明.md)。
 
 ## 文档
 
-- 怎么用 / 出问题怎么查 → [`docs/02-使用说明.md`](docs/02-使用说明.md)
-- 代码在哪 / 怎么连 → [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- 要做什么 / 做到哪了 → [`ROADMAP.md`](ROADMAP.md)
+| 文档 | 内容 |
+|---|---|
+| [`docs/01-技术栈说明.md`](docs/01-技术栈说明.md) | 技术栈选型理由与各组件分工 |
+| [`docs/02-使用说明.md`](docs/02-使用说明.md) | 面向使用者的操作手册与排查手册 |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) / [`arch/flows.md`](arch/flows.md) | 代码地图：文件职责、任务→代码位置、重点链路、易踩的坑 |
+| [`ROADMAP.md`](ROADMAP.md) | 要做什么、做到哪了 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 每个版本的变化 |
+| [`AGENTS.md`](AGENTS.md) | 本仓库的 AI 协作约定（改代码前先读） |
 
-> AI 协作说明：本项目采用一套「AI 协作文档体系」，AI 代理开工请先读 [`AGENTS.md`](./AGENTS.md)。
+## 贡献
+
+欢迎提 Issue 与 PR。开始之前：
+
+1. 读 [`AGENTS.md`](AGENTS.md)（本仓库的改动规则与铁律，人机通用）；
+2. 按 [`ARCHITECTURE.md`](ARCHITECTURE.md) §0.5 的「任务作用域路由」定位要改的文件；
+3. 提交前跑 `sh manager.sh verify`（或 `verify.bat`）；
+4. 用户可感知的变化记入 [`CHANGELOG.md`](CHANGELOG.md) 的 `[未发布]` 区。
+
+## 许可证
+
+[MIT](LICENSE) © 2026 zouv
+
+感谢 [MicrosoftEdge/WebView2Browser](https://github.com/MicrosoftEdge/WebView2Browser)
+提供的多 WebView 架构参考，以及 Microsoft Edge WebView2 团队提供的运行时。
