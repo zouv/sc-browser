@@ -111,8 +111,11 @@ cmd_publish() {
   local config="${1:-Release}"
   local out="${PROJECT_ROOT}/artifacts/publish"
   log "发布自包含单文件（${config}）→ ${out}"
+  # IncludeAllContentForSelfExtract：把内部页面（Assets/ui）也打进 exe，启动时释放到临时目录。
+  # 不开这个开关，publish 会在 exe 旁边留一个 Assets 目录 —— 用户只拷走 exe 时内部页面会加载不出来。
   dotnet publish "${APP_PROJ}" -c "${config}" -r win-x64 --self-contained true \
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+    -p:IncludeAllContentForSelfExtract=true \
     -o "${out}"
   ok "产物：${out}"
 }

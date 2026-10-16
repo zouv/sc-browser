@@ -57,9 +57,12 @@ cd /d "%ROOT%"
 rem 注意：
 rem - 显式关闭 PublishReadyToRun：本机 SDK 上 R2R 与 WPF 单文件发布的组合不稳定，
 rem   会间歇性触发 NETSDK1096 crossgen 失败。
+rem - IncludeAllContentForSelfExtract 必须开：把内部页面（Assets\ui）也打进 exe，
+rem   启动时释放到临时目录。不开的话 exe 旁边会留一个 Assets 目录，
+rem   用户只拷走 exe 时内部页面会加载不出来。
 rem - -o 用相对路径 artifacts\publish：本机 dotnet CLI 对「cmd 变量展开出来的绝对
 rem   路径」解析有缺陷，会静默跳过单文件打包而输出散落 DLL。
-dotnet publish "%PROJ%" -c %CONFIG% -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishReadyToRun=false -o artifacts\publish --nologo
+dotnet publish "%PROJ%" -c %CONFIG% -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:PublishReadyToRun=false -o artifacts\publish --nologo
 
 if errorlevel 1 goto :Failed
 
