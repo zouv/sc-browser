@@ -78,6 +78,10 @@
 
 ### 修复
 
+- **单文件发布产物依赖旁边的 `Assets` 目录**：`PublishSingleFile` 默认不把 Content
+  （内部页面 WebUI）打进 exe，而是在 exe 旁边留目录；用户只拷走 exe 运行时，
+  新标签页 / 设置等内部页面会加载不出来（白页）。发布脚本已补
+  `IncludeAllContentForSelfExtract`，成为真正的单文件。
 - **新开窗口时地址栏下方那条红条会闪一下（已定位到真因）**：它其实**不是**错误提示条，
   而是「没有内容的红条」。`Visibility` 绑定在 `ActiveTab` 还是 `null` 的那一瞬间取不到值，
   而没有 `FallbackValue` 时 WPF 会把目标属性设成**类型默认值**——`Visibility` 的默认值是
