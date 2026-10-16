@@ -10,6 +10,11 @@
 *.sh            text eol=lf
 *.bash          text eol=lf
 
+# cmd.exe 对 LF 行尾的批处理文件解析有缺陷（会误拆中文 rem 注释、把片段当命令执行，
+# 报 "is not recognized" / "| was unexpected"），因此 .bat/.cmd 必须以 CRLF 行尾提交。
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
 # 这些必须是 LF，否则 WebUI 与配置里的字面量可能被意外改写
 *.js            text eol=lf
 *.css           text eol=lf
