@@ -7,7 +7,7 @@
 
 ---
 
-## 总进度（2026-10-16 更新）
+## 总进度（2026-10-19 更新）
 
 **v0.1.0 已交付**：C#(WPF) + WebView2 + JS 的通用浏览器，具备多标签导航、历史/书签/下载、
 内部页面（WebUI）、深度主题、会话恢复、快捷键体系，以及 **Chrome 扩展加载/管理**（含 `.crx` 解包）。
@@ -18,9 +18,27 @@
 标签页交互（中键关闭 / 拖拽重排 / 右键菜单 / `Ctrl+Shift+T` 真重开）、主菜单重构与窗口尺寸记忆。
 细节见 `CHANGELOG [0.2.0]`。
 
+**v0.2.1 已发布（2026-10-19）**：页内查找（`Ctrl+F`，原生 Find + 旧运行时 JS 兜底）；
+打包体系对齐 `sc-code/packages`（`packages/dev` 的 debug unpack zip、
+`packages/release` 的 setup.exe + unpack zip）；版本号提升到 0.2.1。
+细节见 `CHANGELOG [0.2.1]`。
+
 ---
 
 ## ✅ 已交付里程碑
+
+### M3 · v0.2.1 页内查找 + 打包体系（2026-10-19）
+
+一句话结论：补齐页内查找，并把发布产物整理成可直接安装 / 免安装两种形态。
+
+- 页内查找：工具栏下方查找条、输入即搜、匹配计数、Enter/Shift+Enter 与 F3/Shift+F3 跳转、Esc 关闭。
+- 旧 WebView2 运行时自动退回 JS + CSS Highlight 实现（不修改页面 DOM）。
+- `packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`（Debug + PDB + logs + build-info）。
+- `packages/release/ScBrowser_<版本>_x64-unpack.zip`（自包含免安装）+
+  `ScBrowser_<版本>_x64-setup.exe`（按用户安装，自带卸载）。
+- 安装器工具链通过 NuGet `Tools.InnoSetup` 还原，打包机无需预装 Inno Setup。
+
+---
 
 ### M2 · v0.2.0 桌面体验补完（2026-10-16）
 
@@ -73,7 +91,7 @@
 
 | # | 任务 | 说明 |
 |---|------|------|
-| P1-1 | 页内查找（Ctrl+F） | 用 WebView2 的 `Find` API（`CoreWebView2.Find` / `FindNext`）实现查找条；当前 Ctrl+F 刻意不拦截 |
+| ~~P1-1~~ ✅ | ~~页内查找（Ctrl+F）~~ | **已完成**（2026-10-19）：查找条 + 输入即搜 + 匹配计数 + 上/下跳转；原生 Find API 不可用时自动走 JS 兜底 |
 | ~~P1-2~~ ✅ | ~~重开已关闭标签页（Ctrl+Shift+T）~~ | **已完成**（2026-10-16）：`ClosedTabHistory` 维护 25 条「最近关闭」栈 |
 | ~~P1-3~~ ✅ | ~~标签拖拽重排 + 中键关闭~~ | **已完成**（2026-10-16）：拖拽实时重排 + 中键关闭 + 标签右键菜单 |
 | P1-4 | 会话惰性恢复 | 现在恢复 N 个标签会立即初始化 N 个 WebView2，标签多时启动慢；应改为点开才加载 |

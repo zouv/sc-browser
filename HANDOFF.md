@@ -17,22 +17,29 @@
 
 ## 状态快照
 
-- **最近更新**：2026-10-16
-- **整体状态**：✅ 无进行中的开发任务（v0.2.0 已发布并推送远程）
+- **最近更新**：2026-10-19
+- **整体状态**：✅ 无进行中的开发任务（v0.2.1 已发布并推送远程）
 - **当前分支（必填）**：`main`（v0.1.0 已作为根提交入库；后续开发建议开 feature 分支）
-- **最后验证状态**：`sh manager.sh verify` ✅（构建 -warnaserror + **90/90** 单测 + 文档体检）。
-  实跑逐项验过（`PrintWindow` 抓窗 / `WM_NCHITTEST` 探测 / UI Automation 驱动 + 前台窗口守卫的键盘模拟）：
-  · `WM_NCHITTEST`：标签条空白 `HTCAPTION`、标签与窗口按钮 `HTCLIENT`、四边/四角为缩放边；
-  · 最大化几何 = 工作区 `2560×1410 @(0,0)`；`WindowChrome` 裁边问题已修；
-  · 多窗口：菜单触发后进程内出现 3 个顶层窗口（普通 / 无痕 / 又一个普通），无痕窗口标题带「无痕：」且标签条有无痕徽标；
-  · 地址栏下拉：输入 `goo` 列出「使用 Bing 搜索」+ 两条历史；`↓↓` 选中历史项后回车 → 标题变为 `Google — sc-browser`；
-  · 窗口几何：`SetWindowPos` 改成 1100×700@(700,220) 后正常关闭 → `settings.json` 写入该几何，重启后精确恢复（随后已还原为默认值）。
-  · **未能实跑的部分**（鼠标驱动，无合规的自动化手段）：中键关闭标签、拖拽重排的**实际拖拽动作**、
-  标签右键菜单的点击、鼠标点地址栏触发下拉——其中拖拽的下标换算已用 `TabReorder` 单测覆盖，
-  其余为「XAML 接线 + 代码审读」级别，接手时如需确认请人工点一遍。
-- **已发布**：`v0.2.0` 已 commit / push / 打 Release
-  （https://github.com/zouv/sc-browser/releases/tag/v0.2.0 ，含自包含与依赖框架两个单文件包）；
-  工作区干净，无未提交改动。
+- **最后验证状态**：`sh manager.sh test` ✅（**94/94**）；`Ctrl+F` 已用 UI Automation 实跑：
+  · 打开/关闭（`Ctrl+F` / `Esc`）、输入即搜、匹配计数、`Enter` / `Shift+Enter` / `F3` / `Shift+F3` 跳转均正确
+  （设置页搜「扩展」→ `1/3 → 2/3 → 3/3 → 2/3`）；切换标签自动收起；重开保留关键词。
+  · 截图确认查找条与深色主题一致、全部匹配黄色高亮、当前匹配橙色高亮。
+  · 本机 WebView2 运行时为 **131.0.2903.86**，不支持 `CoreWebView2.Find`（缺 `ICoreWebView2_28`），
+    已实跑验证 **JS 兜底路径**；原生路径未在本机触发（升级运行时后自动启用）。
+  · 打包（目标版本 **0.2.1**）：`sh manager.sh publish` 与 `publish.bat` 均跑通；产物与
+    `sc-code/packages` 对齐——
+    `packages/dev/ScBrowser_0.2.1_x64-unpack-debug.zip`（Debug + PDB + logs + build-info）、
+    `packages/release/ScBrowser_0.2.1_x64-unpack.zip`（自包含免安装）、
+    `packages/release/ScBrowser_0.2.1_x64-setup.exe`（安装程序）。
+    两个 zip 均为单一根目录、条目使用正斜杠（Windows `tar.exe` 生成）；
+    暂存目录 `.runtime/package` 成功后已删除。
+    Setup 已做静默安装/卸载实测：安装到临时目录成功、安装后的 exe 哈希与 unpack zip 一致、
+    卸载后目录/开始菜单/注册表项均已清理。
+- **已发布**：`v0.2.1`（2026-10-19）
+  （https://github.com/zouv/sc-browser/releases/tag/v0.2.1 ），上传
+  `ScBrowser_0.2.1_x64-setup.exe` 与 `ScBrowser_0.2.1_x64-unpack.zip`；
+  页内查找与打包体系改造均已包含在此版本。
+- **上一版**：`v0.2.0`（https://github.com/zouv/sc-browser/releases/tag/v0.2.0 ）。
 
 ---
 
@@ -62,11 +69,14 @@
 
 ## 下一步（Next Steps）
 
-1. 产品功能候选见 `ROADMAP.md` §🟡 近期规划（P1-1 页内查找、P1-4 会话惰性恢复、P2-* 增强）。
+1. 产品功能候选见 `ROADMAP.md` §🟡 近期规划（P1-4 会话惰性恢复、P2-* 增强）。
 2. `ARCHITECTURE.md` 已按 AGENTS §1.1 拆分：§3 链路详解在 [`arch/flows.md`](arch/flows.md)
-   （主文件 332 行）；§2 任务反查表仍在主文件，下次再涨就先拆它。
-3. 发布流程（下次发版照做）：`publish.bat` → 把 exe 单独 zip → `gh release create <tag> <zips>`；
-   注意发布脚本必须带 `IncludeAllContentForSelfExtract`（否则内部页面白页）。
+   （主文件约 350 行）；§2 任务反查表仍在主文件，下次再涨就先拆它。
+3. 发布流程（下次发版照做）：`sh manager.sh publish`（或 `publish.bat`）→
+   从 `packages/release/` 取 `ScBrowser_<版本>_x64-setup.exe` 与
+   `ScBrowser_<版本>_x64-unpack.zip` → `gh release create <tag> <文件>`。
+   **两者必须同时上传**（与 sc-code 一致）；`packages/dev` 的 Debug zip 不上传。
+   安装程序按用户安装（无需管理员权限）。
 
 ## 如何运行 / 测试（Quick Verify）
 
@@ -75,7 +85,10 @@
 - 测试：`sh manager.sh test`（`test.bat`）
 - 提交前闸门：`sh manager.sh verify`（构建 -warnaserror + 单测 + 文档体检）；`verify.bat` 等价
   （文档体检需 bash，无 `sh`/`bash` 时只告警跳过）
-- 一键 CI：`ci.bat`（clean → verify → publish 自包含单文件到 `artifacts\publish`）；发布另可 `sh manager.sh publish`
+- 一键 CI：`ci.bat`（clean → verify → publish 到 `packages\`）；发布另可 `sh manager.sh publish`
+- 打包产物：`packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`、
+  `packages/release/ScBrowser_<版本>_x64-unpack.zip` +
+  `ScBrowser_<版本>_x64-setup.exe`；`clean` 保留 `packages`。
 - 看日志：`sh manager.sh logs`
 - 端到端自查技巧：往 `%LOCALAPPDATA%\sc-browser\session.json` 写
   `{"Urls":["browser://extensions"],"ActiveIndex":0,"SavedAt":"2026-10-16T00:00:00+00:00"}` 再启动，
@@ -111,6 +124,19 @@
 - **窗口缩放靠「内缩一圈」而不是加大命中带**：缩放命中带必须落在 WPF 自绘的区域上，
   因为 WebView2 是独立子 HWND、会吃掉落在它身上的鼠标事件（见 ARCHITECTURE §7）。
 - **下拉/菜单/浮层一律走独立顶层窗口**：airspace 决定的，不是风格选择——WPF 元素盖不到 WebView2 上。
+- **页内查找优先原生、旧运行时走 JS 兜底**：`CoreWebView2.Find` 需要 `ICoreWebView2_28`，
+  本机 WebView2 131 没有该接口（访问即抛 `NotImplementedException`）。`BrowserTab` 在原生不可用
+  或启动失败时退回 `ExecuteScriptAsync` + `TreeWalker` + `CSS.highlights`；升级运行时后自动走原生。
+  **不要为「只留一条实现」删掉兜底**，否则旧运行时会直接失去查找功能。
+- **打包统一到 `packages/`，安装程序用 Inno Setup 7**：目录结构对齐 sc-code——
+  `packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`（Debug + PDB + 日志 + build-info）与
+  `packages/release/ScBrowser_<版本>_x64-unpack.zip` + `ScBrowser_<版本>_x64-setup.exe`。
+  两个 zip 都由 Windows 自带的 `tar.exe` 生成（带单一根目录、正斜杠条目）；
+  **不要换回 PowerShell 的 ZipFile**（Windows PowerShell 5.1 会写出反斜杠条目名）。
+  安装器工具链通过 NuGet `Tools.InnoSetup` 还原到本地缓存，`installer/ScBrowser.Installer.csproj`
+  只负责取 ISCC.exe 路径，**不要让打包机依赖系统预装的 Inno Setup**。
+  安装按用户落到 `%LOCALAPPDATA%\Programs\ScBrowser`（无 UAC），卸载器只删程序文件，
+  **绝不能**删除 `%LOCALAPPDATA%\sc-browser` 里的用户数据。
 
 ---
 

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -25,6 +26,10 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 {
     private CoreWebView2? _core;
     private CoreWebView2DevToolsProtocolEventReceiver? _securityReceiver;
+    private CoreWebView2Find? _find;
+    private bool _usingJsFind;
+    private int _jsFindCount;
+    private int _jsFindIndex = -1;
     private string? _logicalUrl;
     private bool _disposed;
 
@@ -98,6 +103,18 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
     /// <summary>渲染进程异常退出（用于错误页与恢复）。</summary>
     public event EventHandler<CoreWebView2ProcessFailedEventArgs>? ProcessFailed;
+
+    /// <summary>页内查找的匹配数或当前匹配序号发生变化。</summary>
+    public event EventHandler? FindStatusChanged;
+
+    /// <summary>当前查找会话的匹配总数；没有会话时为 0。</summary>
+    public int FindMatchCount => _usingJsFind ? _jsFindCount : _find?.MatchCount ?? 0;
+
+    /// <summary>当前匹配序号（从 1 开始）；没有活动匹配时为 -1。</summary>
+    public int FindActiveMatchIndex => _usingJsFind ? _jsFindIndex : _find?.ActiveMatchIndex ?? -1;
+
+    /// <summary>当前页面是否可执行页内查找（原生 API 或 JS 兜底任一可用）。</summary>
+    public bool IsFindSupported => _core is not null;
 
     public BrowserTab(int id)
     {
@@ -288,6 +305,20 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         core.WebMessageReceived += (_, e) => WebMessageReceived?.Invoke(this, e);
         core.DownloadStarting += (_, e) => DownloadStarting?.Invoke(this, e);
         core.ProcessFailed += (_, e) => ProcessFailed?.Invoke(this, e);
+
+        // 页内查找是较新的平台能力（需要 ICoreWebView2_28）。旧运行时上访问 Find
+        // 会直接抛 NotImplementedException；此时退回到 ExecuteScript + CSS Highlight
+        // 的 JS 实现，保证功能仍然可用。
+        try
+        {
+            _find = core.Find;
+            _find.MatchCountChanged += (_, _) => FindStatusChanged?.Invoke(this, EventArgs.Empty);
+            _find.ActiveMatchIndexChanged += (_, _) => FindStatusChanged?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception)
+        {
+            _find = null;
+        }
     }
 
     /// <summary>
@@ -423,6 +454,303 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
             View.ZoomFactor = Math.Clamp(factor, 0.25, 5.0);
         }
     }
+
+    // --------------------------------------------------------------------- //
+    // 页内查找
+    //
+    // 首选 WebView2 的 Find API（隐藏它自带的查找条，由外壳绘制与主题一致的 UI）。
+    // 但该 API 需要较新的 WebView2 运行时；旧运行时（如 131.x）访问 CoreWebView2.Find
+    // 会抛 NotImplementedException，此时退回到 JS 实现：
+    //   · 用 TreeWalker 收集文本节点里的匹配区间；
+    //   · 用 CSS Custom Highlight API 高亮（不修改页面 DOM，站点脚本也看不到）；
+    //   · 状态挂在 window.__scFind 上，跨多次 ExecuteScriptAsync 保持。
+    // JS 路径只覆盖主文档、且匹配不跨文本节点——对旧运行时是可接受的降级。
+    // --------------------------------------------------------------------- //
+
+    /// <summary>开始一次查找（从页首搜索）。返回是否成功发起。</summary>
+    public async Task<bool> StartFindAsync(string term, bool caseSensitive = false)
+    {
+        if (_core is null || string.IsNullOrEmpty(term))
+        {
+            return false;
+        }
+
+        if (_find is not null && await StartNativeFindAsync(term, caseSensitive).ConfigureAwait(true))
+        {
+            _usingJsFind = false;
+            return true;
+        }
+
+        // 运行时只实现了部分 Find 接口、或本次会话启动失败：改走 JS 实现。
+        _usingJsFind = true;
+        return await ExecuteJsFindAsync(BuildFindStartScript(term)).ConfigureAwait(true);
+    }
+
+    private async Task<bool> StartNativeFindAsync(string term, bool caseSensitive)
+    {
+        try
+        {
+            _find!.Stop();
+
+            var options = _core!.Environment.CreateFindOptions();
+            options.FindTerm = term;
+            options.IsCaseSensitive = caseSensitive;
+            options.ShouldHighlightAllMatches = true;
+            options.SuppressDefaultFindDialog = true;
+
+            await _find.StartAsync(options).ConfigureAwait(true);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>跳到下一个匹配。</summary>
+    public void FindNext()
+    {
+        if (_find is not null && !_usingJsFind)
+        {
+            try
+            {
+                _find.FindNext();
+            }
+            catch (Exception)
+            {
+                // 没有活动会话时静默失败即可。
+            }
+
+            return;
+        }
+
+        _ = ExecuteJsFindAsync(BuildFindStepScript(+1));
+    }
+
+    /// <summary>跳到上一个匹配。</summary>
+    public void FindPrevious()
+    {
+        if (_find is not null && !_usingJsFind)
+        {
+            try
+            {
+                _find.FindPrevious();
+            }
+            catch (Exception)
+            {
+                // 没有活动会话时静默失败即可。
+            }
+
+            return;
+        }
+
+        _ = ExecuteJsFindAsync(BuildFindStepScript(-1));
+    }
+
+    /// <summary>结束查找会话并清除页面上的高亮。</summary>
+    public void StopFind()
+    {
+        if (_find is not null && !_usingJsFind)
+        {
+            try
+            {
+                _find.Stop();
+            }
+            catch (Exception)
+            {
+                // 标签可能正在关闭，无需上抛。
+            }
+
+            return;
+        }
+
+        _ = ExecuteJsFindAsync(FindStopScript);
+    }
+
+    /// <summary>
+    /// 执行一段 JS 查找脚本，并把返回的 <c>{count, index, supported?}</c> 写回状态。
+    /// </summary>
+    private async Task<bool> ExecuteJsFindAsync(string script)
+    {
+        if (_core is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var json = await _core.ExecuteScriptAsync(script).ConfigureAwait(true);
+            if (!TryParseFindResult(json, out var count, out var index, out var supported))
+            {
+                return false;
+            }
+
+            _jsFindCount = count;
+            _jsFindIndex = index > 0 ? index : -1;
+
+            if (!supported)
+            {
+                return false;
+            }
+
+            FindStatusChanged?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+        catch (Exception)
+        {
+            // 页面已被导航走 / 无法执行脚本：调用方据此显示「查找不可用」。
+            return false;
+        }
+    }
+
+    private static bool TryParseFindResult(string? json, out int count, out int index, out bool supported)
+    {
+        count = 0;
+        index = 0;
+        supported = true;
+
+        if (string.IsNullOrEmpty(json) || json == "null")
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("count", out var countProp) || !countProp.TryGetInt32(out count)
+                || !root.TryGetProperty("index", out var indexProp) || !indexProp.TryGetInt32(out index))
+            {
+                return false;
+            }
+
+            // 没有该字段 = 支持；显式 false 才是「浏览器没有 CSS Highlight API」。
+            supported = !root.TryGetProperty("supported", out var supportedProp)
+                        || supportedProp.ValueKind != JsonValueKind.False;
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string BuildFindStartScript(string term)
+    {
+        // 用 JSON 序列化得到合法的 JS 字符串字面量（引号/反斜杠/换行都安全）。
+        var termLiteral = JsonSerializer.Serialize(term);
+
+        return $$"""
+            (() => {
+              if (window.__scFind) { window.__scFind.ranges = []; }
+              window.__scFind = { term: {{termLiteral}}, ranges: [], index: 0 };
+
+              const styleId = '__sc_find_style';
+              if (!document.getElementById(styleId)) {
+                const style = document.createElement('style');
+                style.id = styleId;
+                style.textContent =
+                  '::highlight(sc-find-all){background:#ffe066;color:#111;}' +
+                  '::highlight(sc-find-active){background:#ff8c00;color:#111;}';
+                (document.head || document.documentElement).appendChild(style);
+              }
+
+              window.__scFindApply = function (index) {
+                const state = window.__scFind;
+                if (!state || state.ranges.length === 0) {
+                  if (window.CSS && CSS.highlights) {
+                    CSS.highlights.delete('sc-find-all');
+                    CSS.highlights.delete('sc-find-active');
+                  }
+                  return { count: 0, index: 0 };
+                }
+
+                const total = state.ranges.length;
+                state.index = ((index % total) + total) % total;
+                const active = state.ranges[state.index];
+
+                try {
+                  CSS.highlights.set('sc-find-all', new Highlight(...state.ranges));
+                  CSS.highlights.set('sc-find-active', new Highlight(active));
+                } catch (e) {
+                  // 匹配过多时可能超出参数上限：至少保证当前匹配可见。
+                  try { CSS.highlights.set('sc-find-active', new Highlight(active)); } catch (e2) {}
+                }
+
+                const el = active.startContainer.nodeType === 3
+                  ? active.startContainer.parentElement
+                  : active.startContainer;
+                if (el && el.scrollIntoView) {
+                  el.scrollIntoView({ block: 'center', inline: 'nearest' });
+                }
+
+                return { count: total, index: state.index + 1 };
+              };
+
+              if (!window.CSS || !CSS.highlights) {
+                return { count: 0, index: 0, supported: false };
+              }
+
+              const root = document.body || document.documentElement;
+              if (!root) { return { count: 0, index: 0 }; }
+
+              const needle = {{termLiteral}};
+              const hayNeedle = needle.toLowerCase();
+              const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                  const parent = node.parentElement;
+                  if (!parent) { return NodeFilter.FILTER_REJECT; }
+                  const tag = parent.tagName;
+                  if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' ||
+                      tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') {
+                    return NodeFilter.FILTER_REJECT;
+                  }
+                  return node.nodeValue ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                }
+              });
+
+              let node;
+              while ((node = walker.nextNode()) && window.__scFind.ranges.length < 10000) {
+                const text = node.nodeValue;
+                const hay = text.toLowerCase();
+                let at = 0;
+                while ((at = hay.indexOf(hayNeedle, at)) !== -1) {
+                  const range = document.createRange();
+                  range.setStart(node, at);
+                  range.setEnd(node, at + needle.length);
+                  window.__scFind.ranges.push(range);
+                  at += needle.length;
+                }
+              }
+
+              return window.__scFindApply(0);
+            })()
+            """;
+    }
+
+    private static string BuildFindStepScript(int delta) => $$"""
+        (() => {
+          const state = window.__scFind;
+          if (!state || typeof window.__scFindApply !== 'function') {
+            return { count: 0, index: 0 };
+          }
+          return window.__scFindApply(state.index + ({{delta}}));
+        })()
+        """;
+
+    private const string FindStopScript = """
+        (() => {
+          window.__scFind = null;
+          window.__scFindApply = null;
+          if (window.CSS && CSS.highlights) {
+            CSS.highlights.delete('sc-find-all');
+            CSS.highlights.delete('sc-find-active');
+          }
+          return { count: 0, index: 0 };
+        })()
+        """;
 
     private void UpdateHistoryState()
     {
@@ -576,6 +904,8 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         }
 
         _core = null;
+        _find = null;
+        _usingJsFind = false;
     }
 }
 

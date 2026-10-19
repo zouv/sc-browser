@@ -4,7 +4,8 @@ setlocal EnableDelayedExpansion
 
 rem ============================================================
 rem  sc-browser - 清理脚本
-rem  移除 src/ 与 tests/ 下的 bin/obj，以及发布产物 artifacts/
+rem  移除 src/、tests/、installer/ 下的 bin/obj；
+rem  保留 packages/ 成品包（与 sc-code 的 clean 语义一致）。
 rem  用法: clean.bat
 rem  等价命令: sh manager.sh clean
 rem ============================================================
@@ -12,7 +13,7 @@ rem ============================================================
 pushd "%~dp0"
 
 echo ============================================================
-echo  Clean  ^|  移除 bin / obj / artifacts
+echo  Clean  ^|  移除 bin / obj（保留 packages）
 echo ============================================================
 
 rem 先结束在跑的实例：它占用 ScBrowser.exe，会让删除失败（只是静默失败，不易发现）。
@@ -20,11 +21,13 @@ taskkill /IM ScBrowser.exe /F >nul 2>&1
 
 call :CleanProject "src\ScBrowser"
 call :CleanProject "tests\ScBrowser.Tests"
+call :CleanProject "installer"
 
+rem 历史产物目录：旧版本发布到 artifacts，迁移后顺手清掉残留。
 if exist "artifacts" ( echo  - artifacts & rmdir /S /Q "artifacts" )
 
 echo.
-echo [SUCCESS] 清理完成。
+echo [SUCCESS] 清理完成（packages 成品包已保留）。
 popd
 exit /b 0
 

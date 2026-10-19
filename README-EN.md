@@ -84,6 +84,7 @@ choose "More info" → "Run anyway".
 | `Ctrl+H` | History | `Ctrl+J` | Downloads |
 | `Alt+←` / `Alt+→` | Back / forward | `Ctrl+1..8` / `Ctrl+9` | Nth / last tab |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Zoom in / out / reset | `Esc` | Stop loading / discard address bar edit |
+| `Ctrl+F` | Find in page | `F3` / `Shift+F3` | Next / previous match |
 
 > Shortcuts keep working while the focus is inside the page.
 
@@ -96,13 +97,26 @@ sh manager.sh build     # build (Debug)
 sh manager.sh run       # run in the foreground
 sh manager.sh test      # unit tests
 sh manager.sh verify    # pre-commit gate: build (-warnaserror) + tests + doc check
-sh manager.sh publish   # self-contained single-file build into artifacts/publish
+sh manager.sh publish   # package into packages/ (dev zip + release setup/unpack zip)
 ```
 
 **No bash?** Equivalent Windows batch scripts live in the repository root (`build.bat`, `run.bat`,
 `test.bat`, `verify.bat`, `clean.bat`, `publish.bat`, `ci.bat` — plain cmd + dotnet; `ci.bat` runs
-clean → gate → self-contained publish in one go). `manager.sh` is the single source of truth for
+clean → gate → package in one go). `manager.sh` is the single source of truth for
 command semantics; the two stay in sync.
+
+**Package output** (`packages/` is git-ignored; `clean` preserves it):
+
+- `packages/dev/ScBrowser_<version>_x64-unpack-debug.zip`: Debug portable package
+  (framework-dependent) with `ScBrowser.pdb`, `logs/` and `build-info.txt`.
+- `packages/release/ScBrowser_<version>_x64-unpack.zip`: Release portable package
+  (self-contained; no .NET runtime required on the target).
+- `packages/release/ScBrowser_<version>_x64-setup.exe`: per-user Windows installer
+  (installs to `%LOCALAPPDATA%\Programs\ScBrowser`, no admin rights, includes an uninstaller).
+  The Inno Setup toolchain is restored from the `Tools.InnoSetup` NuGet package — no manual install needed.
+
+> Both zips contain a single root directory (`ScBrowser_<version>_x64-unpack[-debug]/`);
+> extract and run `ScBrowser.exe`. The layout matches `sc-code/packages`.
 
 You can also open `sc-browser.slnx` in Visual Studio 2022 (17.13+).
 

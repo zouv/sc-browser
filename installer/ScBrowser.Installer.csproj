@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ===================================================================== -->
+  <!-- 安装程序工具链（不参与应用构建）                                      -->
+  <!--                                                                       -->
+  <!-- 这里只为一个目的存在：把 Inno Setup 的编译器等工具通过 NuGet 还原到本地， -->
+  <!-- 避免打包机必须手动安装 Inno Setup。publish 脚本用                       -->
+  <!-- `dotnet msbuild installer/ScBrowser.Installer.csproj \                 -->
+  <!--   -getProperty:InnoSetupCompiler` 取到 ISCC.exe 的绝对路径。            -->
+  <!--                                                                       -->
+  <!-- 不要把它加入解决方案：它不是应用的一部分，也不需要产物。                 -->
+  <!-- ===================================================================== -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Tools.InnoSetup 包含完整的 x64 版 Inno Setup 编译器（ISCC.exe）与语言文件。 -->
+    <PackageReference Include="Tools.InnoSetup" Version="7.1.0" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

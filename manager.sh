@@ -11,6 +11,12 @@ set -uo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_PROJ="${PROJECT_ROOT}/src/ScBrowser/ScBrowser.csproj"
 TEST_PROJ="${PROJECT_ROOT}/tests/ScBrowser.Tests/ScBrowser.Tests.csproj"
+INSTALLER_PROJ="${PROJECT_ROOT}/installer/ScBrowser.Installer.csproj"
+INSTALLER_SCRIPT="${PROJECT_ROOT}/installer/ScBrowser.iss"
+PACKAGES_DIR="${PROJECT_ROOT}/packages"
+DEV_DIR="${PACKAGES_DIR}/dev"
+RELEASE_DIR="${PACKAGES_DIR}/release"
+STAGING_DIR="${PROJECT_ROOT}/.runtime/package"
 RUNTIME_DIR="${PROJECT_ROOT}/.runtime"
 
 # 解决方案文件：.NET 10 默认生成新版 XML 格式 .slnx，这里两种都认，避免换 SDK 后脚本失效。
@@ -106,26 +112,187 @@ cmd_verify() {
 # 发布 / 清理 / 诊断
 # --------------------------------------------------------------------------- #
 
+# 版本号单一来源：ScBrowser.csproj 的 <Version>。
+app_version() {
+  dotnet msbuild "${APP_PROJ}" -getProperty:Version -nologo 2>/dev/null | tail -n1
+}
+
+# 通过 NuGet 还原 Inno Setup（Tools.InnoSetup），返回 ISCC.exe 的绝对路径。
+# 这样打包机不需要预先安装 Inno Setup；首次需要联网，之后走本地 NuGet 缓存。
+resolve_iscc() {
+  dotnet restore "${INSTALLER_PROJ}" --nologo >/dev/null 2>&1 || return 1
+  local iscc
+  iscc="$(dotnet msbuild "${INSTALLER_PROJ}" -getProperty:InnoSetupCompiler -nologo 2>/dev/null | tail -n1)"
+  [ -n "${iscc}" ] && [ -f "${iscc}" ] || return 1
+  printf '%s' "${iscc}"
+}
+
+# dev 包的排障信息：版本 / 构建时间 / 提交 / 工具链。
+write_build_info() {
+  local file="$1"
+  local version="$2"
+  local channel="$3"
+  {
+    printf 'ScBrowser %s (%s)\n' "${version}" "${channel}"
+    printf 'Built: %s\n' "$(date -Iseconds 2>/dev/null || date)"
+    printf 'Git: %s\n' "$(git -C "${PROJECT_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    printf 'Dotnet: %s\n' "$(dotnet --version 2>/dev/null || echo unknown)"
+    printf 'OS: %s\n' "$(uname -srm 2>/dev/null || echo unknown)"
+  } > "${file}"
+}
+
+# 用 Windows 自带的 bsdtar 生成 zip，并把传入目录本身作为 zip 内的根目录。
+# 不用 PowerShell 的 ZipFile：Windows PowerShell 5.1 会写出反斜杠条目名，
+# 与非 Windows 解压工具不兼容。tar.exe 自 Windows 10 1803 起随系统提供。
+zip_directory() {
+  local source="$1"
+  local dest="$2"
+  local tar_win tar_posix dest_win
+
+  tar_win="${SYSTEMROOT:-C:\\Windows}\\System32\\tar.exe"
+  tar_posix="$(cygpath -u "${tar_win}" 2>/dev/null || printf '%s' "${tar_win}")"
+  if [ ! -f "${tar_posix}" ]; then
+    err "生成 zip 需要 Windows 自带的 tar.exe（${tar_win}）。"
+    return 1
+  fi
+
+  dest_win="$(cygpath -w "${dest}" 2>/dev/null || printf '%s' "${dest}")"
+  rm -f "${dest}"
+  mkdir -p "$(dirname "${dest}")"
+
+  ( cd "$(dirname "${source}")" && "${tar_posix}" -a -c -f "${dest_win}" "$(basename "${source}")" )
+}
+
 cmd_publish() {
   require_cmd dotnet
-  local config="${1:-Release}"
-  local out="${PROJECT_ROOT}/artifacts/publish"
-  log "发布自包含单文件（${config}）→ ${out}"
-  # IncludeAllContentForSelfExtract：把内部页面（Assets/ui）也打进 exe，启动时释放到临时目录。
-  # 不开这个开关，publish 会在 exe 旁边留一个 Assets 目录 —— 用户只拷走 exe 时内部页面会加载不出来。
-  dotnet publish "${APP_PROJ}" -c "${config}" -r win-x64 --self-contained true \
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
-    -p:IncludeAllContentForSelfExtract=true \
-    -o "${out}"
-  ok "产物：${out}"
+  if [ "$#" -gt 0 ]; then
+    warn "publish 不接受参数（固定产出 dev + release），已忽略：$*"
+  fi
+
+  local version iscc
+  version="$(app_version)"
+  if [ -z "$version" ]; then
+    err "无法从 ScBrowser.csproj 读取版本号"
+    exit 1
+  fi
+
+  if ! iscc="$(resolve_iscc)"; then
+    err "无法还原 Inno Setup 工具（NuGet 包 Tools.InnoSetup）。"
+    err "请检查网络 / NuGet 配置后重试：dotnet restore \"${INSTALLER_PROJ}\""
+    exit 1
+  fi
+
+  local dev_unpack="${STAGING_DIR}/dev/ScBrowser_${version}_x64-unpack-debug"
+  local rel_unpack="${STAGING_DIR}/release/ScBrowser_${version}_x64-unpack"
+  local dev_logs="${dev_unpack}/logs"
+  local dev_zip="${DEV_DIR}/ScBrowser_${version}_x64-unpack-debug.zip"
+  local rel_zip="${RELEASE_DIR}/ScBrowser_${version}_x64-unpack.zip"
+  local setup_exe="${RELEASE_DIR}/ScBrowser_${version}_x64-setup.exe"
+
+  # 结束可能驻留的实例，避免 exe 被占用导致 publish 覆盖失败。
+  if command -v taskkill >/dev/null 2>&1; then
+    taskkill //F //IM ScBrowser.exe >/dev/null 2>&1 || true
+  fi
+
+  log "清理旧打包产物与暂存目录"
+  rm -rf "$DEV_DIR" "$RELEASE_DIR" "$STAGING_DIR"
+  mkdir -p "$DEV_DIR" "$RELEASE_DIR" "$dev_logs" "$rel_unpack"
+
+  # 1) dev：Debug 发布（框架依赖，含 PDB）+ 构建日志，供开发 / 排障。
+  log "打包 dev（Debug + PDB + 构建日志）"
+  if ! dotnet publish "$APP_PROJ" -c Debug -r win-x64 --self-contained false \
+      -p:PublishSingleFile=false -p:PublishReadyToRun=false \
+      -o "$dev_unpack" --nologo > "$dev_logs/dev-publish.log" 2>&1; then
+    err "dev 发布失败，日志：${dev_logs}/dev-publish.log"
+    tail -n 40 "$dev_logs/dev-publish.log" >&2
+    exit 1
+  fi
+
+  # 2) release：自包含的 unpack 目录（目标机无需安装 .NET 运行时）。
+  #    Release 不保留 PDB；调试符号只进 dev 包。
+  log "打包 release（自包含 unpack 目录）"
+  if ! dotnet publish "$APP_PROJ" -c Release -r win-x64 --self-contained true \
+      -p:PublishSingleFile=false -p:PublishReadyToRun=false \
+      -p:DebugType=None -p:DebugSymbols=false \
+      -o "$rel_unpack" --nologo > "$dev_logs/release-publish.log" 2>&1; then
+    err "release 发布失败，日志：${dev_logs}/release-publish.log"
+    tail -n 40 "$dev_logs/release-publish.log" >&2
+    exit 1
+  fi
+
+  # 3) 包内说明 / 许可证 / 排障信息。
+  cp "$PROJECT_ROOT/LICENSE" "$dev_unpack/LICENSE"
+  cp "$PROJECT_ROOT/LICENSE" "$rel_unpack/LICENSE"
+
+  cat > "$dev_unpack/README.txt" <<EOF
+ScBrowser ${version} (Debug, x64)
+=================================
+
+这是 Debug 构建（框架依赖），运行本目录的 ScBrowser.exe 需要：
+  - Windows 10 1809+ / Windows 11
+  - .NET 10 桌面运行时
+  - WebView2 运行时（Win10/11 通常已随 Edge 预装）
+
+调试信息：
+  - ScBrowser.pdb
+  - build-info.txt（版本 / 构建时间 / Git 提交 / SDK）
+  - logs/（本次 dev / release 发布与安装程序编译日志）
+
+用户数据位于 %LOCALAPPDATA%\sc-browser。
+EOF
+
+  cat > "$rel_unpack/README.txt" <<EOF
+ScBrowser ${version} (x64, self-contained)
+==========================================
+
+这是免安装的 Release 版本：双击 ScBrowser.exe 即可运行，
+目标机无需安装 .NET 运行时；仍需 WebView2 运行时
+（Windows 10/11 通常已随 Edge 预装）。
+
+用户数据位于 %LOCALAPPDATA%\sc-browser。
+EOF
+
+  write_build_info "$dev_unpack/build-info.txt" "$version" "dev"
+
+  # 4) Setup.exe：按用户安装到 %LOCALAPPDATA%\Programs\ScBrowser。
+  log "编译安装程序 → ${setup_exe}"
+  if ! "$iscc" "--define=MyAppVersion=${version}" "$INSTALLER_SCRIPT" \
+      > "$dev_logs/setup-compile.log" 2>&1; then
+    err "安装程序编译失败，日志：${dev_logs}/setup-compile.log"
+    tail -n 40 "$dev_logs/setup-compile.log" >&2
+    exit 1
+  fi
+
+  # 5) 生成 dev / release 的 unpack zip（zip 内带单一根目录）。
+  log "生成 unpack zip"
+  if ! zip_directory "$dev_unpack" "$dev_zip"; then
+    err "生成 dev zip 失败（暂存目录保留：${STAGING_DIR}）"
+    exit 1
+  fi
+  if ! zip_directory "$rel_unpack" "$rel_zip"; then
+    err "生成 release zip 失败（暂存目录保留：${STAGING_DIR}）"
+    exit 1
+  fi
+
+  # 6) 暂存目录只在成功时删除；失败时保留供排查。
+  rm -rf "$STAGING_DIR"
+
+  ok "打包完成（版本 ${version}）"
+  printf '  dev     : %s\n' "$dev_zip"
+  printf '  unpack  : %s\n' "$rel_zip"
+  printf '  setup   : %s\n' "$setup_exe"
 }
 
 cmd_clean() {
   require_cmd dotnet
-  log "清理构建产物"
+  log "清理构建产物（保留 packages 成品包）"
   dotnet clean "${SLN}" >/dev/null 2>&1 || true
+
+  # 历史产物目录：旧版本发布到 artifacts，迁移后顺手清掉残留。
   rm -rf "${PROJECT_ROOT}/artifacts"
-  find "${PROJECT_ROOT}/src" "${PROJECT_ROOT}/tests" -type d \( -name bin -o -name obj \) \
+
+  find "${PROJECT_ROOT}/src" "${PROJECT_ROOT}/tests" "${PROJECT_ROOT}/installer" \
+    -type d \( -name bin -o -name obj \) \
     -prune -exec rm -rf {} + 2>/dev/null || true
   ok "已清理"
 }
@@ -189,12 +356,16 @@ sc-browser — manager.sh
   fmt [args]          格式化代码
 
 发布 / 维护：
-  publish [Debug|Release]   发布自包含单文件到 artifacts/publish
-  clean               清理构建产物
+  publish             打包到 packages/（dev zip + release setup/unpack zip）
+  clean               清理构建产物（保留 packages 成品包）
   data                查看应用数据目录
   logs [n]            跟踪应用日志末尾 n 行（默认 80）
   reset               清空全部本地数据（危险，需确认）
   help                显示本帮助
+
+打包产物：
+  packages/dev/       ScBrowser_<版本>_x64-unpack-debug.zip
+  packages/release/   ScBrowser_<版本>_x64-setup.exe + ScBrowser_<版本>_x64-unpack.zip
 
 应用数据目录：${APPDATA_DIR}
 EOF

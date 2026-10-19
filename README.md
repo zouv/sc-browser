@@ -78,6 +78,7 @@ ScBrowser 是一个从零写起的通用浏览器外壳：**外壳用 WPF 原生
 | `Ctrl+H` | 历史记录 | `Ctrl+J` | 下载内容 |
 | `Alt+←` / `Alt+→` | 后退 / 前进 | `Ctrl+1..8` / `Ctrl+9` | 切换到第 N 个 / 最后一个标签页 |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` | 放大 / 缩小 / 重置缩放 | `Esc` | 停止加载 / 放弃地址栏编辑 |
+| `Ctrl+F` | 页内查找 | `F3` / `Shift+F3` | 下一个 / 上一个匹配 |
 
 > 焦点在网页里时快捷键同样生效（实现方式见 [`ARCHITECTURE.md`](ARCHITECTURE.md) §3.3）。
 
@@ -90,12 +91,25 @@ sh manager.sh build     # 构建（Debug）
 sh manager.sh run       # 前台运行
 sh manager.sh test      # 单元测试
 sh manager.sh verify    # 提交前闸门：构建(-warnaserror) + 单测 + 文档体检
-sh manager.sh publish   # 发布自包含单文件到 artifacts/publish
+sh manager.sh publish   # 打包到 packages/（dev zip + release setup/unpack zip）
 ```
 
 **不装 bash 也能用**：仓库根提供等价的 Windows 批处理脚本 `build.bat` / `run.bat` / `test.bat` /
 `verify.bat` / `clean.bat` / `publish.bat` / `ci.bat`（纯 cmd + dotnet；`ci.bat` 一键跑完
-「清理 → 闸门 → 自包含单文件发布」）。`manager.sh` 是命令语义的单一来源，两者保持同步。
+「清理 → 闸门 → 打包」）。`manager.sh` 是命令语义的单一来源，两者保持同步。
+
+**打包产物**（`packages/` 已加入 `.gitignore`，`clean` 会保留成品包）：
+
+- `packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`：Debug 免安装包（框架依赖），
+  内含 `ScBrowser.pdb`、`logs/`（本次发布日志）与 `build-info.txt`。
+- `packages/release/ScBrowser_<版本>_x64-unpack.zip`：Release 免安装包（自包含，
+  目标机无需安装 .NET 运行时）。
+- `packages/release/ScBrowser_<版本>_x64-setup.exe`：Windows 安装程序，按用户安装到
+  `%LOCALAPPDATA%\Programs\ScBrowser`，无需管理员权限，自带卸载与快捷方式。
+  安装程序工具链由 NuGet 包 `Tools.InnoSetup` 还原，不需要手动安装 Inno Setup。
+
+> 两个 zip 内部都以单一根目录开头（`ScBrowser_<版本>_x64-unpack[-debug]/`），
+> 解压后直接双击 `ScBrowser.exe` 即可。产物结构与 `sc-code/packages` 保持一致。
 
 也可以直接用 Visual Studio 2022（17.13+）打开 `sc-browser.slnx` 构建运行。
 

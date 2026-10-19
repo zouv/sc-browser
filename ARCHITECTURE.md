@@ -54,11 +54,12 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 改标签页行为（导航/事件/安全图标/favicon/重开/拖拽排序） | `Browser/BrowserTab.cs`、`Browser/TabManager.cs`、`Browser/ClosedTabHistory.cs` | Views/（除非动标签条交互）、Assets/、Storage/ | §2.2 |
 | 多窗口 / 无痕 / 窗口级装配 | `Services/BrowserWindowManager.cs`、`Browser/BrowserSession.cs`、`Views/MainWindow.xaml.cs`（窗口与几何部分） | Storage/、Assets/ | arch/flows.md §3.5 |
 | 改地址栏（解析/下拉建议） | `Browser/AddressBarResolver.cs`、`Services/OmniboxSuggestions.cs`、`Views/AddressBarPopup.xaml(.cs)`、`ViewModels/MainViewModel.cs`（Suggestions 部分） | Storage/、Assets/ | arch/flows.md §3.6 |
+| 改页内查找（Ctrl+F） | `Views/MainWindow.xaml(.cs)`（查找条/快捷键）、`Browser/BrowserTab.cs`（Find 封装与 JS 兜底） | Storage/、Assets/ | §2.1、§2.2、§7 |
 | 加/改内部页面（WebUI） | `Assets/ui/<page>/*`、`Browser/WebMessageRouter.cs`、`Browser/InternalPageRegistry.cs` | Views/、Storage/（除非要新数据） | §2.3、§4 |
 | 加/改数据存储（历史/书签/下载） | `Storage/*` | Views/、Assets/ | §2.4、§4 |
 | 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Assets/ui/extensions/*` | Views/、Storage/ | §2.5、arch/flows.md §3.2 |
 | 改主题/设置/会话（含「深色影响网页」） | `Services/SettingsService.cs`、`Services/ThemeService.cs`、`Services/SessionStore.cs`、`Browser/WebTheme.cs`、`Themes/*` | Storage/、Views/ | §2.6、arch/flows.md §3.4 |
-| 改启停/构建/发布（运维） | `manager.sh`、`*.bat`、`.gitattributes`、`ScBrowser.csproj`、`docs/02-使用说明.md` | 所有业务代码 | §6 |
+| 改启停/构建/发布（运维） | `manager.sh`、`*.bat`、`installer/*`、`.gitattributes`、`ScBrowser.csproj`、`docs/02-使用说明.md` | 所有业务代码 | §6 |
 
 > 跨多个区域的任务才需要跨列读；仍遵循「**先定位函数名，再只读那几个函数**」。
 
@@ -80,7 +81,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作（DWM 深色/圆角、最大化钉工作区） | 加系统级外观/窗口行为 |
 | `src/ScBrowser/Assets/sc-browser.ico` + `docs/icons/` | 应用图标（exe 内嵌 + 窗口 `Icon`）；`docs/icons/` 是设计源（SVG 为源，附各尺寸导出） | 换图标 |
 | `src/ScBrowser/Browser/BrowserEnvironmentProvider.cs` | 创建并缓存**唯一**的 WebView2 环境（含扩展总开关） | 改环境级选项（代理/扩展开关） |
-| `src/ScBrowser/Browser/BrowserTab.cs` | **单标签页**：持有 WebView2 + 全部可观察状态 + 事件接线 | 改单页行为（导航/事件/图标） |
+| `src/ScBrowser/Browser/BrowserTab.cs` | **单标签页**：持有 WebView2 + 全部可观察状态 + 事件接线 + 页内查找（原生/JS 兜底） | 改单页行为（导航/事件/图标/查找） |
 | `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建/关闭/切换/相邻选择/历史记录 + **网页颜色方案** | 改标签生命周期语义 |
 | `src/ScBrowser/Browser/WebTheme.cs` | 应用主题 → `CoreWebView2Profile.PreferredColorScheme` 映射 | 改「深色如何影响网页」 |
 | `src/ScBrowser/Browser/BrowserSession.cs` | 会话类型（普通/无痕）→ WebView2 控制器选项 | 加新的隔离会话 |
@@ -104,7 +105,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Services/DownloadManager.cs` | 下载接管、进度节流落盘、列表 | 改下载行为 |
 | `src/ScBrowser/Services/StartupCommandRunner.cs` | 启动命令行参数（`--install-extension`） | 加启动参数 |
 | `src/ScBrowser/ViewModels/MainViewModel.cs` | 外壳状态投影与命令（不碰 WebView2） | 加工具栏/菜单命令 |
-| `src/ScBrowser/Views/MainWindow.xaml(.cs)` | 外壳布局（含自绘窗口边框）+ 窗口外观 + **键盘快捷键** | 改外壳结构/快捷键 |
+| `src/ScBrowser/Views/MainWindow.xaml(.cs)` | 外壳布局（含自绘窗口边框 + 页内查找条）+ 窗口外观 + **键盘快捷键** | 改外壳结构/快捷键/查找条 |
 | `src/ScBrowser/Views/Controls/BrowserContentHost.cs` | 内容区宿主实现（WebView2 挂载与显示切换） | 改内容区挂载方式 |
 | `src/ScBrowser/Views/AddressBarPopup.xaml(.cs)` | 地址栏下拉浮层（独立顶层窗口，规避 airspace） | 改下拉外观/交互 |
 | `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的落点换算（指针落在哪个槽位，纯函数 + 单测） | 改拖拽落点规则 |
@@ -119,6 +120,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `tests/ScBrowser.Tests/` | xUnit 单测（地址栏解析、CRX 解包） |
 | `samples/extensions/hello-sc-browser/` | 示例扩展，用于验证扩展加载链路 |
 | `manager.sh` | 统一管理脚本（构建/运行/测试/发布/清理/日志）·**命令语义的单一来源** |
+| `installer/ScBrowser.iss` | Inno Setup 7 安装脚本：按用户安装、卸载、开始菜单/桌面快捷方式 |
+| `installer/ScBrowser.Installer.csproj` | 仅用于通过 NuGet 还原 Inno Setup 编译器（`Tools.InnoSetup`），不参与应用构建 |
 | `check-docs.sh` | 文档体系机械体检（技术栈无关） |
 | `build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `publish.bat` / `ci.bat` | `manager.sh` 各命令的 Windows 原生等价物（纯 cmd + dotnet，不需要 bash） |
 | `.gitattributes` | 行尾策略：`*.sh`=LF、`*.bat`=CRLF（否则 Windows 上脚本执行失败） |
@@ -147,6 +150,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 地址栏回车/失焦行为 | `AddressBar_KeyDown` / `AddressBar_LostKeyboardFocus` | 失焦会恢复显示当前页地址 |
 | 「编辑态」判定 | `AddressBar_PreviewKeyDown` + `IsTextProducingKey` | **不能**用「获得焦点」判定，见 §7 |
 | 键盘快捷键 | `MainWindow.TryHandleShortcut` | 单一 switch，按修饰键分组 |
+| 页内查找条（Ctrl+F） | XAML 的 `FindBar` / `FindBox`；代码的 `ShowFindBar` / `RunFindAsync` / `StepFind` / `FindBox_KeyDown` | 停靠在工具栏下方（airspace 决定不做悬浮层）；Enter/Shift+Enter/F3/Shift+F3 导航 |
 | 主菜单项 | `MenuButton_Click` + XAML 里的 `Button.ContextMenu` | |
 | 窗口深色标题栏/圆角 | `NativeMethods.ApplyDarkMode` / `ApplyRoundedCorners`（由 `OnStateChanged` 在最大化时改直角） | |
 | 应用图标 | `ScBrowser.csproj` 的 `ApplicationIcon` + `Assets/sc-browser.ico`；窗口用 `Icon="/Assets/sc-browser.ico"` | 设计源在 `docs/icons/`（改设计后重新导出 `.ico` 并覆盖 Assets 里那份） |
@@ -168,6 +172,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 历史入库时机 | `TabManager.RecordHistory`（订阅 `BrowserTab.NavigationFinished`） | 跳过 `browser://`/`about:`/`file://` |
 | 新窗口请求转新标签 | `TabManager.WireTabEvents` 的 `NewWindowRequested` | |
 | WebView2 设置项 | `BrowserTab.ConfigureSettings` | 注意 `AreBrowserAcceleratorKeysEnabled=false` |
+| 页内查找（引擎） | `BrowserTab.StartFindAsync` / `FindNext` / `FindPrevious` / `StopFind` | 优先 `CoreWebView2.Find`；旧运行时自动退回 JS，见 §7 |
 
 ### 2.3 内部页面（`Assets/ui/` + `Browser/WebMessageRouter.cs`）
 
@@ -267,6 +272,17 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   **`.bat` 是等价物不是第二份真源**：`build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `publish.bat` / `ci.bat`
   用纯 cmd + dotnet 重写同一批命令（不依赖 bash）；**改命令语义时两处必须同步**。
   `verify.bat` / `ci.bat` 的文档体检需 bash，检测到 `sh`（退而求其次 `bash`）才跑，否则只告警不失败。
+- **打包产物（`packages/`，已 gitignore，与 sc-code 对齐）**：`publish` 固定产出——
+  `packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`（Debug 框架依赖发布 + `ScBrowser.pdb`
+  + `logs/`（dev/release 发布日志、安装程序编译日志）+ `build-info.txt`），以及
+  `packages/release/ScBrowser_<版本>_x64-unpack.zip`（自包含免安装目录）+
+  `ScBrowser_<版本>_x64-setup.exe`。两个 zip 内都带单一根目录；暂存目录 `.runtime/package`
+  只在成功后删除。zip 由 Windows 自带的 `tar.exe` 生成（不用 PowerShell ZipFile：
+  后者会写出反斜杠条目名）。
+  安装程序由 Inno Setup 7 生成，工具通过 NuGet `Tools.InnoSetup` 还原（首次需联网，之后走缓存），
+  **不要求系统预装 Inno Setup**；安装脚本在 `installer/ScBrowser.iss`，按用户安装到
+  `%LOCALAPPDATA%\Programs\ScBrowser`（无 UAC），安装 release unpack 目录的全部文件，
+  不触碰用户浏览数据。`clean` 只清 bin/obj，保留 `packages/` 成品包（与 sc-code 一致）。
 - **行尾策略**：`.gitattributes` 钉住 `*.sh`=LF、`*.bat`=CRLF。改脚本时优先按属性办事，
   别让 Windows 的 `core.autocrlf` 把 `.sh` 检成 CRLF（bash 会报 `No such file or directory` / 变量尾带 `\r` 而假失败）。
 - **路径单一源**：`Infrastructure/AppPaths.cs`；`manager.sh` 中的 `APPDATA_DIR` 必须与其保持一致。
@@ -330,3 +346,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   内部页面（`browser://*`）的 `common/base.css` 用的是同一个媒体查询，因此一并跟随，无需另推消息。
 - **全应用只有一个 WebView2 profile**：颜色方案是 profile 级设置，设一次即影响所有标签，
   但新标签仍会显式再设一次（见 `TabManager.ApplyWebTheme`），避免依赖「之前一定设过」的隐含前提。
+- **页内查找要兼容旧 WebView2 运行时**：`CoreWebView2.Find` 需要 `ICoreWebView2_28`，
+  本机 WebView2 131 没有该接口，访问会抛 `NotImplementedException`。`BrowserTab` 因此在
+  原生不可用（或启动失败）时退回 JS：用 `TreeWalker` 收集文本节点的匹配区间，再用
+  `CSS.highlights` 高亮，状态挂在 `window.__scFind` 上。JS 路径只覆盖主文档、匹配不跨文本节点，
+  是旧运行时的降级方案；升级运行时后会自动走原生路径。**不要为了「只留一条实现」删掉兜底。**

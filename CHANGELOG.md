@@ -27,6 +27,37 @@
 
 ---
 
+## [0.2.1] - 2026-10-19
+
+页内查找落地，并把打包体系对齐 `sc-code/packages`。
+
+### 新增
+
+- **页内查找（`Ctrl+F`）**：工具栏下方打开查找条，**输入即搜**并显示「当前匹配/总数」；
+  `Enter` / `Shift+Enter`（或 `F3` / `Shift+F3`）跳转下一个 / 上一个，`Esc` 关闭。
+  切换标签或页面导航后自动收起 / 重新搜索；查找条跟随深浅主题。
+  优先使用 WebView2 原生 Find API，旧运行时自动退回 JS + CSS Highlight 实现
+  （不修改页面 DOM，站点脚本看不到高亮标记）。
+- **Windows 安装程序**：`packages/release/ScBrowser_<版本>_x64-setup.exe`。
+  按用户安装到 `%LOCALAPPDATA%\Programs\ScBrowser`，无需管理员权限；
+  自带卸载、开始菜单与可选桌面快捷方式，**不触碰** `%LOCALAPPDATA%\sc-browser`
+  下的书签、历史、Cookie 等用户数据。安装器工具链通过 NuGet 包 `Tools.InnoSetup` 还原，
+  打包机不需要预装 Inno Setup。
+
+### 变更
+
+- **打包结构与 `sc-code/packages` 对齐**（原 `artifacts/`）：`publish` 固定产出
+  `packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`（Debug + PDB + `logs/` + `build-info.txt`）、
+  `packages/release/ScBrowser_<版本>_x64-unpack.zip`（自包含免安装）与
+  `packages/release/ScBrowser_<版本>_x64-setup.exe`。两个 zip 内均带单一根目录；
+  `clean` 只清 bin/obj，**保留 `packages/` 成品包**；`ci.bat` 的最终产物路径同步更新。
+
+### 修复
+
+- （无）
+
+---
+
 ## [0.2.0] - 2026-10-16
 
 第二个版本：从「能用的浏览器」打磨成「像样的桌面浏览器」。

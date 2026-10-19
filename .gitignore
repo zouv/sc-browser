@@ -13,7 +13,7 @@ obj/
 [Dd]ebug/
 [Rr]elease/
 publish/
-artifacts/
+packages/
 *.nupkg
 
 # ================= 测试 / 覆盖率 =================

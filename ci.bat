@@ -8,7 +8,7 @@ rem  clean -> verify（构建 -warnaserror + 单测 + 文档体检）-> publish
 rem  用法: ci.bat
 rem ============================================================
 
-rem 关闭常驻 MSBuild / Roslyn 构建服务器，避免其缓存影响 publish 的单文件打包（详见 publish.bat）。
+rem 关闭常驻 MSBuild / Roslyn 构建服务器，避免其缓存影响 publish 的打包（详见 publish.bat）。
 set "DOTNET_CLI_USE_MSBUILD_SERVER=0"
 set "DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1"
 
@@ -21,7 +21,9 @@ call "%~dp0publish.bat" || goto :Fail
 echo.
 echo ============================================================
 echo  [SUCCESS] CI pipeline completed.
-echo  Artifact: %CD%\artifacts\publish\ScBrowser.exe
+echo  Dev     : %CD%\packages\dev\ScBrowser_*_x64-unpack-debug.zip
+echo  Unpack  : %CD%\packages\release\ScBrowser_*_x64-unpack.zip
+echo  Setup   : %CD%\packages\release\ScBrowser_*_x64-setup.exe
 echo ============================================================
 popd
 exit /b 0

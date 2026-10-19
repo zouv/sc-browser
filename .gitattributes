@@ -15,6 +15,9 @@
 *.bat           text eol=crlf
 *.cmd           text eol=crlf
 
+# Inno Setup 脚本按 Windows 工具链习惯使用 CRLF
+*.iss           text eol=crlf
+
 # 这些必须是 LF，否则 WebUI 与配置里的字面量可能被意外改写
 *.js            text eol=lf
 *.css           text eol=lf
