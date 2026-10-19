@@ -144,24 +144,6 @@ C# / .NET 10（`net10.0-windows`）· WPF（外壳 UI）· Microsoft Edge WebVie
 - **内部页面走消息桥**而不是 `fetch` 直连宿主（见 `ARCHITECTURE.md` §3.1）。
 - 自绘外壳的两个已知坑（最大化被裁边、缩放命中带被 WebView2 吃掉）都在 §7 记了正确做法。
 
-## 已知限制
-
-- **仅 Windows**：依赖 WPF 与 WebView2。
-- **扩展只能加载「解压后的目录」**（WebView2 平台限制）；`.crx` 由本应用先解包再加载。
-  没有扩展商店、不校验签名、不自动更新——**安装扩展即等于信任其代码**。
-- 安装扩展后不要改动其目录内的文件，否则该扩展会被 WebView2 自动卸载。
-- 无痕窗口内不记录下载（这是刻意的）。
-- 尚无密码保存、自动填充、多用户配置（见 [ROADMAP](ROADMAP.md)）。
-
-## 常见问题
-
-- **页面空白 / 打不开**：先确认 WebView2 运行时已安装；再看日志
-  （`%LOCALAPPDATA%\sc-browser\logs`，或 `sh manager.sh logs`）搜 `[ERR]` / `[FTL]`。
-- **扩展没生效**：确认「设置 → 扩展程序」里的总开关为开（该开关是环境创建期参数，改动需重启应用）。
-- **数据在哪 / 怎么备份或重置**：全部位于 `%LOCALAPPDATA%\sc-browser`（`sh manager.sh data` 查看，
-  `sh manager.sh reset` 重置）。
-- 更多排查见 [`docs/02-使用说明.md`](docs/02-使用说明.md)。
-
 ## 文档
 
 | 文档 | 内容 |
@@ -172,19 +154,3 @@ C# / .NET 10（`net10.0-windows`）· WPF（外壳 UI）· Microsoft Edge WebVie
 | [`ROADMAP.md`](ROADMAP.md) | 要做什么、做到哪了 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 每个版本的变化 |
 | [`AGENTS.md`](AGENTS.md) | 本仓库的 AI 协作约定（改代码前先读） |
-
-## 贡献
-
-欢迎提 Issue 与 PR。开始之前：
-
-1. 读 [`AGENTS.md`](AGENTS.md)（本仓库的改动规则与铁律，人机通用）；
-2. 按 [`ARCHITECTURE.md`](ARCHITECTURE.md) §0.5 的「任务作用域路由」定位要改的文件；
-3. 提交前跑 `sh manager.sh verify`（或 `verify.bat`）；
-4. 用户可感知的变化记入 [`CHANGELOG.md`](CHANGELOG.md) 的 `[未发布]` 区。
-
-## 许可证
-
-[MIT](LICENSE) © 2026 zouv
-
-感谢 [MicrosoftEdge/WebView2Browser](https://github.com/MicrosoftEdge/WebView2Browser)
-提供的多 WebView 架构参考，以及 Microsoft Edge WebView2 团队提供的运行时。

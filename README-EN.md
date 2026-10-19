@@ -149,16 +149,6 @@ A few deliberate choices (see `ARCHITECTURE.md` §7 and `docs/01-技术栈说明
   extensions. Incognito windows reuse that environment and only switch to an InPrivate profile.
 - **Internal pages talk over a message bridge** instead of `fetch`ing the host directly.
 
-## Known limitations
-
-- **Windows only** (WPF + WebView2).
-- **Extensions must be unpacked directories** (WebView2 platform limitation); `.crx` files are
-  unpacked by the app first. There is no extension store, no signature verification and no
-  auto-update — **installing an extension means trusting its code**.
-- Do not modify the files of an installed extension, or WebView2 will drop it.
-- Downloads in incognito windows are intentionally not recorded.
-- No password manager, autofill or multiple profiles yet (see [ROADMAP](ROADMAP.md)).
-
 ## Documentation
 
 | Document | Contents |
@@ -169,19 +159,3 @@ A few deliberate choices (see `ARCHITECTURE.md` §7 and `docs/01-技术栈说明
 | [`ROADMAP.md`](ROADMAP.md) | What is planned and what is done |
 | [`CHANGELOG.md`](CHANGELOG.md) | Changes per release |
 | [`AGENTS.md`](AGENTS.md) | Contribution conventions for this repository |
-
-## Contributing
-
-Issues and pull requests are welcome. Before you start:
-
-1. Read [`AGENTS.md`](AGENTS.md) — the change rules and invariants of this repository;
-2. Locate the files to touch via the task routing table in `ARCHITECTURE.md` §0.5;
-3. Run `sh manager.sh verify` (or `verify.bat`) before committing;
-4. Record user-visible changes under `[未发布]` in [`CHANGELOG.md`](CHANGELOG.md).
-
-## License
-
-[MIT](LICENSE) © 2026 zouv
-
-Thanks to [MicrosoftEdge/WebView2Browser](https://github.com/MicrosoftEdge/WebView2Browser) for the
-multi-WebView architecture reference, and to the Microsoft Edge WebView2 team for the runtime.
