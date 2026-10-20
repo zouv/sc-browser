@@ -71,7 +71,7 @@
 - **技术栈**：C# / .NET 10（`net10.0-windows`）+ WPF（外壳） + Microsoft Edge WebView2（网页内容与内部页面）
   + SQLite（历史/书签/下载）+ 原生 JS/HTML/CSS（内部页面 WebUI）。详细选型理由见 [`docs/01-技术栈说明.md`](docs/01-技术栈说明.md)。
 - **构建/运行**：`sh manager.sh build` / `sh manager.sh run`；测试：`sh manager.sh test`；提交前闸门：`sh manager.sh verify`。
-  **无 bash 环境用等价的批处理脚本**（`build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `publish.bat` / `ci.bat`）；
+  **无 bash 环境用等价的批处理脚本**（`build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `package.bat` / `ci.bat`）；
   **命令语义以 `manager.sh` 为单一来源**，改一处必须同步另一处。新增脚本前先确认 `.gitattributes` 的行尾规则（`*.sh`=LF、`*.bat`=CRLF）。
 - **平台**：仅 Windows（WPF + WebView2）。
 - **架构铁律**：

@@ -91,25 +91,28 @@ sh manager.sh build     # 构建（Debug）
 sh manager.sh run       # 前台运行
 sh manager.sh test      # 单元测试
 sh manager.sh verify    # 提交前闸门：构建(-warnaserror) + 单测 + 文档体检
-sh manager.sh publish   # 打包到 packages/（dev zip + release setup/unpack zip）
+sh manager.sh package   # 打包到 dist/（dev zip + release 可运行目录 / zip / setup）
 ```
 
 **不装 bash 也能用**：仓库根提供等价的 Windows 批处理脚本 `build.bat` / `run.bat` / `test.bat` /
-`verify.bat` / `clean.bat` / `publish.bat` / `ci.bat`（纯 cmd + dotnet；`ci.bat` 一键跑完
+`verify.bat` / `clean.bat` / `package.bat` / `ci.bat`（纯 cmd + dotnet；`ci.bat` 一键跑完
 「清理 → 闸门 → 打包」）。`manager.sh` 是命令语义的单一来源，两者保持同步。
 
-**打包产物**（`packages/` 已加入 `.gitignore`，`clean` 会保留成品包）：
+**打包产物**（`dist/` 已加入 `.gitignore`，`clean` 会保留成品包）：
 
-- `packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`：Debug 免安装包（框架依赖），
-  内含 `ScBrowser.pdb`、`logs/`（本次发布日志）与 `build-info.txt`。
-- `packages/release/ScBrowser_<版本>_x64-unpack.zip`：Release 免安装包（自包含，
-  目标机无需安装 .NET 运行时）。
-- `packages/release/ScBrowser_<版本>_x64-setup.exe`：Windows 安装程序，按用户安装到
+- `dist/dev/ScBrowser_<版本>_x64-unpack-debug.zip`：Debug 免安装包（框架依赖），
+  内含 `ScBrowser.pdb`、`logs/`（本次发布日志）与 `build-info.txt`；
+  zip 内带单一根目录 `ScBrowser_<版本>_x64-unpack-debug/`。
+- `dist/release/unpack/`：Release 免安装目录（自包含，
+  目标机无需安装 .NET 运行时），里面的 `ScBrowser.exe` 可直接双击运行。
+- `dist/release/ScBrowser_<版本>_x64-unpack.zip`：上述目录的压缩包。
+  **zip 根下直接是程序文件，不再套一层版本目录**，解压即可运行。
+- `dist/release/ScBrowser_<版本>_x64-setup.exe`：Windows 安装程序，按用户安装到
   `%LOCALAPPDATA%\Programs\ScBrowser`，无需管理员权限，自带卸载与快捷方式。
   安装程序工具链由 NuGet 包 `Tools.InnoSetup` 还原，不需要手动安装 Inno Setup。
 
-> 两个 zip 内部都以单一根目录开头（`ScBrowser_<版本>_x64-unpack[-debug]/`），
-> 解压后直接双击 `ScBrowser.exe` 即可。产物结构与 `sc-code/packages` 保持一致。
+> dev 的 zip 内带单一根目录，release 的 zip 不带顶层目录；两者解压后都直接双击
+> `ScBrowser.exe` 即可。
 
 也可以直接用 Visual Studio 2022（17.13+）打开 `sc-browser.slnx` 构建运行。
 

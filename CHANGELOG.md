@@ -27,6 +27,31 @@
 
 ---
 
+## [0.2.2] - 2026-10-20
+
+打包目录与脚本统一：脚本改为 `package.bat`，交付物集中到 `dist/`，release zip 不再套顶层目录。
+
+### 新增
+
+- （无）
+
+### 变更
+
+- **打包目录与脚本统一**：打包脚本由 `publish.bat` 更名为 `package.bat`
+  （等价命令 `sh manager.sh package`），产物从 `packages/` 迁到 `dist/`：
+  `dist/dev/` 放 Debug zip，`dist/release/` 放可直接运行的 `unpack/` 目录、
+  对应 zip 与 `setup.exe`。
+- **release zip 不再套顶层目录**：`ScBrowser_<版本>_x64-unpack.zip` 直接打包
+  unpack 目录里的文件，解压后根目录就是 `ScBrowser.exe`；dev zip 仍保留
+  `ScBrowser_<版本>_x64-unpack-debug/` 根目录。
+- `clean` 保留 `dist/` 成品包，并顺手清理历史 `packages/`、`artifacts/` 与打包暂存目录。
+
+### 修复
+
+- （无）
+
+---
+
 ## [0.2.1] - 2026-10-19
 
 页内查找落地，并把打包体系对齐 `sc-code/packages`。

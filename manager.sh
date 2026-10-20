@@ -4,7 +4,7 @@
 # 用法：./manager.sh <command> [args]    (Windows: sh manager.sh <command>)
 #
 # 本项目管理 .NET 解决方案（dotnet CLI），主工程为 WPF 桌面应用 ScBrowser。
-# 本脚本封装：构建 / 运行 / 测试 / 发布 / 清理 / 运行时数据查看。
+# 本脚本封装：构建 / 运行 / 测试 / 打包 / 清理 / 运行时数据查看。
 # =============================================================================
 set -uo pipefail
 
@@ -13,10 +13,10 @@ APP_PROJ="${PROJECT_ROOT}/src/ScBrowser/ScBrowser.csproj"
 TEST_PROJ="${PROJECT_ROOT}/tests/ScBrowser.Tests/ScBrowser.Tests.csproj"
 INSTALLER_PROJ="${PROJECT_ROOT}/installer/ScBrowser.Installer.csproj"
 INSTALLER_SCRIPT="${PROJECT_ROOT}/installer/ScBrowser.iss"
-PACKAGES_DIR="${PROJECT_ROOT}/packages"
-DEV_DIR="${PACKAGES_DIR}/dev"
-RELEASE_DIR="${PACKAGES_DIR}/release"
-STAGING_DIR="${PROJECT_ROOT}/.runtime/package"
+DIST_DIR="${PROJECT_ROOT}/dist"
+DEV_DIR="${DIST_DIR}/dev"
+RELEASE_DIR="${DIST_DIR}/release"
+STAGING_DIR="${PROJECT_ROOT}/.runtime/staging"
 RUNTIME_DIR="${PROJECT_ROOT}/.runtime"
 
 # 解决方案文件：.NET 10 默认生成新版 XML 格式 .slnx，这里两种都认，避免换 SDK 后脚本失效。
@@ -163,10 +163,31 @@ zip_directory() {
   ( cd "$(dirname "${source}")" && "${tar_posix}" -a -c -f "${dest_win}" "$(basename "${source}")" )
 }
 
-cmd_publish() {
+# 同 zip_directory，但把目录「里面的内容」打成 zip 根条目（不带目录本身）。
+# release unpack zip 用这个：解压后直接得到 ScBrowser.exe，不套一层版本目录。
+zip_directory_contents() {
+  local source="$1"
+  local dest="$2"
+  local tar_win tar_posix dest_win
+
+  tar_win="${SYSTEMROOT:-C:\\Windows}\\System32\\tar.exe"
+  tar_posix="$(cygpath -u "${tar_win}" 2>/dev/null || printf '%s' "${tar_win}")"
+  if [ ! -f "${tar_posix}" ]; then
+    err "生成 zip 需要 Windows 自带的 tar.exe（${tar_win}）。"
+    return 1
+  fi
+
+  dest_win="$(cygpath -w "${dest}" 2>/dev/null || printf '%s' "${dest}")"
+  rm -f "${dest}"
+  mkdir -p "$(dirname "${dest}")"
+
+  ( cd "${source}" && "${tar_posix}" -a -c -f "${dest_win}" * )
+}
+
+cmd_package() {
   require_cmd dotnet
   if [ "$#" -gt 0 ]; then
-    warn "publish 不接受参数（固定产出 dev + release），已忽略：$*"
+    warn "package 不接受参数（固定产出 dev + release），已忽略：$*"
   fi
 
   local version iscc
@@ -183,13 +204,13 @@ cmd_publish() {
   fi
 
   local dev_unpack="${STAGING_DIR}/dev/ScBrowser_${version}_x64-unpack-debug"
-  local rel_unpack="${STAGING_DIR}/release/ScBrowser_${version}_x64-unpack"
+  local rel_unpack="${RELEASE_DIR}/unpack"
   local dev_logs="${dev_unpack}/logs"
   local dev_zip="${DEV_DIR}/ScBrowser_${version}_x64-unpack-debug.zip"
   local rel_zip="${RELEASE_DIR}/ScBrowser_${version}_x64-unpack.zip"
   local setup_exe="${RELEASE_DIR}/ScBrowser_${version}_x64-setup.exe"
 
-  # 结束可能驻留的实例，避免 exe 被占用导致 publish 覆盖失败。
+  # 结束可能驻留的实例，避免 exe 被占用导致 package 覆盖失败。
   if command -v taskkill >/dev/null 2>&1; then
     taskkill //F //IM ScBrowser.exe >/dev/null 2>&1 || true
   fi
@@ -263,14 +284,16 @@ EOF
     exit 1
   fi
 
-  # 5) 生成 dev / release 的 unpack zip（zip 内带单一根目录）。
-  log "生成 unpack zip"
+  # 5) 生成 zip：
+  #    dev zip 内带 ScBrowser_<版本>_x64-unpack-debug 根目录；
+  #    release zip 打包 unpack 目录内部，解压后直接得到 ScBrowser.exe。
+  log "生成 zip"
   if ! zip_directory "$dev_unpack" "$dev_zip"; then
     err "生成 dev zip 失败（暂存目录保留：${STAGING_DIR}）"
     exit 1
   fi
-  if ! zip_directory "$rel_unpack" "$rel_zip"; then
-    err "生成 release zip 失败（暂存目录保留：${STAGING_DIR}）"
+  if ! zip_directory_contents "$rel_unpack" "$rel_zip"; then
+    err "生成 release zip 失败（解压目录保留：${rel_unpack}）"
     exit 1
   fi
 
@@ -279,17 +302,19 @@ EOF
 
   ok "打包完成（版本 ${version}）"
   printf '  dev     : %s\n' "$dev_zip"
-  printf '  unpack  : %s\n' "$rel_zip"
+  printf '  unpack  : %s\n' "$rel_unpack"
+  printf '  zip     : %s\n' "$rel_zip"
   printf '  setup   : %s\n' "$setup_exe"
 }
 
 cmd_clean() {
   require_cmd dotnet
-  log "清理构建产物（保留 packages 成品包）"
+  log "清理构建产物（保留 dist 成品包）"
   dotnet clean "${SLN}" >/dev/null 2>&1 || true
 
-  # 历史产物目录：旧版本发布到 artifacts，迁移后顺手清掉残留。
-  rm -rf "${PROJECT_ROOT}/artifacts"
+  # 历史产物目录：旧版本发布到 packages/，更早到 artifacts，迁移后顺手清掉残留。
+  rm -rf "${PROJECT_ROOT}/packages" "${PROJECT_ROOT}/artifacts"
+  rm -rf "${STAGING_DIR}"
 
   find "${PROJECT_ROOT}/src" "${PROJECT_ROOT}/tests" "${PROJECT_ROOT}/installer" \
     -type d \( -name bin -o -name obj \) \
@@ -356,16 +381,18 @@ sc-browser — manager.sh
   fmt [args]          格式化代码
 
 发布 / 维护：
-  publish             打包到 packages/（dev zip + release setup/unpack zip）
-  clean               清理构建产物（保留 packages 成品包）
+  package             打包到 dist/（dev zip + release setup/unpack zip）
+  clean               清理构建产物（保留 dist 成品包）
   data                查看应用数据目录
   logs [n]            跟踪应用日志末尾 n 行（默认 80）
   reset               清空全部本地数据（危险，需确认）
   help                显示本帮助
 
 打包产物：
-  packages/dev/       ScBrowser_<版本>_x64-unpack-debug.zip
-  packages/release/   ScBrowser_<版本>_x64-setup.exe + ScBrowser_<版本>_x64-unpack.zip
+  dist/dev/            ScBrowser_<版本>_x64-unpack-debug.zip
+  dist/release/        unpack/（可直接运行）
+                       ScBrowser_<版本>_x64-setup.exe
+                       ScBrowser_<版本>_x64-unpack.zip（zip 内无顶层目录）
 
 应用数据目录：${APPDATA_DIR}
 EOF
@@ -383,7 +410,7 @@ main() {
     test)    cmd_test    "$@" ;;
     verify)  cmd_verify  "$@" ;;
     fmt)     cmd_fmt     "$@" ;;
-    publish) cmd_publish "$@" ;;
+    package) cmd_package "$@" ;;
     clean)   cmd_clean   "$@" ;;
     data)    cmd_data    "$@" ;;
     logs)    cmd_logs    "$@" ;;

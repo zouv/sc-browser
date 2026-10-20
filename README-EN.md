@@ -97,26 +97,29 @@ sh manager.sh build     # build (Debug)
 sh manager.sh run       # run in the foreground
 sh manager.sh test      # unit tests
 sh manager.sh verify    # pre-commit gate: build (-warnaserror) + tests + doc check
-sh manager.sh publish   # package into packages/ (dev zip + release setup/unpack zip)
+sh manager.sh package   # package into dist/ (dev zip + release runnable dir / zip / setup)
 ```
 
 **No bash?** Equivalent Windows batch scripts live in the repository root (`build.bat`, `run.bat`,
-`test.bat`, `verify.bat`, `clean.bat`, `publish.bat`, `ci.bat` — plain cmd + dotnet; `ci.bat` runs
+`test.bat`, `verify.bat`, `clean.bat`, `package.bat`, `ci.bat` — plain cmd + dotnet; `ci.bat` runs
 clean → gate → package in one go). `manager.sh` is the single source of truth for
 command semantics; the two stay in sync.
 
-**Package output** (`packages/` is git-ignored; `clean` preserves it):
+**Package output** (`dist/` is git-ignored; `clean` preserves it):
 
-- `packages/dev/ScBrowser_<version>_x64-unpack-debug.zip`: Debug portable package
-  (framework-dependent) with `ScBrowser.pdb`, `logs/` and `build-info.txt`.
-- `packages/release/ScBrowser_<version>_x64-unpack.zip`: Release portable package
-  (self-contained; no .NET runtime required on the target).
-- `packages/release/ScBrowser_<version>_x64-setup.exe`: per-user Windows installer
+- `dist/dev/ScBrowser_<version>_x64-unpack-debug.zip`: Debug portable package
+  (framework-dependent) with `ScBrowser.pdb`, `logs/` and `build-info.txt`;
+  the zip contains a single root directory `ScBrowser_<version>_x64-unpack-debug/`.
+- `dist/release/unpack/`: Release portable directory
+  (self-contained; no .NET runtime required on the target). Run `ScBrowser.exe` directly.
+- `dist/release/ScBrowser_<version>_x64-unpack.zip`: archive of the directory above.
+  **Its entries sit at the zip root** — no extra versioned top-level folder.
+- `dist/release/ScBrowser_<version>_x64-setup.exe`: per-user Windows installer
   (installs to `%LOCALAPPDATA%\Programs\ScBrowser`, no admin rights, includes an uninstaller).
   The Inno Setup toolchain is restored from the `Tools.InnoSetup` NuGet package — no manual install needed.
 
-> Both zips contain a single root directory (`ScBrowser_<version>_x64-unpack[-debug]/`);
-> extract and run `ScBrowser.exe`. The layout matches `sc-code/packages`.
+> The dev zip has a single root directory; the release zip does not. Both extract to a
+> directly runnable `ScBrowser.exe`.
 
 You can also open `sc-browser.slnx` in Visual Studio 2022 (17.13+).
 

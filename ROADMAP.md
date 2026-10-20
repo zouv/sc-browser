@@ -7,7 +7,7 @@
 
 ---
 
-## 总进度（2026-10-19 更新）
+## 总进度（2026-10-20 更新）
 
 **v0.1.0 已交付**：C#(WPF) + WebView2 + JS 的通用浏览器，具备多标签导航、历史/书签/下载、
 内部页面（WebUI）、深度主题、会话恢复、快捷键体系，以及 **Chrome 扩展加载/管理**（含 `.crx` 解包）。
@@ -23,9 +23,24 @@
 `packages/release` 的 setup.exe + unpack zip）；版本号提升到 0.2.1。
 细节见 `CHANGELOG [0.2.1]`。
 
+**v0.2.2 打包目录整理（2026-10-20）**：打包脚本统一为 `package.bat` / `sh manager.sh package`，
+产物从 `packages/` 迁到 `dist/`；release 额外保留可直接运行的 `unpack/` 目录，
+`ScBrowser_<版本>_x64-unpack.zip` 内不再套顶层目录。见下方 M4。
+
 ---
 
 ## ✅ 已交付里程碑
+
+### M4 · v0.2.2 打包目录统一（2026-10-20）
+
+一句话结论：脚本名与产物目录对齐，交付物集中到 `dist/`，release 同时提供可运行目录与压缩包。
+
+- 打包脚本统一为 `package.bat` / `sh manager.sh package`（原 `publish`）。
+- 产物迁到 `dist/dev/` 与 `dist/release/`；`clean` 保留 `dist/`。
+- release 增加可直接运行的 `dist/release/unpack/` 目录。
+- `ScBrowser_<版本>_x64-unpack.zip` 打包 unpack 目录内容，zip 根下直接是程序文件，不再套顶层目录。
+
+---
 
 ### M3 · v0.2.1 页内查找 + 打包体系（2026-10-19）
 
@@ -37,6 +52,8 @@
 - `packages/release/ScBrowser_<版本>_x64-unpack.zip`（自包含免安装）+
   `ScBrowser_<版本>_x64-setup.exe`（按用户安装，自带卸载）。
 - 安装器工具链通过 NuGet `Tools.InnoSetup` 还原，打包机无需预装 Inno Setup。
+
+> 2026-10-20 起打包目录已统一到 `dist/`、脚本改为 `package.bat`，见 M4。
 
 ---
 
@@ -74,7 +91,7 @@
 - 存储：SQLite（历史去重累加、书签切换、下载记录 + 幽灵项清理）。
 - 扩展：列出/安装（目录 / `.crx` 解包）/启停/卸载；`--install-extension` 启动参数。
 - 其他：会话保存与恢复、深浅主题热切换、设置持久化、快捷键体系、示例扩展。
-- 工具链：`manager.sh` 统一管理脚本 + 等价的 Windows 批处理脚本（`build` / `run` / `test` / `verify` / `clean` / `publish` / `ci`），
+- 工具链：`manager.sh` 统一管理脚本 + 等价的 Windows 批处理脚本（`build` / `run` / `test` / `verify` / `clean` / `package`（原 `publish`）/ `ci`），
   以及 `.gitattributes` 行尾策略（`*.sh`=LF、`*.bat`=CRLF）。
 
 ---

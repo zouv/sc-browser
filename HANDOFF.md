@@ -17,24 +17,22 @@
 
 ## 状态快照
 
-- **最近更新**：2026-10-19
-- **整体状态**：✅ 无进行中的开发任务（v0.2.1 已发布并推送远程）
-- **当前分支（必填）**：`main`（v0.1.0 已作为根提交入库；后续开发建议开 feature 分支）
+- **最近更新**：2026-10-20
+- **整体状态**：✅ 无进行中的开发任务（v0.2.1 已发布；v0.2.2 打包目录整理已完成，待发布）
+- **当前分支（必填）**：`chore/package-dist-0.2.2`（本次打包目录整理；完成后合回 `main`）
 - **最后验证状态**：`sh manager.sh test` ✅（**94/94**）；`Ctrl+F` 已用 UI Automation 实跑：
   · 打开/关闭（`Ctrl+F` / `Esc`）、输入即搜、匹配计数、`Enter` / `Shift+Enter` / `F3` / `Shift+F3` 跳转均正确
   （设置页搜「扩展」→ `1/3 → 2/3 → 3/3 → 2/3`）；切换标签自动收起；重开保留关键词。
   · 截图确认查找条与深色主题一致、全部匹配黄色高亮、当前匹配橙色高亮。
   · 本机 WebView2 运行时为 **131.0.2903.86**，不支持 `CoreWebView2.Find`（缺 `ICoreWebView2_28`），
     已实跑验证 **JS 兜底路径**；原生路径未在本机触发（升级运行时后自动启用）。
-  · 打包（目标版本 **0.2.1**）：`sh manager.sh publish` 与 `publish.bat` 均跑通；产物与
-    `sc-code/packages` 对齐——
-    `packages/dev/ScBrowser_0.2.1_x64-unpack-debug.zip`（Debug + PDB + logs + build-info）、
-    `packages/release/ScBrowser_0.2.1_x64-unpack.zip`（自包含免安装）、
-    `packages/release/ScBrowser_0.2.1_x64-setup.exe`（安装程序）。
-    两个 zip 均为单一根目录、条目使用正斜杠（Windows `tar.exe` 生成）；
-    暂存目录 `.runtime/package` 成功后已删除。
-    Setup 已做静默安装/卸载实测：安装到临时目录成功、安装后的 exe 哈希与 unpack zip 一致、
-    卸载后目录/开始菜单/注册表项均已清理。
+  · 打包（2026-10-20 重构后）：`sh manager.sh verify` ✅（94/94 + 文档体检通过）；
+    `package.bat`、`sh manager.sh package` 与 `ci.bat` 全链路均实跑通过，产物在 `dist/`：
+    `dist/dev/ScBrowser_0.2.2_x64-unpack-debug.zip`（内带同名根目录）、`dist/release/unpack/`
+    （可直接运行）、`ScBrowser_0.2.2_x64-unpack.zip`（zip 根下直接是程序文件，无顶层目录）
+    与 `ScBrowser_0.2.2_x64-setup.exe`。
+    暂存目录 `.runtime/staging` 成功后删除；`clean.bat` 实跑确认保留 `dist/` 并清掉 `packages/`。
+    Setup 此前已做静默安装/卸载实测；本次仅改动来源目录，安装器编译通过。
 - **已发布**：`v0.2.1`（2026-10-19）
   （https://github.com/zouv/sc-browser/releases/tag/v0.2.1 ），上传
   `ScBrowser_0.2.1_x64-setup.exe` 与 `ScBrowser_0.2.1_x64-unpack.zip`；
@@ -72,10 +70,10 @@
 1. 产品功能候选见 `ROADMAP.md` §🟡 近期规划（P1-4 会话惰性恢复、P2-* 增强）。
 2. `ARCHITECTURE.md` 已按 AGENTS §1.1 拆分：§3 链路详解在 [`arch/flows.md`](arch/flows.md)
    （主文件约 350 行）；§2 任务反查表仍在主文件，下次再涨就先拆它。
-3. 发布流程（下次发版照做）：`sh manager.sh publish`（或 `publish.bat`）→
-   从 `packages/release/` 取 `ScBrowser_<版本>_x64-setup.exe` 与
+3. 发布流程（下次发版照做）：`sh manager.sh package`（或 `package.bat`）→
+   从 `dist/release/` 取 `ScBrowser_<版本>_x64-setup.exe` 与
    `ScBrowser_<版本>_x64-unpack.zip` → `gh release create <tag> <文件>`。
-   **两者必须同时上传**（与 sc-code 一致）；`packages/dev` 的 Debug zip 不上传。
+   **两者必须同时上传**；`dist/dev` 的 Debug zip 不上传。
    安装程序按用户安装（无需管理员权限）。
 
 ## 如何运行 / 测试（Quick Verify）
@@ -85,10 +83,11 @@
 - 测试：`sh manager.sh test`（`test.bat`）
 - 提交前闸门：`sh manager.sh verify`（构建 -warnaserror + 单测 + 文档体检）；`verify.bat` 等价
   （文档体检需 bash，无 `sh`/`bash` 时只告警跳过）
-- 一键 CI：`ci.bat`（clean → verify → publish 到 `packages\`）；发布另可 `sh manager.sh publish`
-- 打包产物：`packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`、
-  `packages/release/ScBrowser_<版本>_x64-unpack.zip` +
-  `ScBrowser_<版本>_x64-setup.exe`；`clean` 保留 `packages`。
+- 一键 CI：`ci.bat`（clean → verify → package 到 `dist\`）；打包另可 `sh manager.sh package`
+- 打包产物：`dist/dev/ScBrowser_<版本>_x64-unpack-debug.zip`、
+  `dist/release/unpack/` +
+  `dist/release/ScBrowser_<版本>_x64-unpack.zip` +
+  `ScBrowser_<版本>_x64-setup.exe`；`clean` 保留 `dist`。
 - 看日志：`sh manager.sh logs`
 - 端到端自查技巧：往 `%LOCALAPPDATA%\sc-browser\session.json` 写
   `{"Urls":["browser://extensions"],"ActiveIndex":0,"SavedAt":"2026-10-16T00:00:00+00:00"}` 再启动，
@@ -128,10 +127,12 @@
   本机 WebView2 131 没有该接口（访问即抛 `NotImplementedException`）。`BrowserTab` 在原生不可用
   或启动失败时退回 `ExecuteScriptAsync` + `TreeWalker` + `CSS.highlights`；升级运行时后自动走原生。
   **不要为「只留一条实现」删掉兜底**，否则旧运行时会直接失去查找功能。
-- **打包统一到 `packages/`，安装程序用 Inno Setup 7**：目录结构对齐 sc-code——
-  `packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`（Debug + PDB + 日志 + build-info）与
-  `packages/release/ScBrowser_<版本>_x64-unpack.zip` + `ScBrowser_<版本>_x64-setup.exe`。
-  两个 zip 都由 Windows 自带的 `tar.exe` 生成（带单一根目录、正斜杠条目）；
+- **打包统一到 `dist/`，脚本名为 `package`**：脚本与产物目录对齐，避免 `packages/`
+  在 .NET 里被误解为 NuGet 依赖目录。`dist/dev/ScBrowser_<版本>_x64-unpack-debug.zip`
+  （Debug + PDB + 日志 + build-info，zip 内带单一根目录）与
+  `dist/release/unpack/`（可直接运行）+
+  `ScBrowser_<版本>_x64-unpack.zip`（zip 根下直接是程序文件）+ `ScBrowser_<版本>_x64-setup.exe`。
+  zip 都由 Windows 自带的 `tar.exe` 生成（正斜杠条目）；
   **不要换回 PowerShell 的 ZipFile**（Windows PowerShell 5.1 会写出反斜杠条目名）。
   安装器工具链通过 NuGet `Tools.InnoSetup` 还原到本地缓存，`installer/ScBrowser.Installer.csproj`
   只负责取 ISCC.exe 路径，**不要让打包机依赖系统预装的 Inno Setup**。

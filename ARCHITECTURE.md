@@ -119,11 +119,11 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 |---|---|
 | `tests/ScBrowser.Tests/` | xUnit 单测（地址栏解析、CRX 解包） |
 | `samples/extensions/hello-sc-browser/` | 示例扩展，用于验证扩展加载链路 |
-| `manager.sh` | 统一管理脚本（构建/运行/测试/发布/清理/日志）·**命令语义的单一来源** |
+| `manager.sh` | 统一管理脚本（构建/运行/测试/打包/清理/日志）·**命令语义的单一来源** |
 | `installer/ScBrowser.iss` | Inno Setup 7 安装脚本：按用户安装、卸载、开始菜单/桌面快捷方式 |
 | `installer/ScBrowser.Installer.csproj` | 仅用于通过 NuGet 还原 Inno Setup 编译器（`Tools.InnoSetup`），不参与应用构建 |
 | `check-docs.sh` | 文档体系机械体检（技术栈无关） |
-| `build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `publish.bat` / `ci.bat` | `manager.sh` 各命令的 Windows 原生等价物（纯 cmd + dotnet，不需要 bash） |
+| `build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `package.bat` / `ci.bat` | `manager.sh` 各命令的 Windows 原生等价物（纯 cmd + dotnet，不需要 bash） |
 | `.gitattributes` | 行尾策略：`*.sh`=LF、`*.bat`=CRLF（否则 Windows 上脚本执行失败） |
 
 ---
@@ -268,21 +268,23 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 > 做运维任务只读本节 + `manager.sh` + `src/ScBrowser/ScBrowser.csproj`，不用打开业务代码。
 > **与 docs/02 分工**：本节只留代码/脚本位置指针；具体操作步骤与坑以 [`docs/02-使用说明.md`](docs/02-使用说明.md) 为准。
 
-- **统一入口**：`manager.sh`（`build` / `run` / `start` / `stop` / `test` / `verify` / `publish` / `clean` / `data` / `logs` / `reset`）。
-  **`.bat` 是等价物不是第二份真源**：`build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `publish.bat` / `ci.bat`
+- **统一入口**：`manager.sh`（`build` / `run` / `start` / `stop` / `test` / `verify` / `package` / `clean` / `data` / `logs` / `reset`）。
+  **`.bat` 是等价物不是第二份真源**：`build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `package.bat` / `ci.bat`
   用纯 cmd + dotnet 重写同一批命令（不依赖 bash）；**改命令语义时两处必须同步**。
   `verify.bat` / `ci.bat` 的文档体检需 bash，检测到 `sh`（退而求其次 `bash`）才跑，否则只告警不失败。
-- **打包产物（`packages/`，已 gitignore，与 sc-code 对齐）**：`publish` 固定产出——
-  `packages/dev/ScBrowser_<版本>_x64-unpack-debug.zip`（Debug 框架依赖发布 + `ScBrowser.pdb`
-  + `logs/`（dev/release 发布日志、安装程序编译日志）+ `build-info.txt`），以及
-  `packages/release/ScBrowser_<版本>_x64-unpack.zip`（自包含免安装目录）+
-  `ScBrowser_<版本>_x64-setup.exe`。两个 zip 内都带单一根目录；暂存目录 `.runtime/package`
+- **打包产物（`dist/`，已 gitignore）**：`package` 固定产出——
+  `dist/dev/ScBrowser_<版本>_x64-unpack-debug.zip`（Debug 框架依赖发布 + `ScBrowser.pdb`
+  + `logs/`（dev/release 发布日志、安装程序编译日志）+ `build-info.txt`，zip 内带单一根目录），
+  `dist/release/unpack/`（自包含、可直接运行的目录），
+  `dist/release/ScBrowser_<版本>_x64-unpack.zip`（打包上述目录的**内容**，zip 根下直接是
+  `ScBrowser.exe`，不再套一层版本目录），以及
+  `dist/release/ScBrowser_<版本>_x64-setup.exe`。暂存目录 `.runtime/staging`
   只在成功后删除。zip 由 Windows 自带的 `tar.exe` 生成（不用 PowerShell ZipFile：
   后者会写出反斜杠条目名）。
   安装程序由 Inno Setup 7 生成，工具通过 NuGet `Tools.InnoSetup` 还原（首次需联网，之后走缓存），
   **不要求系统预装 Inno Setup**；安装脚本在 `installer/ScBrowser.iss`，按用户安装到
-  `%LOCALAPPDATA%\Programs\ScBrowser`（无 UAC），安装 release unpack 目录的全部文件，
-  不触碰用户浏览数据。`clean` 只清 bin/obj，保留 `packages/` 成品包（与 sc-code 一致）。
+  `%LOCALAPPDATA%\Programs\ScBrowser`（无 UAC），安装 `dist/release/unpack/`
+  的全部文件，不触碰用户浏览数据。`clean` 只清 bin/obj 与旧产物，保留 `dist/` 成品包。
 - **行尾策略**：`.gitattributes` 钉住 `*.sh`=LF、`*.bat`=CRLF。改脚本时优先按属性办事，
   别让 Windows 的 `core.autocrlf` 把 `.sh` 检成 CRLF（bash 会报 `No such file or directory` / 变量尾带 `\r` 而假失败）。
 - **路径单一源**：`Infrastructure/AppPaths.cs`；`manager.sh` 中的 `APPDATA_DIR` 必须与其保持一致。

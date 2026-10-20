@@ -13,8 +13,21 @@ obj/
 [Dd]ebug/
 [Rr]elease/
 publish/
+# 最终打包产物（package.bat / manager.sh package）
+dist/
+# 历史产物目录（迁移前），保留忽略以免旧工作区误入库
 packages/
 *.nupkg
+
+# Local AI/editor session settings (shared skills and rules remain tracked)
+/.claude/settings.local.json
+/.claude/sessions/
+/.codex/sessions/
+/.codex/logs/
+/.codex/config.local.toml
+/.opencode/sessions/
+/.history/
+
 
 # ================= 测试 / 覆盖率 =================
 TestResults/
@@ -45,3 +58,4 @@ settings.json
 .pytest_cache/
 .cache/
 .runtime/
+

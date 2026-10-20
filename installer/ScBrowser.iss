@@ -1,7 +1,7 @@
 ; ============================================================================
 ;  ScBrowser 安装程序（Inno Setup 7）
 ;
-;  由 publish 脚本调用：
+;  由 package 脚本调用：
 ;    ISCC.exe --define=MyAppVersion=<版本> installer\ScBrowser.iss
 ;
 ;  安装形态：
@@ -38,8 +38,8 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 UsePreviousAppDir=yes
 
-; 产物直接落在 packages\release，与 unpack zip 并排。
-OutputDir=..\packages\release
+; 产物直接落在 dist\release，与 unpack 目录 / zip 并排。
+OutputDir=..\dist\release
 OutputBaseFilename={#MyAppName}_{#MyAppVersion}_x64-setup
 SetupIconFile=..\src\ScBrowser\Assets\sc-browser.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -65,7 +65,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; unpack 目录已包含主程序、运行库、内部页面（Assets）、LICENSE 与 README.txt。
-Source: "..\.runtime\package\release\ScBrowser_{#MyAppVersion}_x64-unpack\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\release\unpack\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

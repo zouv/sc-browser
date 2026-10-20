@@ -3,18 +3,19 @@ chcp 65001 >nul
 setlocal
 
 rem ============================================================
-rem  sc-browser - 打包（dev + release）
-rem  用法: publish.bat
-rem  等价命令: sh manager.sh publish
+rem  sc-browser - 打包脚本（dev + release）
+rem  用法: package.bat
+rem  等价命令: sh manager.sh package
 rem
-rem  产物（与 sc-code/packages 结构一致）:
-rem    packages\dev\ScBrowser_<版本>_x64-unpack-debug.zip
-rem    packages\release\ScBrowser_<版本>_x64-setup.exe
-rem    packages\release\ScBrowser_<版本>_x64-unpack.zip
+rem  产物（dist/ 已 gitignore）:
+rem    dist\dev\ScBrowser_<版本>_x64-unpack-debug.zip
+rem    dist\release\unpack\                        （可直接运行）
+rem    dist\release\ScBrowser_<版本>_x64-setup.exe
+rem    dist\release\ScBrowser_<版本>_x64-unpack.zip  （zip 内无顶层目录）
 rem ============================================================
 
 rem 关闭常驻 MSBuild / Roslyn 构建服务器：否则同一会话里 build/test 启动的常驻服务器
-rem 会缓存「非单文件」的构建求值，导致 publish 复用该缓存、输出不符合预期。
+rem 会缓存「非单文件」的构建求值，导致 package 复用该缓存、输出不符合预期。
 set "DOTNET_CLI_USE_MSBUILD_SERVER=0"
 set "DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1"
 
@@ -25,9 +26,10 @@ set "PROJDIR=%ROOT%src\ScBrowser"
 set "TESTDIR=%ROOT%tests\ScBrowser.Tests"
 set "INSTALLER_PROJ=%ROOT%installer\ScBrowser.Installer.csproj"
 set "INSTALLER_SCRIPT=%ROOT%installer\ScBrowser.iss"
-set "STAGING_DIR=%ROOT%.runtime\package"
-set "DEV_DIR=%ROOT%packages\dev"
-set "RELEASE_DIR=%ROOT%packages\release"
+set "STAGING_DIR=%ROOT%.runtime\staging"
+set "DIST_DIR=%ROOT%dist"
+set "DEV_DIR=%DIST_DIR%\dev"
+set "RELEASE_DIR=%DIST_DIR%\release"
 
 if exist "%PROJ%" goto :Ready
 echo [ERROR] 找不到工程文件：%PROJ%
@@ -43,7 +45,7 @@ for /f "usebackq delims=" %%V in (`dotnet msbuild "%PROJ%" -getProperty:Version 
 if not defined APP_VERSION goto :NoVersion
 
 set "DEV_UNPACK=%STAGING_DIR%\dev\ScBrowser_%APP_VERSION%_x64-unpack-debug"
-set "REL_UNPACK=%STAGING_DIR%\release\ScBrowser_%APP_VERSION%_x64-unpack"
+set "REL_UNPACK=%RELEASE_DIR%\unpack"
 set "DEV_LOGS=%DEV_UNPACK%\logs"
 set "DEV_ZIP=%DEV_DIR%\ScBrowser_%APP_VERSION%_x64-unpack-debug.zip"
 set "REL_ZIP=%RELEASE_DIR%\ScBrowser_%APP_VERSION%_x64-unpack.zip"
@@ -64,7 +66,8 @@ echo ============================================================
 echo  Package ^|  Version = %APP_VERSION%
 echo  Project : %PROJ%
 echo  Dev zip : %DEV_ZIP%
-echo  Unpack  : %REL_ZIP%
+echo  Unpack  : %REL_UNPACK%
+echo  Zip     : %REL_ZIP%
 echo  Setup   : %SETUP_EXE%
 echo ============================================================
 
@@ -72,16 +75,15 @@ rem 结束可能驻留的实例，否则它占用的 exe 会让打包覆盖失�
 echo Stopping any running ScBrowser instances...
 taskkill /IM ScBrowser.exe /F >nul 2>&1
 
-rem 清理 bin/obj，强制一次干净的 publish。
-echo Cleaning bin/obj and previous packages...
+rem 清理 bin/obj 与旧产物，强制一次干净的打包。
+echo Cleaning bin/obj and previous artifacts...
 if exist "%PROJDIR%\bin"  rmdir /S /Q "%PROJDIR%\bin"
 if exist "%PROJDIR%\obj"  rmdir /S /Q "%PROJDIR%\obj"
 if exist "%TESTDIR%\bin"  rmdir /S /Q "%TESTDIR%\bin"
 if exist "%TESTDIR%\obj"  rmdir /S /Q "%TESTDIR%\obj"
 if exist "%ROOT%installer\obj" rmdir /S /Q "%ROOT%installer\obj"
 if exist "%STAGING_DIR%"  rmdir /S /Q "%STAGING_DIR%"
-if exist "%DEV_DIR%"      rmdir /S /Q "%DEV_DIR%"
-if exist "%RELEASE_DIR%"  rmdir /S /Q "%RELEASE_DIR%"
+if exist "%DIST_DIR%"      rmdir /S /Q "%DIST_DIR%"
 mkdir "%DEV_LOGS%" 2>nul
 mkdir "%REL_UNPACK%" 2>nul
 mkdir "%DEV_DIR%" 2>nul
@@ -94,15 +96,16 @@ rem  1) dev：Debug 发布（框架依赖，含 PDB）+ 构建日志
 rem ------------------------------------------------------------------
 echo.
 echo [1/4] Publishing dev build (Debug + PDB)...
-dotnet publish "%PROJ%" -c Debug -r win-x64 --self-contained false -p:PublishSingleFile=false -p:PublishReadyToRun=false -o ".runtime\package\dev\ScBrowser_%APP_VERSION%_x64-unpack-debug" --nologo > "%DEV_LOGS%\dev-publish.log" 2>&1
+dotnet publish "%PROJ%" -c Debug -r win-x64 --self-contained false -p:PublishSingleFile=false -p:PublishReadyToRun=false -o ".runtime\staging\dev\ScBrowser_%APP_VERSION%_x64-unpack-debug" --nologo > "%DEV_LOGS%\dev-publish.log" 2>&1
 if errorlevel 1 goto :DevFailed
 
 rem ------------------------------------------------------------------
-rem  2) release：自包含 unpack 目录（目标机无需 .NET 运行时，不含 PDB）
+rem  2) release：自包含发布，直接落到 dist\release 作为可运行目录
+rem     （目标机无需 .NET 运行时，不含 PDB）
 rem ------------------------------------------------------------------
 echo.
 echo [2/4] Publishing release unpack directory...
-dotnet publish "%PROJ%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o ".runtime\package\release\ScBrowser_%APP_VERSION%_x64-unpack" --nologo > "%DEV_LOGS%\release-publish.log" 2>&1
+dotnet publish "%PROJ%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o "%REL_UNPACK%" --nologo > "%DEV_LOGS%\release-publish.log" 2>&1
 if errorlevel 1 goto :ReleaseFailed
 
 rem ------------------------------------------------------------------
@@ -139,16 +142,18 @@ call :WriteBuildInfo
 if errorlevel 1 goto :SetupFailed
 
 rem ------------------------------------------------------------------
-rem  4) 生成 zip（zip 内带单一根目录；用 Windows 自带 tar.exe）
+rem  4) 生成 zip：
+rem     dev  zip 内带 ScBrowser_<版本>_x64-unpack-debug 根目录；
+rem     release zip 从 unpack 目录内部打包，条目直接在 zip 根下。
 rem ------------------------------------------------------------------
 echo.
-echo [4/4] Creating unpack zip files...
+echo [4/4] Creating zip files...
 "%SystemRoot%\System32\tar.exe" -a -c -f "%DEV_ZIP%" -C "%STAGING_DIR%\dev" "ScBrowser_%APP_VERSION%_x64-unpack-debug"
 if errorlevel 1 goto :ZipFailed
-"%SystemRoot%\System32\tar.exe" -a -c -f "%REL_ZIP%" -C "%STAGING_DIR%\release" "ScBrowser_%APP_VERSION%_x64-unpack"
+"%SystemRoot%\System32\tar.exe" -a -c -f "%REL_ZIP%" -C "%REL_UNPACK%" *
 if errorlevel 1 goto :ZipFailed
 
-rem 暂存目录只在成功时删除。
+rem 暂存目录只在成功时删除；dist\release\unpack 是正式产物，保留。
 rmdir /S /Q "%STAGING_DIR%"
 
 echo.
@@ -161,7 +166,8 @@ for %%F in ("%RELEASE_DIR%\*") do echo   release\%%~nxF   %%~zF bytes
 echo.
 echo [SUCCESS] 打包完成
 echo   dev     : %DEV_ZIP%
-echo   unpack  : %REL_ZIP%
+echo   unpack  : %REL_UNPACK%
+echo   zip     : %REL_ZIP%
 echo   setup   : %SETUP_EXE%
 exit /b 0
 
