@@ -7,7 +7,7 @@
 
 ---
 
-## 总进度（2026-10-20 更新）
+## 总进度（2026-10-22 更新）
 
 **v0.1.0 已交付**：C#(WPF) + WebView2 + JS 的通用浏览器，具备多标签导航、历史/书签/下载、
 内部页面（WebUI）、深度主题、会话恢复、快捷键体系，以及 **Chrome 扩展加载/管理**（含 `.crx` 解包）。
@@ -23,15 +23,15 @@
 `packages/release` 的 setup.exe + unpack zip）；版本号提升到 0.2.1。
 细节见 `CHANGELOG [0.2.1]`。
 
-**v0.2.2 打包目录整理（2026-10-20）**：打包脚本统一为 `package.bat` / `sh manager.sh package`，
+**v0.2.2 已发布（2026-10-22）**：打包脚本统一为 `package.bat` / `sh manager.sh package`，
 产物从 `packages/` 迁到 `dist/`；release 额外保留可直接运行的 `unpack/` 目录，
-`ScBrowser_<版本>_x64-unpack.zip` 内不再套顶层目录。见下方 M4。
+`ScBrowser_<版本>_x64-unpack.zip` 内不再套顶层目录；安装器发布者元数据清理为 `zouv`。见下方 M4。
 
 ---
 
 ## ✅ 已交付里程碑
 
-### M4 · v0.2.2 打包目录统一（2026-10-20）
+### M4 · v0.2.2 打包目录统一（2026-10-20 完成，2026-10-22 发布）
 
 一句话结论：脚本名与产物目录对齐，交付物集中到 `dist/`，release 同时提供可运行目录与压缩包。
 
@@ -39,6 +39,7 @@
 - 产物迁到 `dist/dev/` 与 `dist/release/`；`clean` 保留 `dist/`。
 - release 增加可直接运行的 `dist/release/unpack/` 目录。
 - `ScBrowser_<版本>_x64-unpack.zip` 打包 unpack 目录内容，zip 根下直接是程序文件，不再套顶层目录。
+- 2026-10-22 发布：上传 `setup.exe` 与 `unpack.zip`；安装器 `CompanyName` 清理为 `zouv`。
 
 ---
 

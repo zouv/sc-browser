@@ -17,27 +17,19 @@
 
 ## 状态快照
 
-- **最近更新**：2026-10-20
-- **整体状态**：✅ 无进行中的开发任务（v0.2.1 已发布；v0.2.2 打包目录整理已完成，待发布）
-- **当前分支（必填）**：`chore/package-dist-0.2.2`（本次打包目录整理；完成后合回 `main`）
-- **最后验证状态**：`sh manager.sh test` ✅（**94/94**）；`Ctrl+F` 已用 UI Automation 实跑：
-  · 打开/关闭（`Ctrl+F` / `Esc`）、输入即搜、匹配计数、`Enter` / `Shift+Enter` / `F3` / `Shift+F3` 跳转均正确
-  （设置页搜「扩展」→ `1/3 → 2/3 → 3/3 → 2/3`）；切换标签自动收起；重开保留关键词。
-  · 截图确认查找条与深色主题一致、全部匹配黄色高亮、当前匹配橙色高亮。
-  · 本机 WebView2 运行时为 **131.0.2903.86**，不支持 `CoreWebView2.Find`（缺 `ICoreWebView2_28`），
-    已实跑验证 **JS 兜底路径**；原生路径未在本机触发（升级运行时后自动启用）。
-  · 打包（2026-10-20 重构后）：`sh manager.sh verify` ✅（94/94 + 文档体检通过）；
-    `package.bat`、`sh manager.sh package` 与 `ci.bat` 全链路均实跑通过，产物在 `dist/`：
-    `dist/dev/ScBrowser_0.2.2_x64-unpack-debug.zip`（内带同名根目录）、`dist/release/unpack/`
-    （可直接运行）、`ScBrowser_0.2.2_x64-unpack.zip`（zip 根下直接是程序文件，无顶层目录）
-    与 `ScBrowser_0.2.2_x64-setup.exe`。
-    暂存目录 `.runtime/staging` 成功后删除；`clean.bat` 实跑确认保留 `dist/` 并清掉 `packages/`。
-    Setup 此前已做静默安装/卸载实测；本次仅改动来源目录，安装器编译通过。
-- **已发布**：`v0.2.1`（2026-10-19）
-  （https://github.com/zouv/sc-browser/releases/tag/v0.2.1 ），上传
-  `ScBrowser_0.2.1_x64-setup.exe` 与 `ScBrowser_0.2.1_x64-unpack.zip`；
-  页内查找与打包体系改造均已包含在此版本。
-- **上一版**：`v0.2.0`（https://github.com/zouv/sc-browser/releases/tag/v0.2.0 ）。
+- **最近更新**：2026-10-22
+- **整体状态**：✅ 无进行中的开发任务（v0.2.2 已发布；隐私红线已写入 `AGENTS.md` §3）
+- **当前分支（必填）**：`main`
+- **最后验证状态**：
+  · 2026-10-22 发布前：`sh manager.sh verify` ✅（**94/94** + 文档体检）；`sh manager.sh package` ✅；
+    setup 的 `CompanyName=zouv`，release 无 PDB；产物：
+    `dist/dev/ScBrowser_0.2.2_x64-unpack-debug.zip`（内带同名根目录）、`dist/release/unpack/`、
+    `ScBrowser_0.2.2_x64-unpack.zip`（zip 根下直接是程序文件）与 `ScBrowser_0.2.2_x64-setup.exe`。
+  · `Ctrl+F` 已用 UI Automation 实跑通过（打开/关闭、输入即搜、计数、Enter/Shift+Enter/F3 跳转、
+    切换标签自动收起、重开保留关键词）；本机 WebView2 131 不支持原生 Find，已验证 JS 兜底路径。
+- **已发布**：`v0.2.2`（2026-10-22，https://github.com/zouv/sc-browser/releases/tag/v0.2.2 ），
+  上传 `ScBrowser_0.2.2_x64-setup.exe` 与 `ScBrowser_0.2.2_x64-unpack.zip`。
+- **上一版**：`v0.2.1`（2026-10-19）；更早 `v0.2.0`。
 
 ---
 
