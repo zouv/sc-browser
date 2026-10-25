@@ -199,6 +199,50 @@ public class CrxPackageTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_workDir, "escaped.txt")));
     }
 
+    [Fact]
+    public void 写入同前缀兄弟目录的穿越也应被拒绝()
+    {
+        // 只比「目标目录」前缀的旧实现会放行它：...\out-sibling-evil 也以 ...\out-sibling 开头。
+        var crx = WriteFile("sibling.crx", BuildCrxV3(new Dictionary<string, string>
+        {
+            ["manifest.json"] = "{}",
+            ["../out-sibling-evil/x.js"] = "不该被写出去",
+        }));
+
+        var target = Path.Combine(_workDir, "out-sibling");
+        Assert.Throws<InvalidDataException>(() => CrxPackage.ExtractTo(crx, target));
+        Assert.False(Directory.Exists(Path.Combine(_workDir, "out-sibling-evil")));
+    }
+
+    [Fact]
+    public void 坏包不应删掉已存在的旧目录()
+    {
+        // 校验先于删除：装坏包失败后，之前装好的同名扩展应原样保留。
+        var target = Path.Combine(_workDir, "out-keep");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "manifest.json"), "旧版本");
+
+        var crx = WriteFile("bad.crx", BuildCrxV3(new Dictionary<string, string>
+        {
+            ["../escaped.txt"] = "x",
+        }));
+
+        Assert.Throws<InvalidDataException>(() => CrxPackage.ExtractTo(crx, target));
+        Assert.Equal("旧版本", File.ReadAllText(Path.Combine(target, "manifest.json")));
+    }
+
+    [Fact]
+    public void 条目数超限应被拒绝()
+    {
+        var files = Enumerable.Range(0, CrxPackage.MaxEntries + 1)
+            .ToDictionary(i => $"f{i}.txt", _ => string.Empty);
+        var crx = WriteFile("many.crx", BuildCrxV3(files));
+
+        var ex = Assert.Throws<InvalidDataException>(
+            () => CrxPackage.ExtractTo(crx, Path.Combine(_workDir, "out-many")));
+        Assert.Contains("条目数", ex.Message);
+    }
+
     [Theory]
     [InlineData("my-ext.crx", "my-ext")]
     [InlineData("My Ext v2.crx", "My-Ext-v2")]

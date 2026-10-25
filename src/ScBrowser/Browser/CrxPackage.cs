@@ -1,6 +1,7 @@
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using ScBrowser.Infrastructure;
 
 namespace ScBrowser.Browser;
 
@@ -50,6 +51,12 @@ public static class CrxPackage
         stream.ReadExactly(zipBytes);
 
         using var zipStream = new MemoryStream(zipBytes, writable: false);
+        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+
+        // 先整体校验再动磁盘：越界路径、条目数、解压后总大小（防 zip 炸弹）。
+        // 放在删除旧目录之前，坏包不会把已装好的同名扩展先删掉。
+        var root = Path.GetFullPath(targetDirectory);
+        ValidateEntries(archive, root);
 
         if (Directory.Exists(targetDirectory))
         {
@@ -57,20 +64,12 @@ public static class CrxPackage
         }
 
         Directory.CreateDirectory(targetDirectory);
-        var root = Path.GetFullPath(targetDirectory);
 
-        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
         foreach (var entry in archive.Entries)
         {
+            var destination = Path.GetFullPath(Path.Combine(root, entry.FullName));
+
             // 目录条目（以 / 结尾）没有内容，只需建目录。
-            var destination = Path.GetFullPath(Path.Combine(targetDirectory, entry.FullName));
-
-            // 防目录穿越：确保解出的路径仍在目标目录内。
-            if (!destination.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException($"CRX 内含越界路径，已中止解包：{entry.FullName}");
-            }
-
             if (entry.Name.Length == 0)
             {
                 Directory.CreateDirectory(destination);
@@ -79,6 +78,41 @@ public static class CrxPackage
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             entry.ExtractToFile(destination, overwrite: true);
+        }
+    }
+
+    /// <summary>单个扩展包允许的最大条目数。</summary>
+    internal const int MaxEntries = 20_000;
+
+    /// <summary>单个扩展包解压后允许的最大总字节数（Chrome 商店上限是 2GB，实际扩展远小于此）。</summary>
+    internal const long MaxExtractedBytes = 512L * 1024 * 1024;
+
+    /// <summary>
+    /// 解包前的整体校验：越界路径（见 <see cref="PathSafety.IsUnderDirectory"/> 为何要补分隔符）、
+    /// 条目数、解压后总大小。
+    /// </summary>
+    private static void ValidateEntries(ZipArchive archive, string root)
+    {
+        if (archive.Entries.Count > MaxEntries)
+        {
+            throw new InvalidDataException($"CRX 条目数过多（{archive.Entries.Count}），已中止解包。");
+        }
+
+        long total = 0;
+        foreach (var entry in archive.Entries)
+        {
+            var destination = Path.GetFullPath(Path.Combine(root, entry.FullName));
+            if (!PathSafety.IsUnderDirectory(destination, root)
+                && !string.Equals(destination.TrimEnd(Path.DirectorySeparatorChar), root, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"CRX 内含越界路径，已中止解包：{entry.FullName}");
+            }
+
+            total += entry.Length;
+            if (total > MaxExtractedBytes)
+            {
+                throw new InvalidDataException("CRX 解压后体积过大，已中止解包。");
+            }
         }
     }
 
