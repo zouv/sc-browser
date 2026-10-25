@@ -7,7 +7,7 @@
 
 ---
 
-## 总进度（2026-10-25 更新）
+## 总进度（2026-10-26 更新）
 
 **v0.1.0 已交付**：C#(WPF) + WebView2 + JS 的通用浏览器，具备多标签导航、历史/书签/下载、
 内部页面（WebUI）、深度主题、会话恢复、快捷键体系，以及 **Chrome 扩展加载/管理**（含 `.crx` 解包）。
@@ -30,6 +30,19 @@
 ---
 
 ## ✅ 已交付里程碑
+
+### M6 · 标签引擎收尾 + 日常功能（2026-10-26 完成，未发布）
+
+一句话结论：把 S3 留下的能力补齐（休眠 / 拖出成窗口 / 内核重建），并做完 F-1～F-7 的日常浏览功能。
+细节见 `CHANGELOG [未发布]`。
+
+- S3b：后台标签 30 分钟休眠、拖出标签成新窗口、内核进程退出后重建引擎。
+- F-1 全屏（F11 + 网页视频全屏）、F-2 打印/另存为/查看源代码、F-3 链接悬停状态栏。
+- F-4 标签音频指示与静音、F-5 下载暂停/继续/取消与工具栏指示、F-6 站点信息与证书错误提示、F-7 设为默认浏览器。
+- 验证：F11/网页全屏、状态栏、音频与静音、下载三项控制与指示器、站点信息浮层已实跑；
+  内核重建 / 后台休眠 / 拖出窗口 / 打印另存为 / 证书提示 / 默认浏览器注册为代码路径完成但未实跑（见 HANDOFF）。
+
+---
 
 ### M5 · 体检加固：P0 安全 + 稳定性（2026-10-25 完成，未发布）
 
@@ -126,16 +139,16 @@
 |---|------|------|
 | ~~S1~~ ✅ | ~~P0 安全加固~~ | **已完成**（2026-10-25）：见 M5 |
 | ~~S2~~ ✅ | ~~稳定性（崩溃恢复 / 单实例 / 原子持久化）~~ | **已完成**（2026-10-25）：见 M5 |
-| ~~S3~~ ✅ | ~~标签状态与引擎拆分 + 惰性恢复~~ | **已完成**（2026-10-25）：`BrowserTab` 构造不再创建 WebView2，引擎按需创建；会话恢复只立即加载当前标签。**但**后台标签休眠（`TrySuspendAsync`）、把标签拖出成新窗口、内核主进程退出后自动重建引擎尚未做——基础设施已就位，见 S3b |
-| S3b | 后台标签休眠 / 拖出成窗口 / 内核重建 | 在 S3 的「状态 vs 引擎」基础上：长时间未激活且未播放音视频的标签 `TrySuspendAsync`；拖拽到标签条外新建窗口并迁移标签；`BrowserProcessExited` 后把标签标记为待重建、重载时自动创建新引擎 |
+| ~~S3~~ ✅ | ~~标签状态与引擎拆分 + 惰性恢复~~ | **已完成**（2026-10-25） |
+| ~~S3b~~ ✅ | ~~后台休眠 / 拖出成窗口 / 内核重建~~ | **已完成**（2026-10-26）：见 M6 |
 | S4 | 数据层加固 | SQLite 调用移出 UI 线程；`PRAGMA user_version` 迁移；访问明细表（支撑 P2-3）；书签树结构（支撑 P2-2）；去掉 `Cache=Shared` |
-| F-1 | 全屏 | F11 + 网页视频全屏（`ContainsFullScreenElementChanged` 时隐藏外壳） |
-| F-2 | 打印 / 另存为 / 查看源代码 | Ctrl+P / Ctrl+S / Ctrl+U（`ShowPrintUI` / `ShowSaveAsUIAsync`） |
-| F-3 | 链接悬停状态栏 | 订阅 `StatusBarTextChanged` 自绘（内置状态栏已关） |
-| F-4 | 标签音频指示与静音 | `IsDocumentPlayingAudio` / `IsMuted` |
-| F-5 | 下载控制与外壳提示 | 暂停/继续/取消；工具栏下载指示；落实 `AskWhereToSaveDownloads`；下载目录用系统已知文件夹 |
-| F-6 | 站点信息与证书错误 | 点锁看证书/权限（`GetNonDefaultPermissionSettingsAsync`）；`ServerCertificateErrorDetected` 错误页 |
-| F-7 | 设为默认浏览器 | 注册 ProgID / URL 关联（单实例转发已就绪） |
+| ~~F-1~~ ✅ | 全屏 | F11 + 网页视频全屏（`ContainsFullScreenElementChanged` 时隐藏外壳） |
+| ~~F-2~~ ✅ | 打印 / 另存为 / 查看源代码 | Ctrl+P / Ctrl+S / Ctrl+U（`ShowPrintUI` / `ShowSaveAsUIAsync`） |
+| ~~F-3~~ ✅ | 链接悬停状态栏 | 订阅 `StatusBarTextChanged` 自绘（内置状态栏已关） |
+| ~~F-4~~ ✅ | 标签音频指示与静音 | `IsDocumentPlayingAudio` / `IsMuted` |
+| ~~F-5~~ ✅ | 下载控制与外壳提示 | 暂停/继续/取消；工具栏下载指示；落实 `AskWhereToSaveDownloads`；下载目录用系统已知文件夹 |
+| ~~F-6~~ ✅ | 站点信息与证书错误 | 点锁看证书/权限（`GetNonDefaultPermissionSettingsAsync`）；`ServerCertificateErrorDetected` 错误页 |
+| ~~F-7~~ ✅ | 设为默认浏览器 | 注册 ProgID / URL 关联（单实例转发已就绪） |
 | E-1 | 扩展安装链路 | 商店链接/ID 下载 CRX；CRX3 公钥写入 manifest `key` 保住扩展 ID（需实测）；签名校验；受管目录 `<id>/<version>/`、目录安装也复制；自建 manifest 元数据（含 `_locales`、权限确认）；`update_url` 自动更新；MV2/MV3 提示。并入 P2-6 |
 | E-2 | 扩展界面 | 工具栏扩展按钮 + 弹窗（顶层窗口内的同 profile WebView2 打开 `chrome-extension://<id>/<popup>`）+ 选项页；地址栏放行 `chrome-extension://`；无痕中的扩展（需实测） |
 | E-3 | 扩展 API 缺口 PoC + 兼容矩阵 | 平台不提供 `chrome.tabs/windows`、action 弹窗、native messaging；在自承载的扩展页注入 polyfill 补子集；Top-N 扩展兼容性矩阵写进 docs |

@@ -17,6 +17,14 @@
   2. `TabCreated` 现在在引擎创建**之前**触发（tab 级事件订阅者不受影响）。
   3. 激活时初始化失败不抛到 UI 线程，而是把原因挂到该标签的错误条（`ShowEngineError`）。
   4. 惰性标签不会在启动时导航，因此不会重复写历史。
+- **同一套机制支撑的三个能力**：
+  - **引擎退出后重建**：内核进程没了 → `BrowserTab.LoseEngine`（保留状态、丢弃控件）→ 用户点「重新加载」
+    或再次激活 → `TryEnsureEngineAsync` 重新创建并回到原地址。
+  - **后台休眠**：`TabManager.SuspendIdleTabs` 每分钟检查，30 分钟没被激活且没在放声音的标签
+    `TrySuspendAsync`；`Activate` / `Navigate` 会先 `Resume`。
+  - **拖出成新窗口**：`TabManager.ReleaseTab`（不写「最近关闭」、不 Dispose）→ `Adopt` 到新窗口。
+    标签事件处理器一律经 `tab.Owner` 路由，所以迁移后不会把事件送回旧窗口；
+    无痕标签只会迁移到无痕窗口。
 
 ---
 
