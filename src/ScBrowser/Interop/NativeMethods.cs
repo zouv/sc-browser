@@ -167,4 +167,18 @@ internal static class NativeMethods
         var preference = rounded ? DwmcpRound : DwmcpDoNotRound;
         _ = DwmSetWindowAttribute(handle, DwmwaWindowCornerPreference, ref preference, sizeof(int));
     }
+
+    // ---- 单实例转发：把前台权交给已在运行的实例 ----
+
+    private const int AsfwAny = -1;
+
+    [DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int processId);
+
+    /// <summary>
+    /// 允许任意进程（实际就是已在运行的那个实例）把自己的窗口切到前台。
+    /// Windows 只允许「当前前台进程」抢前台；二次启动的进程此刻正是前台进程，
+    /// 转发参数之前先让出这个权利，否则已有实例只会在任务栏闪烁。
+    /// </summary>
+    public static void AllowAnyProcessToSetForeground() => _ = AllowSetForegroundWindow(AsfwAny);
 }

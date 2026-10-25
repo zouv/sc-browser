@@ -1,3 +1,4 @@
+using System.Windows.Threading;
 using Microsoft.Extensions.Logging;
 using ScBrowser.Browser;
 using ScBrowser.Storage;
@@ -114,12 +115,47 @@ public sealed class BrowserWindowManager
         window.Closed += (_, _) => Forget(window);
 
         _windows.Add(window);
+        EnsureAutoSave();
         _logger.LogInformation(
             "已创建{Kind}窗口（共 {Count} 个窗口）",
             options.Kind == BrowserSessionKind.Incognito ? "无痕" : "普通",
             _windows.Count);
 
         return window;
+    }
+
+    /// <summary>
+    /// 处理二次启动转发来的命令行（见 <see cref="SingleInstance"/>）：带地址就在最近的普通窗口里开标签，
+    /// 什么都不带就新开一个窗口（Chrome 的行为）；扩展安装请求照常执行。
+    /// </summary>
+    public async Task HandleForwardedArgsAsync(IReadOnlyList<string> args)
+    {
+        var urls = StartupCommandRunner.ExtractUrls(args);
+        var target = _windows.FirstOrDefault(w => w.IsActive && !w.Tabs.IsIncognito)
+                     ?? _windows.LastOrDefault(w => !w.Tabs.IsIncognito);
+
+        if (target is null || (urls.Count == 0 && !StartupCommandRunner.HasCommands(args)))
+        {
+            target = CreateWindow(new BrowserWindowOptions(Urls: urls.Count > 0 ? urls : null));
+            target.Show();
+        }
+        else
+        {
+            foreach (var url in urls)
+            {
+                try
+                {
+                    await target.Tabs.CreateAsync(url, activate: true).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "打开转发的地址失败：{Url}", url);
+                }
+            }
+        }
+
+        target.BringToFront();
+        await _startupCommands.RunAsync(target.Tabs.Profile, args).ConfigureAwait(true);
     }
 
     /// <summary>把应用主题同步给所有窗口的网页内容（含之后新建的窗口）。</summary>
@@ -134,24 +170,73 @@ public sealed class BrowserWindowManager
     }
 
     /// <summary>
-    /// 把「普通窗口」的标签页存成会话。由主窗口在退出时调用——
-    /// 无痕窗口不参与（这正是无痕的含义）。
+    /// 把「普通窗口」的标签页存成会话。由窗口在关闭时调用——无痕窗口不参与（这正是无痕的含义）。
     /// </summary>
-    public void SaveSession()
+    /// <param name="closing">正在关闭的窗口的标签集合。</param>
+    public void SaveSession(TabManager closing)
     {
-        var tabs = _tabManagers.FirstOrDefault(t => !t.IsIncognito);
-        if (tabs is null)
+        if (closing.IsIncognito)
         {
             return;
         }
 
-        var snapshot = SessionStore.SnapshotUrls(tabs.Tabs);
+        // 关的是「最后一个有标签的普通窗口」且它已经空了（Ctrl+W 关掉了最后一个标签）：
+        // 用户明确把标签都关了，下次就不该再恢复出来——清掉会话，而不是留着上一次的旧文件。
+        SaveSessionCore(clearWhenEmpty: true);
+    }
+
+    /// <summary>定期保存的间隔：崩溃 / 断电 / 被结束进程时，最多丢这么久的标签变化。</summary>
+    private static readonly TimeSpan AutoSaveInterval = TimeSpan.FromSeconds(20);
+
+    private DispatcherTimer? _autoSave;
+    private string? _lastSavedSessionKey;
+
+    /// <summary>
+    /// 开启会话定期保存。此前会话只在关窗时写——进程一崩溃，这次开的标签就全丢了。
+    /// 内容没变就不落盘（键 = 地址列表 + 激活下标）。
+    /// </summary>
+    private void EnsureAutoSave()
+    {
+        if (_autoSave is not null)
+        {
+            return;
+        }
+
+        _autoSave = new DispatcherTimer { Interval = AutoSaveInterval };
+        _autoSave.Tick += (_, _) =>
+        {
+            if (_settings.Current.RememberSessionOnExit)
+            {
+                SaveSessionCore(clearWhenEmpty: false);
+            }
+        };
+        _autoSave.Start();
+    }
+
+    private void SaveSessionCore(bool clearWhenEmpty)
+    {
+        var tabs = _tabManagers.FirstOrDefault(t => !t.IsIncognito && t.Tabs.Count > 0);
+        var snapshot = tabs is null ? [] : SessionStore.SnapshotUrls(tabs.Tabs);
         if (snapshot.Count == 0)
         {
+            if (clearWhenEmpty)
+            {
+                _session.Clear();
+                _lastSavedSessionKey = null;
+            }
+
             return;
         }
 
-        _session.Save(snapshot, tabs.ActiveTab is null ? 0 : tabs.Tabs.IndexOf(tabs.ActiveTab));
+        var activeIndex = tabs!.ActiveTab is null ? 0 : tabs.Tabs.IndexOf(tabs.ActiveTab);
+        var key = string.Join('\n', snapshot) + "\n#" + activeIndex;
+        if (key == _lastSavedSessionKey)
+        {
+            return;
+        }
+
+        _session.Save(snapshot, activeIndex);
+        _lastSavedSessionKey = key;
     }
 
     /// <summary>关闭所有窗口（应用退出时兜底，避免 WebView2 进程残留）。</summary>

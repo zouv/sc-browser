@@ -8,10 +8,31 @@ namespace ScBrowser.Infrastructure;
 /// </summary>
 public static class AppPaths
 {
-    /// <summary>应用数据根目录。</summary>
-    public static string AppDataRoot { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "sc-browser");
+    /// <summary>覆盖数据根目录的环境变量（<b>仅供开发/测试</b>）。</summary>
+    public const string DataDirOverrideVariable = "SCBROWSER_DATA_DIR";
+
+    /// <summary>
+    /// 应用数据根目录。
+    /// <para>
+    /// 设置了 <see cref="DataDirOverrideVariable"/> 时改用它：开发时可以起一个数据完全隔离的测试实例，
+    /// 不与日常使用的那份数据（以及正在运行的那个实例）抢同一个 WebView2 用户数据目录。
+    /// 单实例锁也按数据根目录区分（见 <c>Services/SingleInstance.cs</c>），两者可同时运行。
+    /// </para>
+    /// </summary>
+    public static string AppDataRoot { get; } = ResolveAppDataRoot();
+
+    private static string ResolveAppDataRoot()
+    {
+        var overridden = Environment.GetEnvironmentVariable(DataDirOverrideVariable);
+        if (!string.IsNullOrWhiteSpace(overridden))
+        {
+            return Path.GetFullPath(overridden);
+        }
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "sc-browser");
+    }
 
     /// <summary>WebView2 用户数据目录（Cookie / 缓存 / 扩展安装态都在这里，由 WebView2 托管）。</summary>
     public static string UserDataFolder => Path.Combine(AppDataRoot, "UserData");

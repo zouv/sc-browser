@@ -552,9 +552,19 @@
                              Converter={StaticResource NonEmptyToVisibility},
                              FallbackValue=Collapsed,
                              TargetNullValue=Collapsed}">
-            <TextBlock Text="{Binding ActiveTab.LastError, FallbackValue=''}"
-                       Foreground="White"
-                       TextWrapping="Wrap" />
+            <DockPanel>
+                <!-- 导航失败与页面崩溃共用这一条；重新加载对两者都是第一步。 -->
+                <Button DockPanel.Dock="Right"
+                        Margin="12,0,0,0"
+                        Padding="10,2"
+                        Content="重新加载"
+                        Command="{Binding ReloadTabCommand}"
+                        CommandParameter="{Binding ActiveTab}" />
+                <TextBlock Text="{Binding ActiveTab.LastError, FallbackValue=''}"
+                           Foreground="White"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap" />
+            </DockPanel>
         </Border>
 
         <!-- ============ 内容区（WebView2 容器） ============ -->

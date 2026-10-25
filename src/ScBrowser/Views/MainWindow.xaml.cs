@@ -84,6 +84,17 @@ public partial class MainWindow : Window
     /// <summary>本窗口的标签页集合（窗口关闭时由 <see cref="BrowserWindowManager"/> 摘除）。</summary>
     public TabManager Tabs => _tabs;
 
+    /// <summary>把窗口切到前台（二次启动转发地址时用）；最小化的先还原。</summary>
+    public void BringToFront()
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Activate();
+    }
+
     /// <summary>句柄就绪后挂上「最大化钉到工作区」的钩子，避免自绘外壳被裁边。</summary>
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -108,6 +119,14 @@ public partial class MainWindow : Window
         {
             urls = snapshot.Urls;
             activeIndex = snapshot.ActiveIndex;
+        }
+
+        // 命令行带了地址（从别的程序点开链接）：接在恢复的会话后面打开，并切到最后一个。
+        var commandLineUrls = _options.IsPrimary ? StartupCommandRunner.ExtractUrls(StartupCommandRunner.OwnArgs) : [];
+        if (commandLineUrls.Count > 0)
+        {
+            urls = [.. urls ?? [], .. commandLineUrls];
+            activeIndex = urls.Count - 1;
         }
 
         await _viewModel.StartAsync(urls, activeIndex);
@@ -198,7 +217,7 @@ public partial class MainWindow : Window
         if (_settings.Current.RememberSessionOnExit)
         {
             // 先存会话再关标签——CloseAll 之后标签集合就空了。
-            _windows.SaveSession();
+            _windows.SaveSession(_tabs);
         }
 
         _tabs.CloseAll();

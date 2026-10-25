@@ -21,10 +21,29 @@ namespace ScBrowser;
 public partial class App : Application
 {
     private IHost? _host;
+    private SingleInstance? _instance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // 0) 单实例：同一份数据已有实例在跑 → 把参数（要打开的地址等）交给它，本进程退出。
+        //    必须在碰任何数据文件、创建 WebView2 环境之前判定。
+        _instance = SingleInstance.Acquire();
+        if (!_instance.IsPrimary)
+        {
+            if (!_instance.TryForward(e.Args, TimeSpan.FromSeconds(5)))
+            {
+                MessageBox.Show(
+                    "ScBrowser 已在运行，但没有响应。请稍后再试，或在任务管理器中结束 ScBrowser 后重新打开。",
+                    "ScBrowser",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
+            Shutdown();
+            return;
+        }
 
         AppPaths.EnsureCreated();
         ConfigureGlobalExceptionHandling();
@@ -45,6 +64,25 @@ public partial class App : Application
 
         // ---- 启动期一次性初始化（顺序有依赖，别随意调换）----
         var services = _host.Services;
+        var logger = services.GetRequiredService<ILogger<App>>();
+
+        // 0.5) WebView2 运行时：没装就直接说清楚，而不是让每个标签都以「初始化失败」告终。
+        var runtimeVersion = BrowserEnvironmentProvider.GetRuntimeVersion();
+        if (runtimeVersion is null)
+        {
+            logger.LogCritical("未检测到 WebView2 运行时");
+            MessageBox.Show(
+                "未检测到 Microsoft Edge WebView2 运行时，ScBrowser 无法显示网页。\n\n"
+                + "请从 https://developer.microsoft.com/microsoft-edge/webview2/ 下载安装「Evergreen」运行时后重新打开。",
+                "ScBrowser",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
+
+        logger.LogInformation("ScBrowser {Version} 启动，WebView2 运行时 {Runtime}，数据目录 {DataRoot}",
+            typeof(App).Assembly.GetName().Version, runtimeVersion, AppPaths.AppDataRoot);
 
         // 1) 建表（幂等）
         services.GetRequiredService<BrowserDatabase>().Initialize();
@@ -65,6 +103,21 @@ public partial class App : Application
         _ = services.GetRequiredService<WebMessageRouter>();  // 订阅内部页面消息
 
         windows.CreateWindow(new BrowserWindowOptions(IsPrimary: true)).Show();
+
+        // 4) 开始接收二次启动转发来的参数（后台线程收到后切回 UI 线程处理）。
+        _instance.StartListening(
+            args => Dispatcher.InvokeAsync(async () =>
+            {
+                try
+                {
+                    await windows.HandleForwardedArgsAsync(args);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "处理二次启动转发的参数失败");
+                }
+            }),
+            logger);
     }
 
     private static void ConfigureServices(HostBuilderContext context, IServiceCollection services)
@@ -136,6 +189,7 @@ public partial class App : Application
         {
             Log.CloseAndFlush();
             _host?.Dispose();
+            _instance?.Dispose();
         }
 
         base.OnExit(e);

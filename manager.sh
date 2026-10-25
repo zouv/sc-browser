@@ -23,7 +23,10 @@ RUNTIME_DIR="${PROJECT_ROOT}/.runtime"
 SLN="$(ls "${PROJECT_ROOT}"/sc-browser.slnx "${PROJECT_ROOT}"/sc-browser.sln 2>/dev/null | head -n1)"
 
 # 应用运行期数据目录（与 Infrastructure/AppPaths.cs 保持一致：%LOCALAPPDATA%\sc-browser）
-if [ -n "${LOCALAPPDATA:-}" ]; then
+# SCBROWSER_DATA_DIR：仅供开发/测试的覆盖（隔离一份数据，跑测试实例时不碰日常使用的那份）。
+if [ -n "${SCBROWSER_DATA_DIR:-}" ]; then
+  APPDATA_DIR="${SCBROWSER_DATA_DIR}"
+elif [ -n "${LOCALAPPDATA:-}" ]; then
   APPDATA_DIR="${LOCALAPPDATA}/sc-browser"
 else
   APPDATA_DIR="${HOME}/.local/share/sc-browser"
