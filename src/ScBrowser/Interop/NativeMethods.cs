@@ -30,10 +30,57 @@ internal static class NativeMethods
     private const int MonitorDefaultToNearest = 0x00000002;
 
     [DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+
+    [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, int flags);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(
+        IntPtr hwnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpFrameChanged = 0x0020;
+
+    /// <summary>
+    /// 把窗口铺满它所在的整块显示器（含任务栏区域）——全屏用。
+    /// <para>
+    /// 用 Win32 而不是 WPF 的 <c>WindowState</c>：最大化只会铺满工作区（扣掉任务栏），
+    /// 而 Win32 坐标是物理像素，多显示器 / 不同缩放下也比自己换算 DIP 更可靠。
+    /// 退出全屏时由调用方把 Left/Top/Width/Height 重新设回去。
+    /// </para>
+    /// </summary>
+    public static void FillMonitor(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var monitor = MonitorFromWindow(handle, MonitorDefaultToNearest);
+        if (monitor == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info))
+        {
+            return;
+        }
+
+        _ = SetWindowPos(
+            handle,
+            IntPtr.Zero,
+            info.Monitor.Left,
+            info.Monitor.Top,
+            info.Monitor.Right - info.Monitor.Left,
+            info.Monitor.Bottom - info.Monitor.Top,
+            SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
+    }
+
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MonitorInfo

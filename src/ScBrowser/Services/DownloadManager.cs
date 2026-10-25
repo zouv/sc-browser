@@ -3,6 +3,7 @@ using System.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using ScBrowser.Browser;
+using ScBrowser.Infrastructure;
 using ScBrowser.Storage;
 
 namespace ScBrowser.Services;
@@ -16,6 +17,7 @@ namespace ScBrowser.Services;
 /// </summary>
 public sealed class DownloadManager
 {
+    private readonly BrowserWindowManager _windows;
     private readonly DownloadRepository _repository;
     private readonly SettingsService _settings;
     private readonly ILogger<DownloadManager> _logger;
@@ -23,12 +25,18 @@ public sealed class DownloadManager
     /// <summary>本次会话中活跃的下载（含最近一次落盘的进度百分比，用于节流）。</summary>
     private readonly ConcurrentDictionary<string, DownloadTrack> _active = new();
 
+    /// <summary>用户点了暂停 / 取消的下载。WebView2 对这两种操作都报 UserCanceled，
+    /// 只能自己记着意图，才能把状态区分成「已暂停」与「已取消」。</summary>
+    private readonly ConcurrentDictionary<string, byte> _pausedByUser = new();
+    private readonly ConcurrentDictionary<string, byte> _cancelledByUser = new();
+
     public DownloadManager(
         BrowserWindowManager windows,
         DownloadRepository repository,
         SettingsService settings,
         ILogger<DownloadManager> logger)
     {
+        _windows = windows;
         _repository = repository;
         _settings = settings;
         _logger = logger;
@@ -49,6 +57,68 @@ public sealed class DownloadManager
 
     /// <summary>按 id 取一条下载记录（内部页面只传 id，路径以库里的为准）。</summary>
     public DownloadEntry? Find(string id) => _repository.Find(id);
+
+    /// <summary>当前正在进行的下载数（工具栏指示器用）。</summary>
+    public int ActiveCount => _active.Count;
+
+    /// <summary>暂停一个下载中的条目。</summary>
+    public void Pause(string id)
+    {
+        if (!_active.TryGetValue(id, out var track))
+        {
+            return;
+        }
+
+        try
+        {
+            _pausedByUser[id] = 0;
+            track.Operation.Pause();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "暂停下载失败：{Id}", id);
+        }
+    }
+
+    /// <summary>继续一个被暂停的下载。</summary>
+    public void Resume(string id)
+    {
+        if (!_active.TryGetValue(id, out var track))
+        {
+            return;
+        }
+
+        try
+        {
+            _pausedByUser.TryRemove(id, out _);
+            track.Operation.Resume();
+            _repository.Upsert(track.Entry with { State = DownloadState.InProgress });
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "继续下载失败：{Id}", id);
+        }
+    }
+
+    /// <summary>取消一个下载。</summary>
+    public void Cancel(string id)
+    {
+        if (!_active.TryGetValue(id, out var track))
+        {
+            return;
+        }
+
+        try
+        {
+            _cancelledByUser[id] = 0;
+            track.Operation.Cancel();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "取消下载失败：{Id}", id);
+        }
+    }
 
     public void Clear()
     {
@@ -89,7 +159,17 @@ public sealed class DownloadManager
                 fileName = "download";
             }
 
-            e.ResultFilePath = MakeUniquePath(folder, fileName);
+            var target = MakeUniquePath(folder, fileName);
+
+            // 「下载前询问保存位置」：取消对话框 = 取消这次下载。
+            if (_settings.Current.AskWhereToSaveDownloads && !PromptForSavePath(manager, fileName, ref target))
+            {
+                e.Cancel = true;
+                _logger.LogInformation("用户取消了下载 {Url}", operation.Uri);
+                return;
+            }
+
+            e.ResultFilePath = target;
         }
         catch (Exception ex)
         {
@@ -106,7 +186,7 @@ public sealed class DownloadManager
             DownloadState.InProgress,
             DateTimeOffset.UtcNow);
 
-        _active[id] = new DownloadTrack(entry, LastPersistedPercent: 0);
+        _active[id] = new DownloadTrack(entry, LastPersistedPercent: 0, operation);
         _repository.Upsert(entry);
 
         _logger.LogInformation("开始下载 {File} ← {Url}", entry.FileName, entry.Url);
@@ -127,7 +207,10 @@ public sealed class DownloadManager
         var state = operation.State switch
         {
             CoreWebView2DownloadState.Completed => DownloadState.Completed,
-            CoreWebView2DownloadState.Interrupted => DownloadState.Failed,
+            CoreWebView2DownloadState.Interrupted =>
+                _cancelledByUser.ContainsKey(id) ? DownloadState.Cancelled
+                : _pausedByUser.ContainsKey(id) ? DownloadState.Paused
+                : DownloadState.Failed,
             _ => DownloadState.InProgress,
         };
 
@@ -151,22 +234,33 @@ public sealed class DownloadManager
 
         var stateChanged = state != track.Entry.State;
         var progressed = percent >= track.LastPersistedPercent + 1;
+        var finished = state is DownloadState.Completed or DownloadState.Cancelled or DownloadState.Failed;
 
-        _active[id] = track with { Entry = updated, LastPersistedPercent = percent };
-
-        // 节流：只在状态变化或进度前进 1% 时落盘。
-        if (stateChanged || progressed || state != DownloadState.InProgress)
-        {
-            _repository.Upsert(updated);
-        }
-
-        if (state != DownloadState.InProgress)
+        // 「已暂停」仍然留在这个会话里（可以继续）；完成 / 取消 / 失败才移出活跃表。
+        // 必须先移出再发通知：界面收到 Changed 时读的是 ActiveCount，顺序反了指示器就永远不消失。
+        if (finished)
         {
             _active.TryRemove(id, out _);
-            _logger.LogInformation("下载{Result}：{File}", state == DownloadState.Completed ? "完成" : "中断", updated.FileName);
+            _pausedByUser.TryRemove(id, out _);
+            _cancelledByUser.TryRemove(id, out _);
+            _logger.LogInformation("下载{Result}：{File}", state switch
+            {
+                DownloadState.Completed => "完成",
+                DownloadState.Cancelled => "已取消",
+                _ => "中断",
+            }, updated.FileName);
+        }
+        else
+        {
+            _active[id] = track with { Entry = updated, LastPersistedPercent = percent };
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        // 节流：只在状态变化或进度前进 1% 时落盘 / 通知界面。
+        if (stateChanged || progressed || finished)
+        {
+            _repository.Upsert(updated);
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private string ResolveDownloadFolder()
@@ -177,11 +271,29 @@ public sealed class DownloadManager
             return configured;
         }
 
-        // 未配置则用系统「下载」文件夹。
-        var downloads = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            "Downloads");
-        return downloads;
+        // 未配置则用系统「下载」文件夹（用户可能把它挪到了别的盘，不能自己拼路径）。
+        return KnownFolders.Downloads;
+    }
+
+    /// <summary>弹出「另存为」；取消返回 <c>false</c>。</summary>
+    private bool PromptForSavePath(TabManager manager, string fileName, ref string target)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "另存为",
+            FileName = fileName,
+            InitialDirectory = Path.GetDirectoryName(target) ?? KnownFolders.Downloads,
+            OverwritePrompt = true,
+        };
+
+        var owner = _windows.WindowOf(manager) ?? System.Windows.Application.Current?.MainWindow;
+        if (dialog.ShowDialog(owner) != true)
+        {
+            return false;
+        }
+
+        target = dialog.FileName;
+        return true;
     }
 
     /// <summary>同名文件不覆盖，追加 (1)(2) 后缀。</summary>
@@ -208,5 +320,8 @@ public sealed class DownloadManager
         return Path.Combine(folder, $"{stem} ({Guid.NewGuid():N}){extension}");
     }
 
-    private sealed record DownloadTrack(DownloadEntry Entry, int LastPersistedPercent);
+    private sealed record DownloadTrack(
+        DownloadEntry Entry,
+        int LastPersistedPercent,
+        CoreWebView2DownloadOperation Operation);
 }

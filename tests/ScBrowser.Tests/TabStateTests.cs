@@ -59,4 +59,37 @@ public class TabStateTests
         tab.SetZoom(0.01);
         Assert.Equal(0.25, tab.ZoomFactor);
     }
+
+    [Fact]
+    public void 静音状态在引擎未创建时也应生效并显示音频图标()
+    {
+        using var tab = new BrowserTab(6);
+        Assert.False(tab.ShowAudioIcon);
+
+        tab.ToggleMute();
+
+        Assert.True(tab.IsMuted);
+        Assert.True(tab.ShowAudioIcon);
+    }
+
+    [Fact]
+    public void 未创建引擎时休眠与唤醒应安全无操作()
+    {
+        using var tab = new BrowserTab(7);
+
+        tab.Resume();
+        Assert.False(tab.IsSuspended);
+    }
+
+    [Fact]
+    public void 激活时间应随激活更新()
+    {
+        using var tab = new BrowserTab(8);
+        var before = tab.LastActivatedAt;
+
+        Thread.Sleep(20);
+        tab.IsActive = true;
+
+        Assert.True(tab.LastActivatedAt > before);
+    }
 }

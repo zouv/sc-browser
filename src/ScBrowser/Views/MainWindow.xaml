@@ -46,7 +46,8 @@
     <DockPanel x:Name="RootLayout" LastChildFill="True" Margin="2,0,2,2">
 
         <!-- ============ 标签条 + 窗口按钮 ============ -->
-        <Border DockPanel.Dock="Top"
+        <Border x:Name="TabStrip"
+                DockPanel.Dock="Top"
                 Height="38"
                 Background="{DynamicResource TabStripBackgroundBrush}"
                 Padding="6,0,0,0">
@@ -156,6 +157,12 @@
                                                                    Style="{StaticResource BrowserMenuIconStyle}" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
+                                                <MenuItem Header="静音 / 取消静音" Click="TabMenu_ToggleMute">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="&#xE767;"
+                                                                   Style="{StaticResource BrowserMenuIconStyle}" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
                                                 <MenuItem Header="复制" Click="TabMenu_Duplicate"
                                                           ToolTip="在右侧新建当前页面的拷贝页">
                                                     <MenuItem.Icon>
@@ -183,6 +190,7 @@
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
 
                                             <!-- 图标：有 favicon 显示图片，否则退化为 globe 字形 -->
@@ -202,7 +210,31 @@
                                                        VerticalAlignment="Center"
                                                        Margin="0,0,6,0" />
 
+                                            <!-- 正在播放音频 / 已静音：点一下切换静音 -->
                                             <Button Grid.Column="2"
+                                                    Style="{StaticResource TabCloseButtonStyle}"
+                                                    ToolTip="静音 / 取消静音"
+                                                    Visibility="{Binding ShowAudioIcon,
+                                                                 Converter={StaticResource BoolToVisibility},
+                                                                 FallbackValue=Collapsed}"
+                                                    Command="{Binding DataContext.ToggleMuteCommand,
+                                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}">
+                                                <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="11">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="&#xE767;" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsMuted}" Value="True">
+                                                                    <Setter Property="Text" Value="&#xE74F;" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Button>
+
+                                            <Button Grid.Column="3"
                                                     Style="{StaticResource TabCloseButtonStyle}"
                                                     Content="&#xE711;"
                                                     ToolTip="关闭标签页"
@@ -228,7 +260,8 @@
         </Border>
 
         <!-- ============ 工具栏 ============ -->
-        <Border DockPanel.Dock="Top"
+        <Border x:Name="Toolbar"
+                DockPanel.Dock="Top"
                 Background="{DynamicResource ToolbarBackgroundBrush}"
                 Padding="8,6,8,8">
             <Grid>
@@ -238,6 +271,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
@@ -282,17 +316,16 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Column="0"
-                                   Width="28"
-                                   TextAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   FontSize="13"
-                                   FontFamily="{StaticResource IconFontFamily}"
-                                   Foreground="{Binding ActiveTab.SecurityState,
-                                                Converter={StaticResource SecurityStateToBrush}}"
-                                   Text="{Binding ActiveTab.SecurityState,
-                                          Converter={StaticResource SecurityStateToGlyph}}">
-                            <TextBlock.ToolTip>
+                        <Button Grid.Column="0"
+                                x:Name="SecurityButton"
+                                Width="28"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Focusable="False"
+                                Click="SecurityButton_Click">
+                            <Button.ToolTip>
                                 <TextBlock>
                                     <TextBlock.Text>
                                         <MultiBinding Converter="{StaticResource SecurityStateTip}">
@@ -301,8 +334,16 @@
                                         </MultiBinding>
                                     </TextBlock.Text>
                                 </TextBlock>
-                            </TextBlock.ToolTip>
-                        </TextBlock>
+                            </Button.ToolTip>
+                            <TextBlock TextAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="13"
+                                       FontFamily="{StaticResource IconFontFamily}"
+                                       Foreground="{Binding ActiveTab.SecurityState,
+                                                    Converter={StaticResource SecurityStateToBrush}}"
+                                       Text="{Binding ActiveTab.SecurityState,
+                                              Converter={StaticResource SecurityStateToGlyph}}" />
+                        </Button>
 
                         <TextBox Grid.Column="1"
                                  x:Name="AddressBar"
@@ -338,8 +379,20 @@
                     </TextBlock>
                 </Button>
 
+                <!-- 下载指示：只在有进行中的下载时出现，点击直达下载内容页 -->
+                <Button Grid.Column="6" Style="{StaticResource ToolbarButtonStyle}"
+                        ToolTip="下载内容 (Ctrl+J)"
+                        Visibility="{Binding HasActiveDownloads,
+                                     Converter={StaticResource BoolToVisibility},
+                                     FallbackValue=Collapsed}"
+                        Command="{Binding OpenDownloadsCommand}">
+                    <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15"
+                               Foreground="{DynamicResource AccentBrush}"
+                               Text="&#xE896;" />
+                </Button>
+
                 <!-- 主菜单 -->
-                <Button Grid.Column="6" x:Name="MenuButton"
+                <Button Grid.Column="7" x:Name="MenuButton"
                         Style="{StaticResource ToolbarButtonStyle}"
                         Content="&#xE712;" ToolTip="菜单"
                         Click="MenuButton_Click">
@@ -400,6 +453,21 @@
                                     <TextBlock Text="&#xE721;" Style="{StaticResource BrowserMenuIconStyle}" />
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem Header="打印…" InputGestureText="Ctrl+P" Click="Menu_Print">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE749;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="网页另存为…" InputGestureText="Ctrl+S" Click="Menu_SavePage">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE74E;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="查看源代码" InputGestureText="Ctrl+U" Click="Menu_ViewSource">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE943;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
 
                             <Separator />
 
@@ -457,6 +525,16 @@
 
                             <Separator />
 
+                            <MenuItem Header="全屏" InputGestureText="F11" Click="Menu_FullScreen">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE740;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="设为默认浏览器" Click="Menu_SetDefaultBrowser">
+                                <MenuItem.Icon>
+                                    <TextBlock Text="&#xE774;" Style="{StaticResource BrowserMenuIconStyle}" />
+                                </MenuItem.Icon>
+                            </MenuItem>
                             <MenuItem Header="关于 ScBrowser" Click="Menu_About">
                                 <MenuItem.Icon>
                                     <TextBlock Text="&#xE946;" Style="{StaticResource BrowserMenuIconStyle}" />
@@ -545,13 +623,16 @@
         </Border>
 
         <!-- ============ 导航错误提示条 ============ -->
-        <Border DockPanel.Dock="Top"
+        <Border x:Name="ErrorBar"
+                DockPanel.Dock="Top"
                 Background="{DynamicResource DangerBrush}"
-                Padding="12,6"
-                Visibility="{Binding ActiveTab.LastError,
-                             Converter={StaticResource NonEmptyToVisibility},
-                             FallbackValue=Collapsed,
-                             TargetNullValue=Collapsed}">
+                Padding="12,6">
+            <Border.Visibility>
+                <MultiBinding Converter="{StaticResource TextAndChromeVisibility}">
+                    <Binding Path="ActiveTab.LastError" FallbackValue="" TargetNullValue="" />
+                    <Binding Path="ChromeVisible" RelativeSource="{RelativeSource AncestorType=Window}" />
+                </MultiBinding>
+            </Border.Visibility>
             <DockPanel>
                 <!-- 导航失败与页面崩溃共用这一条；重新加载对两者都是第一步。 -->
                 <Button DockPanel.Dock="Right"
@@ -565,6 +646,29 @@
                            VerticalAlignment="Center"
                            TextWrapping="Wrap" />
             </DockPanel>
+        </Border>
+
+        <!-- ============ 链接悬停状态栏 ============ -->
+        <!-- WebView2 自带的状态栏画在网页内部、与外壳主题不一致；关掉它（IsStatusBarEnabled=false），
+             由外壳在底部绘制一行。 -->
+        <Border x:Name="StatusBar"
+                DockPanel.Dock="Bottom"
+                Height="22"
+                Padding="10,0"
+                Background="{DynamicResource ToolbarBackgroundBrush}"
+                BorderBrush="{DynamicResource SeparatorBrush}"
+                BorderThickness="0,1,0,0">
+            <Border.Visibility>
+                <MultiBinding Converter="{StaticResource TextAndChromeVisibility}">
+                    <Binding Path="ActiveTab.StatusText" FallbackValue="" TargetNullValue="" />
+                    <Binding Path="ChromeVisible" RelativeSource="{RelativeSource AncestorType=Window}" />
+                </MultiBinding>
+            </Border.Visibility>
+            <TextBlock Text="{Binding ActiveTab.StatusText, FallbackValue=''}"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
         </Border>
 
         <!-- ============ 内容区（WebView2 容器） ============ -->

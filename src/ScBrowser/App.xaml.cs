@@ -101,6 +101,7 @@ public partial class App : Application
         //    必须在创建第一个窗口之前完成订阅，否则会漏掉首个窗口的标签页。
         _ = services.GetRequiredService<DownloadManager>();   // 订阅各窗口的下载事件
         _ = services.GetRequiredService<WebMessageRouter>();  // 订阅内部页面消息
+        windows.Downloads = services.GetRequiredService<DownloadManager>();  // 工具栏下载指示器 / 另存为对话框的宿主
 
         windows.CreateWindow(new BrowserWindowOptions(IsPrimary: true)).Show();
 
@@ -135,6 +136,7 @@ public partial class App : Application
         services.AddSingleton<ThemeService>();
         services.AddSingleton<SessionStore>();
         services.AddSingleton<StartupCommandRunner>();
+        services.AddSingleton<DefaultBrowserService>();
 
         // ---- 浏览器引擎层 ----
         // 注意：TabManager / MainViewModel / MainWindow 都是「一个窗口一份」，

@@ -40,6 +40,7 @@ public sealed class BrowserWindowManager
     private readonly SessionStore _session;
     private readonly ThemeService _theme;
     private readonly StartupCommandRunner _startupCommands;
+    private readonly DefaultBrowserService _defaultBrowser;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<BrowserWindowManager> _logger;
 
@@ -57,6 +58,7 @@ public sealed class BrowserWindowManager
         SessionStore session,
         ThemeService theme,
         StartupCommandRunner startupCommands,
+        DefaultBrowserService defaultBrowser,
         ILoggerFactory loggerFactory,
         ILogger<BrowserWindowManager> logger)
     {
@@ -67,6 +69,7 @@ public sealed class BrowserWindowManager
         _session = session;
         _theme = theme;
         _startupCommands = startupCommands;
+        _defaultBrowser = defaultBrowser;
         _loggerFactory = loggerFactory;
         _logger = logger;
     }
@@ -101,7 +104,7 @@ public sealed class BrowserWindowManager
         tabs.ApplyWebTheme(_webTheme);
         TabManagerCreated?.Invoke(this, tabs);
 
-        var viewModel = new MainViewModel(tabs, _bookmarks, _settings, _history);
+        var viewModel = new MainViewModel(tabs, _bookmarks, _settings, _history, Downloads);
         var window = new MainWindow(
             viewModel,
             tabs,
@@ -110,7 +113,8 @@ public sealed class BrowserWindowManager
             _theme,
             this,
             options,
-            _startupCommands);
+            _startupCommands,
+            _defaultBrowser);
 
         window.Closed += (_, _) => Forget(window);
 
@@ -121,6 +125,59 @@ public sealed class BrowserWindowManager
             options.Kind == BrowserSessionKind.Incognito ? "无痕" : "普通",
             _windows.Count);
 
+        return window;
+    }
+
+    /// <summary>
+    /// 下载管理器。它在构造时就订阅窗口事件，反过来又需要按窗口弹「另存为」对话框——
+    /// 两边互相依赖，所以由组合根（<c>App</c>）在创建窗口前把实例挂进来，而不是走构造函数注入。
+    /// </summary>
+    public DownloadManager? Downloads { get; set; }
+
+    /// <summary>某个标签页集合所属的窗口；找不到返回 <c>null</c>（系统对话框要挂在它上面）。</summary>
+    public MainWindow? WindowOf(TabManager tabs) =>
+        _windows.FirstOrDefault(w => ReferenceEquals(w.Tabs, tabs));
+
+    /// <summary>
+    /// 把标签从当前窗口移到新窗口（标签条拖出）。引擎与页面状态都保留：
+    /// 只是控件从旧内容区摘下、挂到新窗口。无痕窗口里的标签只会拖进无痕窗口，
+    /// 否则等同于把隐私会话暴露到普通窗口。
+    /// </summary>
+    /// <param name="tab">要迁移的标签。</param>
+    /// <param name="location">新窗口左上角（屏幕 DIP）；<c>null</c> 表示居中。</param>
+    public MainWindow? MoveTabToNewWindow(BrowserTab tab, System.Windows.Point? location = null)
+    {
+        var source = _tabManagers.FirstOrDefault(m => m.Tabs.Contains(tab));
+        if (source is null)
+        {
+            return null;
+        }
+
+        var window = CreateWindow(new BrowserWindowOptions(
+            Kind: source.IsIncognito ? BrowserSessionKind.Incognito : BrowserSessionKind.Normal,
+            Urls: [],                 // 空列表 = 不建初始标签，等迁移过来的标签
+            IsPrimary: false));
+
+        // 窗口的 Host 在 Loaded 里才注入，所以迁移动作要等它加载完。
+        window.Loaded += (_, _) =>
+        {
+            if (location is { } point)
+            {
+                // 让新窗口大致出现在鼠标位置（标题栏在指针下方一点）。
+                window.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+                window.Left = Math.Max(0, point.X - 120);
+                window.Top = Math.Max(0, point.Y - 20);
+            }
+
+            source.ReleaseTab(tab);
+            window.Tabs.Adopt(tab);
+
+            // 源窗口若因此关闭，退出流程可能已经把会话写成「空」——立刻按新窗口的状态补存一次。
+            SaveSession(window.Tabs);
+            window.BringToFront();
+        };
+
+        window.Show();
         return window;
     }
 

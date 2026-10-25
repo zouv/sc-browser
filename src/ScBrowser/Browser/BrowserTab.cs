@@ -52,8 +52,25 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>引擎是否已就绪（WebView2 已创建并初始化）。</summary>
     public bool IsInitialized => _core is not null;
 
+    /// <summary>
+    /// 内核主进程退出后引擎已失效：标签仍在、状态还在，重新加载时会重建引擎。
+    /// </summary>
+    public bool EngineLost { get; private set; }
+
+    /// <summary>所属的标签集合（窗口）。迁移到别的窗口后随之改变，事件处理器据此路由。</summary>
+    public TabManager? Owner { get; internal set; }
+
     /// <summary>WebView2 控件已创建，宿主该把它挂进可视化树了。</summary>
     public event EventHandler? EngineAttached;
+
+    /// <summary>引擎失效 / 控件即将销毁，宿主该把它从可视化树摘掉了。</summary>
+    public event EventHandler? EngineDetached;
+
+    /// <summary>页面进入 / 退出全屏（HTML5 <c>requestFullscreen</c>），参数为是否全屏。</summary>
+    public event EventHandler<bool>? FullScreenChanged;
+
+    /// <summary>遇到证书错误，需要用户决定是否继续；把 <c>Allow</c> 置真表示继续访问。</summary>
+    public event EventHandler<CertificateErrorEventArgs>? CertificateErrorDetected;
 
     // ---- 可观察状态（绑定到标签条 / 工具栏 / 地址栏）----
 
@@ -95,6 +112,31 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     [ObservableProperty]
     private double _zoomFactor = 1.0;
 
+    /// <summary>链接悬停时地址栏下方的状态提示（由页面透过 WebView2 的状态栏文本给出）。</summary>
+    [ObservableProperty]
+    private string? _statusText;
+
+    /// <summary>页面是否正在播放音频（驱动标签条上的扬声器图标）。</summary>
+    [ObservableProperty]
+    private bool _isPlayingAudio;
+
+    /// <summary>标签是否被静音。</summary>
+    [ObservableProperty]
+    private bool _isMuted;
+
+    /// <summary>标签条上是否显示音频图标（正在播放或已静音）。</summary>
+    public bool ShowAudioIcon => IsPlayingAudio || IsMuted;
+
+    partial void OnIsPlayingAudioChanged(bool value) => OnPropertyChanged(nameof(ShowAudioIcon));
+
+    partial void OnIsMutedChanged(bool value) => OnPropertyChanged(nameof(ShowAudioIcon));
+
+    /// <summary>最近一次被激活的时间；后台标签据此判断是否可以休眠。</summary>
+    public DateTime LastActivatedAt { get; private set; } = DateTime.UtcNow;
+
+    /// <summary>引擎是否处于休眠（WebView2 <c>TrySuspendAsync</c>）。</summary>
+    public bool IsSuspended { get; private set; }
+
     /// <summary>待加载的地址：引擎还没创建时先记着，初始化完成后再导航。</summary>
     private string? _pendingUrl;
 
@@ -103,6 +145,9 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
     /// <summary>引擎初始化任务（并发激活时复用同一次初始化）。</summary>
     private Task? _initialization;
+
+    /// <summary>正在进行的顶层导航地址；证书错误只对它的请求询问用户。</summary>
+    private string? _pendingMainFrameUri;
 
     // ---- 对外事件（由 TabManager 订阅）----
 
@@ -210,6 +255,20 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         ServeInternalPages(_core);
         WireEvents(_core);
         await EnableSecurityEventsAsync(_core).ConfigureAwait(true);
+
+        EngineLost = false;
+        IsSuspended = false;
+
+        // 新引擎先跟当前标签状态对齐（静音、音频指示）。
+        try
+        {
+            _core.IsMuted = IsMuted;
+            IsPlayingAudio = _core.IsDocumentPlayingAudio;
+        }
+        catch (Exception)
+        {
+            // 个别运行时没有这两个属性：只是少了指示，不影响浏览。
+        }
 
         // 引擎就绪前收到的导航 / 缩放请求，现在补上。
         if (_pendingZoom is { } zoom)
@@ -432,12 +491,14 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                 return;
             }
 
+            _pendingMainFrameUri = e.Uri;
             IsLoading = true;
             ClearNavigationError();
         };
 
         core.NavigationCompleted += (_, e) =>
         {
+            _pendingMainFrameUri = null;
             IsLoading = false;
             UpdateHistoryState();
             if (e.IsSuccess)
@@ -496,6 +557,36 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
             ProcessFailed?.Invoke(this, e);
         };
 
+        // 链接悬停地址：WebView2 自己的状态栏是画在网页里的，关掉它、由外壳在底部绘制。
+        core.StatusBarTextChanged += (_, _) =>
+            StatusText = string.IsNullOrEmpty(core.StatusBarText) ? null : core.StatusBarText;
+
+        // 标签条上的扬声器图标 / 静音状态。
+        core.IsDocumentPlayingAudioChanged += (_, _) => IsPlayingAudio = core.IsDocumentPlayingAudio;
+        core.IsMutedChanged += (_, _) => IsMuted = core.IsMuted;
+
+        // 网页视频全屏（requestFullscreen）：让外壳收起标签条与工具栏。
+        core.ContainsFullScreenElementChanged += (_, _) =>
+            FullScreenChanged?.Invoke(this, core.ContainsFullScreenElement);
+
+        // 证书错误：只对「正在进行的顶层导航」询问用户。
+        // 子资源（图片/脚本）也走这个事件，对每一个都弹窗是不可接受的；
+        // 顶层导航一旦被取消，WebView2 会显示自己的证书错误页。
+        core.ServerCertificateErrorDetected += (_, e) =>
+        {
+            if (string.IsNullOrEmpty(_pendingMainFrameUri)
+                || !string.Equals(e.RequestUri, _pendingMainFrameUri, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var args = new CertificateErrorEventArgs(e.RequestUri, e.ServerCertificate, e.ErrorStatus);
+            CertificateErrorDetected?.Invoke(this, args);
+            e.Action = args.Allow
+                ? CoreWebView2ServerCertificateErrorAction.AlwaysAllow
+                : CoreWebView2ServerCertificateErrorAction.Cancel;
+        };
+
         // 页内查找是较新的平台能力（需要 ICoreWebView2_28）。旧运行时上访问 Find
         // 会直接抛 NotImplementedException；此时退回到 ExecuteScript + CSS Highlight
         // 的 JS 实现，保证功能仍然可用。
@@ -521,11 +612,21 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// </summary>
     private void OnProcessFailed(CoreWebView2ProcessFailedEventArgs e)
     {
+        if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
+        {
+            // 整个内核进程没了：这个 WebView2 已经不可用。状态（地址/标题）留着，
+            // 用户点「重新加载」或再次激活标签时会重建引擎（见 TabManager.TryEnsureEngineAsync）。
+            LoseEngine();
+            _errorVersion++;
+            IsLoading = false;
+            LastError = "浏览器内核进程已退出，点击「重新加载」重建页面。";
+            return;
+        }
+
         var message = e.ProcessFailedKind switch
         {
             CoreWebView2ProcessFailedKind.RenderProcessExited => "页面已崩溃，点击「重新加载」恢复。",
             CoreWebView2ProcessFailedKind.RenderProcessUnresponsive => "页面无响应，可以等待或点击「重新加载」。",
-            CoreWebView2ProcessFailedKind.BrowserProcessExited => "浏览器内核进程已退出，请关闭此标签后重新打开。",
             _ => null,
         };
 
@@ -539,12 +640,153 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         LastError = message;
     }
 
+    /// <summary>内核进程退出后丢弃当前引擎，保留标签状态。</summary>
+    private void LoseEngine()
+    {
+        EngineLost = true;
+        IsSuspended = false;
+
+        if (_securityReceiver is not null)
+        {
+            _securityReceiver.DevToolsProtocolEventReceived -= OnSecurityStateChanged;
+            _securityReceiver = null;
+        }
+
+        var view = View;
+        View = null;
+        _core = null;
+        _find = null;
+        _initialization = null;
+
+        // 先让宿主把控件从可视化树摘掉，再释放它。
+        EngineDetached?.Invoke(this, EventArgs.Empty);
+        try
+        {
+            view?.Dispose();
+        }
+        catch (Exception)
+        {
+            // 内核已经退出，释放失败不影响后续重建。
+        }
+    }
+
     /// <summary>由宿主挂一条错误提示（例如引擎初始化失败）。</summary>
     public void ShowEngineError(string message)
     {
         _errorVersion++;
         IsLoading = false;
         LastError = message;
+    }
+
+    /// <summary>激活时间更新（供后台休眠判定）。</summary>
+    partial void OnIsActiveChanged(bool value)
+    {
+        if (value)
+        {
+            LastActivatedAt = DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>
+    /// 休眠：长时间没被看的标签让 WebView2 暂停脚本与渲染，省内存/CPU。
+    /// 正在播放音频的标签不碰（用户还在听）。
+    /// </summary>
+    public async Task SuspendAsync()
+    {
+        if (_core is null || IsSuspended || IsActive)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_core.IsDocumentPlayingAudio)
+            {
+                return;
+            }
+
+            await _core.TrySuspendAsync().ConfigureAwait(true);
+            IsSuspended = true;
+        }
+        catch (Exception)
+        {
+            // 旧运行时没有 TrySuspendAsync；休眠只是优化，失败即放弃。
+        }
+    }
+
+    /// <summary>从休眠中唤醒（切回该标签时调用）。</summary>
+    public void Resume()
+    {
+        if (!IsSuspended)
+        {
+            return;
+        }
+
+        try
+        {
+            _core?.Resume();
+        }
+        catch (Exception)
+        {
+            // 引擎已退出等边界情况：重建由后续导航/激活负责。
+        }
+
+        IsSuspended = false;
+        LastActivatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>切换静音。</summary>
+    public void ToggleMute()
+    {
+        if (_core is null)
+        {
+            // 引擎未创建：记在状态里，初始化时应用。
+            IsMuted = !IsMuted;
+            return;
+        }
+
+        try
+        {
+            _core.IsMuted = !_core.IsMuted;
+            IsMuted = _core.IsMuted;
+        }
+        catch (Exception)
+        {
+            // 个别运行时没有 IsMuted。
+        }
+    }
+
+    /// <summary>打印当前页面（Ctrl+P）；引擎不可用时返回 <c>false</c>。</summary>
+    public bool Print()
+    {
+        try
+        {
+            _core?.ShowPrintUI(CoreWebView2PrintDialogKind.Browser);
+            return _core is not null;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>另存为（Ctrl+S）；当前 WebView2 运行时太旧时返回 <c>false</c>。</summary>
+    public async Task<bool> SavePageAsync()
+    {
+        if (_core is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _core.ShowSaveAsUIAsync().ConfigureAwait(true);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -604,6 +846,9 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
             SetInitialLocation(url);
             return;
         }
+
+        // 休眠中的标签要接收导航，先唤醒。
+        Resume();
 
         if (InternalPageRegistry.IsInternalPage(url))
         {
@@ -1129,4 +1374,27 @@ public sealed class NewWindowRequestedEventArgs : EventArgs
 
     /// <summary>是否应抢占焦点（即切换到新标签）。</summary>
     public bool Foreground { get; }
+}
+
+/// <summary>证书错误：用户选择是否继续访问。</summary>
+public sealed class CertificateErrorEventArgs : EventArgs
+{
+    public CertificateErrorEventArgs(
+        string requestUri,
+        CoreWebView2Certificate certificate,
+        CoreWebView2WebErrorStatus errorStatus)
+    {
+        RequestUri = requestUri;
+        Certificate = certificate;
+        ErrorStatus = errorStatus;
+    }
+
+    public string RequestUri { get; }
+
+    public CoreWebView2Certificate Certificate { get; }
+
+    public CoreWebView2WebErrorStatus ErrorStatus { get; }
+
+    /// <summary>是否继续访问；默认不继续（与浏览器的安全默认一致）。</summary>
+    public bool Allow { get; set; }
 }

@@ -247,6 +247,18 @@ public sealed class WebMessageRouter
                 _downloads.Remove(GetString(payload, "id") ?? string.Empty);
                 return null;
 
+            case "downloads.pause":
+                _downloads.Pause(GetString(payload, "id") ?? string.Empty);
+                return null;
+
+            case "downloads.resume":
+                _downloads.Resume(GetString(payload, "id") ?? string.Empty);
+                return null;
+
+            case "downloads.cancel":
+                _downloads.Cancel(GetString(payload, "id") ?? string.Empty);
+                return null;
+
             // 只收下载记录的 id，路径由宿主自己查库——页面传来的路径一律不信，
             // 否则「打开文件」就成了「执行任意本地程序」。
             case "downloads.openFile":

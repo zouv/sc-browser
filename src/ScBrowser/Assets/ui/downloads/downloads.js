@@ -7,7 +7,7 @@
   var clearBtn = document.getElementById("clear-all");
 
   // 与 C# 侧 Storage.DownloadState 的数值一一对应，勿改序。
-  var STATE = { IN_PROGRESS: 0, COMPLETED: 1, CANCELLED: 2, FAILED: 3 };
+  var STATE = { IN_PROGRESS: 0, COMPLETED: 1, CANCELLED: 2, FAILED: 3, PAUSED: 4 };
 
   function formatBytes(bytes) {
     if (!bytes || bytes <= 0) {
@@ -30,6 +30,7 @@
       case STATE.COMPLETED: return "已完成";
       case STATE.CANCELLED: return "已取消";
       case STATE.FAILED: return "已中断";
+      case STATE.PAUSED: return "已暂停";
       default: return "下载中";
     }
   }
@@ -78,7 +79,7 @@
       main.appendChild(name);
       main.appendChild(meta);
 
-      if (entry.state === STATE.IN_PROGRESS) {
+      if (entry.state === STATE.IN_PROGRESS || entry.state === STATE.PAUSED) {
         var track = document.createElement("div");
         track.className = "progress-track";
         var fill = document.createElement("div");
@@ -96,6 +97,25 @@
       status.className = statusClass(entry.state);
       status.textContent = statusText(entry.state);
       actions.appendChild(status);
+
+      // 进行中：暂停 / 取消；已暂停：继续 / 取消。
+      if (entry.state === STATE.IN_PROGRESS || entry.state === STATE.PAUSED) {
+        var toggleBtn = document.createElement("button");
+        toggleBtn.className = "btn";
+        toggleBtn.textContent = entry.state === STATE.PAUSED ? "继续" : "暂停";
+        toggleBtn.addEventListener("click", function () {
+          sc.send(entry.state === STATE.PAUSED ? "downloads.resume" : "downloads.pause", { id: entry.id });
+        });
+        actions.appendChild(toggleBtn);
+
+        var cancelBtn = document.createElement("button");
+        cancelBtn.className = "btn";
+        cancelBtn.textContent = "取消";
+        cancelBtn.addEventListener("click", function () {
+          sc.send("downloads.cancel", { id: entry.id });
+        });
+        actions.appendChild(cancelBtn);
+      }
 
       if (entry.state === STATE.COMPLETED) {
         var openBtn = document.createElement("button");

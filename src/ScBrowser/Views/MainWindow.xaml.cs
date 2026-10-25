@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private readonly BrowserWindowManager _windows;
     private readonly BrowserWindowOptions _options;
     private readonly StartupCommandRunner? _startupCommands;
+    private readonly DefaultBrowserService? _defaultBrowser;
 
     public MainWindow(
         MainViewModel viewModel,
@@ -37,7 +38,8 @@ public partial class MainWindow : Window
         ThemeService theme,
         BrowserWindowManager windows,
         BrowserWindowOptions options,
-        StartupCommandRunner? startupCommands = null)
+        StartupCommandRunner? startupCommands = null,
+        DefaultBrowserService? defaultBrowser = null)
     {
         _viewModel = viewModel;
         _tabs = tabs;
@@ -46,6 +48,7 @@ public partial class MainWindow : Window
         _theme = theme;
         _windows = windows;
         _options = options;
+        _defaultBrowser = defaultBrowser;
         // 命令行参数只在第一个窗口执行一次（例如 --install-extension），第二个窗口不该重跑。
         _startupCommands = options.IsPrimary ? startupCommands : null;
 
@@ -55,6 +58,10 @@ public partial class MainWindow : Window
 
         // 最后一个标签关闭即退出（Chrome 语义）。外壳自己决定怎么响应，TabManager 不越权。
         _tabs.LastTabClosed += (_, _) => Close();
+
+        // 网页视频全屏 / 证书错误：外壳负责收起 chrome 与询问用户。
+        _tabs.TabFullScreenChanged += (_, e) => OnTabFullScreenChanged(e);
+        _tabs.CertificateErrorDetected += (_, e) => AskAboutCertificateError(e);
 
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -83,6 +90,24 @@ public partial class MainWindow : Window
 
     /// <summary>本窗口的标签页集合（窗口关闭时由 <see cref="BrowserWindowManager"/> 摘除）。</summary>
     public TabManager Tabs => _tabs;
+
+    /// <summary>
+    /// 外壳 chrome（标签条 / 工具栏 / 状态栏 / 错误条）是否可见。全屏时为 <c>false</c>。
+    /// 做成依赖属性是为了让错误条与状态栏的可见性绑定能参与多值判断——
+    /// 直接给它们的 Visibility 赋本地值再 ClearValue 会把 XAML 绑定一起清掉。
+    /// </summary>
+    public static readonly DependencyProperty ChromeVisibleProperty =
+        DependencyProperty.Register(
+            nameof(ChromeVisible),
+            typeof(bool),
+            typeof(MainWindow),
+            new PropertyMetadata(true));
+
+    public bool ChromeVisible
+    {
+        get => (bool)GetValue(ChromeVisibleProperty);
+        set => SetValue(ChromeVisibleProperty, value);
+    }
 
     /// <summary>把窗口切到前台（二次启动转发地址时用）；最小化的先还原。</summary>
     public void BringToFront()
@@ -129,7 +154,11 @@ public partial class MainWindow : Window
             activeIndex = urls.Count - 1;
         }
 
-        await _viewModel.StartAsync(urls, activeIndex);
+        // 空列表 = 拖出成新窗口：不建初始标签，等被拖来的标签挂进来。
+        if (_options.Urls is not { Count: 0 })
+        {
+            await _viewModel.StartAsync(urls, activeIndex);
+        }
 
         // 命令行请求（如 --install-extension）要在首个标签就绪后再执行：扩展按 profile 管理。
         if (_startupCommands is not null)
@@ -368,8 +397,187 @@ public partial class MainWindow : Window
             return;
         }
 
+        var dragged = _dragTab;
+        var screenPoint = PointToScreen(e.GetPosition(this));
+        var stillInStrip = IsInTabStrip(e.GetPosition(TabItems));
+
         EndDrag();
         e.Handled = true;
+
+        // 拖到标签条以外：在鼠标位置开一个新窗口，把标签（连同页面状态）迁过去。
+        if (dragged is not null && !stillInStrip)
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            _windows.MoveTabToNewWindow(
+                dragged,
+                new Point(screenPoint.X / dpi.DpiScaleX, screenPoint.Y / dpi.DpiScaleY));
+        }
+    }
+
+    /// <summary>指针是否仍算「在标签条里」（上下留 8px 容差，避免手抖就拖出窗口）。</summary>
+    private static bool IsInTabStrip(Point point, double height) =>
+        point.Y >= -8 && point.Y <= height + 8;
+
+    private bool IsInTabStrip(Point point) =>
+        IsInTabStrip(point, TabItems.ActualHeight);
+
+    // --------------------------------------------------------------------- //
+    // 全屏（F11 + 网页视频全屏）与站点信息 / 证书
+    // --------------------------------------------------------------------- //
+
+    private bool _userFullScreen;
+    private bool _pageFullScreen;
+    private bool _fullScreenApplied;
+    private Rect _preFullScreenBounds;
+    private WindowState _preFullScreenState = WindowState.Normal;
+
+    private void ToggleFullScreen() => SetUserFullScreen(!_userFullScreen);
+
+    private void SetUserFullScreen(bool fullScreen)
+    {
+        _userFullScreen = fullScreen;
+        UpdateFullScreenState();
+    }
+
+    /// <summary>只有当前标签的网页全屏才影响本窗口。</summary>
+    private void OnTabFullScreenChanged(TabFullScreenEventArgs e)
+    {
+        if (!ReferenceEquals(e.Tab, _viewModel.ActiveTab))
+        {
+            return;
+        }
+
+        _pageFullScreen = e.IsFullScreen;
+        UpdateFullScreenState();
+    }
+
+    private void UpdateFullScreenState()
+    {
+        var wanted = _userFullScreen || _pageFullScreen;
+        if (wanted == _fullScreenApplied)
+        {
+            return;
+        }
+
+        _fullScreenApplied = wanted;
+        if (wanted)
+        {
+            EnterFullScreen();
+        }
+        else
+        {
+            ExitFullScreen();
+        }
+    }
+
+    private void EnterFullScreen()
+    {
+        _preFullScreenState = WindowState;
+        _preFullScreenBounds = WindowState == WindowState.Normal
+            ? new Rect(Left, Top, Width, Height)
+            : RestoreBounds;
+
+        SetChromeVisible(false);
+
+        // 先回普通态再交给 Win32 铺满整块显示器（含任务栏区域）。
+        if (WindowState != WindowState.Normal)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        NativeMethods.FillMonitor(this);
+    }
+
+    private void ExitFullScreen()
+    {
+        SetChromeVisible(true);
+
+        // Win32 直接挪过窗口，WPF 的 Left/Top 已与窗口实际位置不一致，退出时按保存值重新落位。
+        WindowState = WindowState.Normal;
+        if (_preFullScreenBounds.Width > 0 && _preFullScreenBounds.Height > 0)
+        {
+            Left = _preFullScreenBounds.Left;
+            Top = _preFullScreenBounds.Top;
+            Width = _preFullScreenBounds.Width;
+            Height = _preFullScreenBounds.Height;
+        }
+
+        if (_preFullScreenState == WindowState.Maximized)
+        {
+            WindowState = WindowState.Maximized;
+        }
+
+        ApplyWindowedFrame(WindowState != WindowState.Maximized);
+    }
+
+    /// <summary>全屏时收起标签条 / 工具栏 / 查找条 / 状态栏，并把标题栏命中区归零。</summary>
+    private void SetChromeVisible(bool visible)
+    {
+        var visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        TabStrip.Visibility = visibility;
+        Toolbar.Visibility = visibility;
+
+        // 错误条与状态栏的可见性由绑定决定，全屏只是一个额外条件（见 ChromeVisible）。
+        ChromeVisible = visible;
+
+        if (!visible)
+        {
+            FindBar.Visibility = Visibility.Collapsed;
+        }
+
+        // 全屏时标签条不可见，若标题栏命中区还在，点网页顶部会变成拖窗口。
+        if (System.Windows.Shell.WindowChrome.GetWindowChrome(this) is { } chrome)
+        {
+            chrome.CaptionHeight = visible ? 38 : 0;
+            chrome.ResizeBorderThickness = visible ? new Thickness(6) : default;
+        }
+
+        if (visible)
+        {
+            ApplyWindowedFrame(WindowState != WindowState.Maximized);
+        }
+        else
+        {
+            RootLayout.Margin = default;
+            ContentFrame.BorderThickness = default;
+        }
+    }
+
+    /// <summary>点锁形图标：显示站点信息（来源 / 安全状态 / 权限）。</summary>
+    private void SecurityButton_Click(object sender, RoutedEventArgs e)
+    {
+        var tab = _viewModel.ActiveTab;
+        if (tab is null)
+        {
+            return;
+        }
+
+        var popup = new SiteInfoPopup(tab) { Owner = this };
+        var anchor = SecurityButton.PointToScreen(new Point(0, SecurityButton.ActualHeight));
+        var dpi = VisualTreeHelper.GetDpi(SecurityButton);
+        popup.Left = anchor.X / dpi.DpiScaleX;
+        popup.Top = anchor.Y / dpi.DpiScaleY;
+        Serilog.Log.Debug("打开站点信息浮层：{Url}", tab.DisplayUrl);
+        popup.ShowDialog();
+        Serilog.Log.Debug("站点信息浮层已关闭");
+    }
+
+    /// <summary>证书错误：把关键信息给用户，由用户决定是否继续。</summary>
+    private void AskAboutCertificateError(CertificateErrorEventArgs e)
+    {
+        var host = Uri.TryCreate(e.RequestUri, UriKind.Absolute, out var uri) ? uri.Host : e.RequestUri;
+        var answer = MessageBox.Show(
+            this,
+            $"无法确认与「{host}」的连接是安全的。\n\n"
+            + $"证书错误：{e.ErrorStatus}\n"
+            + $"证书颁发给：{e.Certificate?.Subject ?? "（未知）"}\n\n"
+            + "继续访问可能导致信息被窃听或篡改。是否继续？",
+            "此连接不是私密连接",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+
+        e.Allow = answer == MessageBoxResult.Yes;
     }
 
     private void BeginDrag()
@@ -481,6 +689,9 @@ public partial class MainWindow : Window
     private void TabMenu_Reload(object sender, RoutedEventArgs e) =>
         _viewModel.ReloadTabCommand.Execute(TabOf(sender));
 
+    private void TabMenu_ToggleMute(object sender, RoutedEventArgs e) =>
+        _viewModel.ToggleMuteCommand.Execute(TabOf(sender));
+
     private void TabMenu_Duplicate(object sender, RoutedEventArgs e) =>
         _viewModel.DuplicateTabCommand.Execute(TabOf(sender));
 
@@ -560,6 +771,15 @@ public partial class MainWindow : Window
                         return true;
                     case Key.F:
                         return ShowFindBar();
+                    case Key.P when !isEditingText:
+                        PrintActivePage();
+                        return true;
+                    case Key.S when !isEditingText:
+                        _ = SaveActivePageAsync();
+                        return true;
+                    case Key.U when !isEditingText:
+                        ViewSourceOfActivePage();
+                        return true;
                     case Key.H when !isEditingText:
                         _viewModel.OpenHistoryCommand.Execute(null);
                         return true;
@@ -647,6 +867,12 @@ public partial class MainWindow : Window
                     case Key.F12:
                         // WebView2 已开启 DevTools，这里不拦截，交给默认处理。
                         return false;
+                    case Key.F11:
+                        ToggleFullScreen();
+                        return true;
+                    case Key.Escape when _userFullScreen:
+                        SetUserFullScreen(false);
+                        return true;
                     case Key.Escape when IsAddressBarFocused():
                         RestoreAddressBar();
                         return true;
@@ -674,6 +900,54 @@ public partial class MainWindow : Window
     {
         _viewModel.IsAddressBarEditing = false;
         _viewModel.AddressBarText = _viewModel.ActiveTab?.DisplayUrl ?? string.Empty;
+    }
+
+    private void PrintActivePage()
+    {
+        var tab = _viewModel.ActiveTab;
+        if (tab is null)
+        {
+            return;
+        }
+
+        if (!tab.Print())
+        {
+            MessageBox.Show(this, "当前 WebView2 运行时不支持打印。", "ScBrowser",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    private async Task SaveActivePageAsync()
+    {
+        var tab = _viewModel.ActiveTab;
+        if (tab is null)
+        {
+            return;
+        }
+
+        if (!await tab.SavePageAsync().ConfigureAwait(true))
+        {
+            MessageBox.Show(
+                this,
+                "当前 WebView2 运行时太旧，不支持「另存为」。请更新 WebView2 运行时后重试。",
+                "ScBrowser",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+    }
+
+    private void ViewSourceOfActivePage()
+    {
+        var url = _viewModel.ActiveTab?.DisplayUrl;
+        if (string.IsNullOrWhiteSpace(url)
+            || InternalPageRegistry.IsInternalPage(url)
+            || !(url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                 || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        _ = _tabs.CreateAsync("view-source:" + url, activate: true);
     }
 
     private void AdjustZoom(double delta)
@@ -1154,6 +1428,29 @@ public partial class MainWindow : Window
         _viewModel.OpenSettingsCommand.Execute(null);
 
     private void Menu_Exit(object sender, RoutedEventArgs e) => Close();
+
+    private void Menu_Print(object sender, RoutedEventArgs e) => PrintActivePage();
+
+    private void Menu_SavePage(object sender, RoutedEventArgs e) => _ = SaveActivePageAsync();
+
+    private void Menu_ViewSource(object sender, RoutedEventArgs e) => ViewSourceOfActivePage();
+
+    private void Menu_FullScreen(object sender, RoutedEventArgs e) => ToggleFullScreen();
+
+    private void Menu_SetDefaultBrowser(object sender, RoutedEventArgs e)
+    {
+        var ok = _defaultBrowser?.Register() ?? false;
+        _defaultBrowser?.OpenWindowsSettings();
+
+        MessageBox.Show(
+            this,
+            ok
+                ? "已登记为可选的默认浏览器。\n\n请在打开的「默认应用」设置里，把「Web 浏览器」选为 ScBrowser。"
+                : "无法完成注册（可能被系统策略阻止）。请在「设置 → 应用 → 默认应用」中手动选择 ScBrowser。",
+            "设为默认浏览器",
+            MessageBoxButton.OK,
+            ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+    }
 
     private void MenuZoomIn(object sender, RoutedEventArgs e) => AdjustZoom(+0.1);
 

@@ -97,16 +97,17 @@ public sealed class DownloadRepository
     }
 
     /// <summary>
-    /// 把仍标记为「下载中」的记录改为失败。
+    /// 把仍标记为「下载中 / 已暂停」的记录改为失败。
     /// 应用启动时调用：进程退出时未完成的下载不可能自行续传，留着只会显示成永远转圈的幽灵项。
     /// </summary>
     public int MarkInProgressAsFailed()
     {
         using var connection = _database.OpenConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE downloads SET state = $failed WHERE state = $inProgress;";
+        command.CommandText = "UPDATE downloads SET state = $failed WHERE state IN ($inProgress, $paused);";
         command.Parameters.AddWithValue("$failed", (int)DownloadState.Failed);
         command.Parameters.AddWithValue("$inProgress", (int)DownloadState.InProgress);
+        command.Parameters.AddWithValue("$paused", (int)DownloadState.Paused);
         return command.ExecuteNonQuery();
     }
 

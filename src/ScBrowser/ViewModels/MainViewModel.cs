@@ -19,19 +19,42 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly BookmarkRepository _bookmarks;
     private readonly SettingsService _settings;
     private readonly HistoryRepository _history;
+    private readonly DownloadManager? _downloads;
 
     public MainViewModel(
         TabManager tabs,
         BookmarkRepository bookmarks,
         SettingsService settings,
-        HistoryRepository history)
+        HistoryRepository history,
+        DownloadManager? downloads = null)
     {
         _tabs = tabs;
         _bookmarks = bookmarks;
         _settings = settings;
         _history = history;
+        _downloads = downloads;
 
         _tabs.ActiveTabChanged += (_, tab) => HandleActiveTabChanged(tab);
+
+        if (_downloads is not null)
+        {
+            _downloads.Changed += (_, _) => RefreshDownloadIndicator();
+            RefreshDownloadIndicator();
+        }
+    }
+
+    /// <summary>是否有正在下载的条目（工具栏下载指示器）。</summary>
+    [ObservableProperty]
+    private bool _hasActiveDownloads;
+
+    /// <summary>正在下载的条目数。</summary>
+    [ObservableProperty]
+    private int _activeDownloadCount;
+
+    private void RefreshDownloadIndicator()
+    {
+        ActiveDownloadCount = _downloads?.ActiveCount ?? 0;
+        HasActiveDownloads = ActiveDownloadCount > 0;
     }
 
     /// <summary>地址栏下拉的候选行。</summary>
@@ -226,9 +249,13 @@ public sealed partial class MainViewModel : ObservableObject
         return _tabs.CreateAsync(InternalPageRegistry.NewTabUrl, activate: true, insertAt: Tabs.IndexOf(tab) + 1);
     }
 
-    /// <summary>重新加载指定标签页（标签右键菜单）。</summary>
+    /// <summary>重新加载指定标签页（标签右键菜单 / 错误条按钮）。引擎丢失时重建。</summary>
     [RelayCommand]
-    private void ReloadTab(BrowserTab? tab) => tab?.Reload();
+    private void ReloadTab(BrowserTab? tab) => _tabs.ReloadTab(tab ?? ActiveTab);
+
+    /// <summary>静音 / 取消静音指定标签页。</summary>
+    [RelayCommand]
+    private void ToggleMute(BrowserTab? tab) => (tab ?? ActiveTab)?.ToggleMute();
 
     /// <summary>
     /// 在右侧新建当前页面的拷贝页（标签右键菜单的「复制」）。
@@ -313,24 +340,9 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void Forward() => ActiveTab?.GoForward();
 
-    /// <summary>刷新；若正在加载则等价于「停止」（与刷新按钮的双态一致）。</summary>
+    /// <summary>刷新；若正在加载则等价于「停止」（与刷新按钮的双态一致）。引擎丢失时重建。</summary>
     [RelayCommand]
-    private void Reload()
-    {
-        if (ActiveTab is null)
-        {
-            return;
-        }
-
-        if (ActiveTab.IsLoading)
-        {
-            ActiveTab.Stop();
-        }
-        else
-        {
-            ActiveTab.Reload();
-        }
-    }
+    private void Reload() => _tabs.ReloadTab(ActiveTab);
 
     [RelayCommand]
     private void Stop() => ActiveTab?.Stop();

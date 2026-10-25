@@ -75,6 +75,28 @@ public sealed class NonEmptyStringToVisibilityConverter : IValueConverter
 }
 
 /// <summary>
+/// 文本非空 <b>且</b> 外壳 chrome 可见 → Visible。
+/// <para>
+/// 错误条与状态栏平时靠绑定控制显隐；全屏时又必须收起来。不能直接给 Visibility 赋
+/// <c>Collapsed</c> 再 <c>ClearValue</c>——那会把 XAML 里的绑定一起清掉，退出全屏后
+/// 绑定失效、退回类型默认值 <c>Visible</c>，于是出现一条没有文字的红条。
+/// 因此把「chrome 是否可见」做成窗口的依赖属性，与文本一起参与多值绑定。
+/// </para>
+/// </summary>
+public sealed class TextAndChromeVisibilityConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var text = values.Length > 0 ? values[0] as string : null;
+        var chromeVisible = values.Length > 1 && values[1] is true;
+        return chromeVisible && !string.IsNullOrWhiteSpace(text) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public object[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// 安全状态 + 当前地址 → 安全图标的悬停提示。
 /// <para>
 /// 之所以还要地址：<see cref="SecurityState.Unknown"/> 有两种截然不同的成因——

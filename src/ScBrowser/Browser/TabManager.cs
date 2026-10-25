@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using ScBrowser.Services;
@@ -34,6 +35,11 @@ public sealed class TabManager
         _history = history;
         _logger = logger;
         SessionKind = sessionKind;
+
+        // 后台休眠：每分钟看一次，把长时间没被激活的标签挂起（省内存/CPU）。
+        _suspendTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _suspendTimer.Tick += (_, _) => SuspendIdleTabs();
+        _suspendTimer.Start();
     }
 
     /// <summary>本标签页集合所属窗口的会话类型（普通 / 无痕）。</summary>
@@ -68,6 +74,17 @@ public sealed class TabManager
 
     /// <summary>收到来自任意标签内部页面的 JS 消息（由 <see cref="WebMessageRouter"/> 订阅）。</summary>
     public event EventHandler<TabWebMessageEventArgs>? WebMessageReceived;
+
+    /// <summary>某个标签的网页进入 / 退出全屏（外壳据此收起或恢复 chrome）。</summary>
+    public event EventHandler<TabFullScreenEventArgs>? TabFullScreenChanged;
+
+    /// <summary>某个标签遇到证书错误，需要窗口询问用户是否继续。</summary>
+    public event EventHandler<CertificateErrorEventArgs>? CertificateErrorDetected;
+
+    /// <summary>后台标签空闲多久后休眠。</summary>
+    private static readonly TimeSpan SuspendIdleAfter = TimeSpan.FromMinutes(30);
+
+    private readonly DispatcherTimer _suspendTimer;
 
     /// <summary>
     /// 当前浏览器 Profile。扩展管理、清缓存等按 profile 维度的能力都需要它，
@@ -111,9 +128,12 @@ public sealed class TabManager
     {
         var tab = new BrowserTab(_nextId++);
         tab.SetInitialLocation(url);
+        tab.Owner = this;
 
-        // 引擎是后创建的，宿主得在那时把它挂进可视化树。
-        tab.EngineAttached += (_, _) => Host?.AttachTab(tab);
+        // 引擎是后创建的，宿主得在那时把它挂进可视化树；
+        // 处理器里用 tab.Owner（而不是捕获 this），标签迁移到别的窗口后也能挂对地方。
+        tab.EngineAttached += (_, _) => tab.Owner?.AttachEngine(tab);
+        tab.EngineDetached += (_, _) => tab.Owner?.DetachEngine(tab);
 
         Tabs.Add(tab);
         if (insertAt is { } index && index >= 0 && index < Tabs.Count - 1)
@@ -168,9 +188,17 @@ public sealed class TabManager
     /// <returns>初始化是否成功。</returns>
     private async Task<bool> TryEnsureEngineAsync(BrowserTab tab)
     {
+        // 内核进程退出后引擎被丢弃：重建成功后把页面重新打开到原地址。
+        var wasLost = tab.EngineLost;
+
         try
         {
             await EnsureEngineAsync(tab).ConfigureAwait(true);
+            if (wasLost)
+            {
+                tab.Navigate(tab.DisplayUrl);
+            }
+
             return true;
         }
         catch (Exception ex)
@@ -178,6 +206,30 @@ public sealed class TabManager
             _logger.LogError(ex, "标签页 {TabId} 初始化失败", tab.Id);
             tab.ShowEngineError("页面加载失败：无法初始化浏览器内核（请检查 WebView2 运行时）。");
             return false;
+        }
+    }
+
+    /// <summary>重新加载 / 停止（工具栏、F5、Ctrl+R 共用）。引擎丢失时重建。</summary>
+    public void ReloadTab(BrowserTab? tab)
+    {
+        if (tab is null)
+        {
+            return;
+        }
+
+        if (tab.EngineLost || !tab.IsInitialized)
+        {
+            _ = TryEnsureEngineAsync(tab);
+            return;
+        }
+
+        if (tab.IsLoading)
+        {
+            tab.Stop();
+        }
+        else
+        {
+            tab.Reload();
         }
     }
 
@@ -199,6 +251,12 @@ public sealed class TabManager
         ApplyWebTheme(tab);
     }
 
+    /// <summary>引擎创建后把控件挂进本窗口的内容区（由 <see cref="BrowserTab.EngineAttached"/> 触发）。</summary>
+    private void AttachEngine(BrowserTab tab) => Host?.AttachTab(tab);
+
+    /// <summary>引擎失效时把控件从内容区摘掉（由 <see cref="BrowserTab.EngineDetached"/> 触发）。</summary>
+    private void DetachEngine(BrowserTab tab) => Host?.DetachTab(tab);
+
     /// <summary>激活指定标签页；若它的引擎尚未创建（惰性恢复），现在加载。</summary>
     public void Activate(BrowserTab tab)
     {
@@ -216,6 +274,8 @@ public sealed class TabManager
         tab.IsActive = true;
         Host?.SetActiveTab(tab);
 
+        // 休眠中的标签唤醒；惰性标签此时才创建引擎；引擎丢失的标签重建。
+        tab.Resume();
         if (!tab.IsInitialized)
         {
             _ = TryEnsureEngineAsync(tab);
@@ -365,14 +425,93 @@ public sealed class TabManager
         }
     }
 
+    /// <summary>把长时间没被激活的后台标签挂起（正在播放音频的由 <see cref="BrowserTab.SuspendAsync"/> 自行跳过）。</summary>
+    private void SuspendIdleTabs()
+    {
+        var now = DateTime.UtcNow;
+        foreach (var tab in Tabs)
+        {
+            if (tab.IsActive || !tab.IsInitialized || tab.IsSuspended)
+            {
+                continue;
+            }
+
+            if (now - tab.LastActivatedAt < SuspendIdleAfter)
+            {
+                continue;
+            }
+
+            _ = tab.SuspendAsync();
+        }
+    }
+
+    /// <summary>
+    /// 把标签交给另一个窗口（拖出成新窗口）：不写「最近关闭」、不释放引擎，
+    /// 控件从本窗口内容区摘下，由新窗口重新挂上。
+    /// </summary>
+    public void ReleaseTab(BrowserTab tab)
+    {
+        var index = Tabs.IndexOf(tab);
+        if (index < 0)
+        {
+            return;
+        }
+
+        var wasActive = ReferenceEquals(tab, ActiveTab);
+        Tabs.Remove(tab);
+        Host?.DetachTab(tab);
+        tab.IsActive = false;
+
+        if (wasActive)
+        {
+            ActiveTab = null;
+        }
+
+        TabClosed?.Invoke(this, tab);
+
+        if (Tabs.Count == 0)
+        {
+            // 最后一个标签被拖走了：本窗口没有存在的意义（与 Chrome 一致）。
+            ActiveTabChanged?.Invoke(this, null);
+            LastTabClosed?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        if (wasActive)
+        {
+            Activate(Tabs[Math.Min(index, Tabs.Count - 1)]);
+        }
+    }
+
+    /// <summary>接收从别的窗口迁移来的标签（引擎与页面状态都保留）。</summary>
+    public void Adopt(BrowserTab tab)
+    {
+        tab.Owner = this;
+        Tabs.Add(tab);
+
+        if (tab.View is { } view)
+        {
+            Host?.AttachTab(tab);
+            view.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        Activate(tab);
+        _logger.LogDebug("标签页 {TabId} 已迁移到当前窗口", tab.Id);
+    }
+
     private void WireTabEvents(BrowserTab tab)
     {
+        // 处理器一律经 tab.Owner 转发：标签被拖到别的窗口后，事件要落到新宿主上，
+        // 不能因为闭包捕获了当时的 TabManager 而继续路由回旧窗口。
         tab.NewWindowRequested += async (_, e) =>
         {
             // 页面要求开新窗 → 在本应用开新标签，而不是交给 WebView2 弹裸窗。
             try
             {
-                await CreateAsync(e.Url, activate: e.Foreground).ConfigureAwait(true);
+                if (tab.Owner is { } owner)
+                {
+                    await owner.CreateAsync(e.Url, activate: e.Foreground).ConfigureAwait(true);
+                }
             }
             catch (Exception ex)
             {
@@ -380,11 +519,12 @@ public sealed class TabManager
             }
         };
 
-        tab.CloseRequested += (_, _) => Close(tab);
+        tab.CloseRequested += (_, _) => tab.Owner?.Close(tab);
 
-        tab.WebMessageReceived += (_, e) => WebMessageReceived?.Invoke(this, new TabWebMessageEventArgs(tab, e));
+        tab.WebMessageReceived += (_, e) =>
+            tab.Owner?.WebMessageReceived?.Invoke(tab.Owner, new TabWebMessageEventArgs(tab, e));
 
-        tab.NavigationFinished += (_, _) => RecordHistory(tab);
+        tab.NavigationFinished += (_, _) => tab.Owner?.RecordHistory(tab);
 
         // 导航失败只在界面上挂一条提示，日志里此前什么都没有——排障时看不到，这里补上。
         tab.NavigationFailed += (_, status) =>
@@ -396,6 +536,12 @@ public sealed class TabManager
         tab.ProcessFailed += (_, e) =>
             _logger.LogError("标签页 {TabId} 进程故障：{Kind}（{Reason}，退出码 {ExitCode}）",
                 tab.Id, e.ProcessFailedKind, e.Reason, e.ExitCode);
+
+        tab.FullScreenChanged += (_, fullScreen) =>
+            tab.Owner?.TabFullScreenChanged?.Invoke(tab.Owner, new TabFullScreenEventArgs(tab, fullScreen));
+
+        tab.CertificateErrorDetected += (_, e) =>
+            tab.Owner?.CertificateErrorDetected?.Invoke(tab.Owner, e);
     }
 
     /// <summary>
@@ -433,6 +579,8 @@ public sealed class TabManager
     /// <summary>关闭全部标签（应用退出时调用）。</summary>
     public void CloseAll()
     {
+        _suspendTimer.Stop();
+
         foreach (var tab in Tabs.ToList())
         {
             Host?.DetachTab(tab);
@@ -458,4 +606,18 @@ public sealed class TabWebMessageEventArgs : EventArgs
 
     /// <summary>WebView2 原始事件参数（含 JSON / 字符串两种取法）。</summary>
     public CoreWebView2WebMessageReceivedEventArgs Args { get; }
+}
+
+/// <summary>某个标签的网页进入了 / 退出了全屏。</summary>
+public sealed class TabFullScreenEventArgs : EventArgs
+{
+    public TabFullScreenEventArgs(BrowserTab tab, bool isFullScreen)
+    {
+        Tab = tab;
+        IsFullScreen = isFullScreen;
+    }
+
+    public BrowserTab Tab { get; }
+
+    public bool IsFullScreen { get; }
 }

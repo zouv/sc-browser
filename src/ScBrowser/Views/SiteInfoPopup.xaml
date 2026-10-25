@@ -1,0 +1,76 @@
+<Window x:Class="ScBrowser.Views.SiteInfoPopup"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="站点信息"
+        Width="400"
+        SizeToContent="Height"
+        WindowStartupLocation="Manual"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        KeyDown="Window_KeyDown"
+        Deactivated="Window_Deactivated">
+
+    <!-- 独立顶层窗口：WebView2 是独立子 HWND，WPF 浮层盖不到网页上（airspace） -->
+    <Border Background="{DynamicResource WindowBackgroundBrush}"
+            BorderBrush="{DynamicResource SeparatorBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Margin="10">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.3" Color="Black" />
+        </Border.Effect>
+
+        <StackPanel Margin="18,16,18,14">
+            <TextBlock Text="此连接的信息" FontSize="15" FontWeight="SemiBold" />
+
+            <TextBlock x:Name="OriginText"
+                       Margin="0,10,0,0"
+                       FontSize="13"
+                       TextWrapping="Wrap" />
+
+            <TextBlock x:Name="SecurityText"
+                       Margin="0,4,0,0"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap" />
+
+            <Border Margin="0,12,0,0" Height="1" Background="{DynamicResource SeparatorBrush}" />
+
+            <TextBlock Text="站点权限"
+                       Margin="0,10,0,4"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+
+            <TextBlock x:Name="PermissionHint"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap" />
+
+            <ItemsControl x:Name="PermissionList" Margin="0,4,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}"
+                                   Margin="0,2,0,0"
+                                   FontSize="12"
+                                   TextWrapping="Wrap" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,14,0,0">
+                <Button Content="清除此站点数据" Padding="10,4" Margin="0,0,8,0"
+                        Click="ClearData_Click" />
+                <Button Content="重置权限" Padding="10,4" Margin="0,0,8,0"
+                        Click="ResetPermissions_Click" />
+                <Button Content="关闭" Padding="14,4" Click="Close_Click" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>
