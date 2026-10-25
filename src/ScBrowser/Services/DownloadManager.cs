@@ -47,6 +47,9 @@ public sealed class DownloadManager
 
     public IReadOnlyList<DownloadEntry> List() => _repository.Query();
 
+    /// <summary>按 id 取一条下载记录（内部页面只传 id，路径以库里的为准）。</summary>
+    public DownloadEntry? Find(string id) => _repository.Find(id);
+
     public void Clear()
     {
         _repository.Clear();

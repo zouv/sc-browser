@@ -341,6 +341,13 @@ public sealed class TabManager
         // 导航失败只在界面上挂一条提示，日志里此前什么都没有——排障时看不到，这里补上。
         tab.NavigationFailed += (_, status) =>
             _logger.LogWarning("标签页 {TabId} 导航失败：{Status}", tab.Id, status);
+
+        tab.NavigationBlocked += (_, reason) =>
+            _logger.LogWarning("标签页 {TabId} 已拦截：{Reason}", tab.Id, reason);
+
+        tab.ProcessFailed += (_, e) =>
+            _logger.LogError("标签页 {TabId} 进程故障：{Kind}（{Reason}，退出码 {ExitCode}）",
+                tab.Id, e.ProcessFailedKind, e.Reason, e.ExitCode);
     }
 
     /// <summary>

@@ -102,7 +102,7 @@
         openBtn.className = "btn";
         openBtn.textContent = "打开";
         openBtn.addEventListener("click", function () {
-          sc.send("downloads.openFile", { path: entry.filePath });
+          sc.send("downloads.openFile", { id: entry.id });
         });
         actions.appendChild(openBtn);
 
@@ -110,7 +110,7 @@
         revealBtn.className = "btn";
         revealBtn.textContent = "所在文件夹";
         revealBtn.addEventListener("click", function () {
-          sc.send("downloads.revealInFolder", { path: entry.filePath });
+          sc.send("downloads.revealInFolder", { id: entry.id });
         });
         actions.appendChild(revealBtn);
       }

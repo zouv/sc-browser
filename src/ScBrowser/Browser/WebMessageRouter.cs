@@ -24,6 +24,12 @@ namespace ScBrowser.Browser;
 /// 本类不依赖任何视图，只依赖服务层——因此扩展新内部页面时，
 /// 「加一个 case」即可，不需要动外壳代码。
 /// </para>
+/// <para>
+/// <b>安全边界（务必知悉）</b>：WebView2 给<b>所有</b>顶层页面都注入了 <c>chrome.webview.postMessage</c>，
+/// 普通网页也能往这里发消息。因此每条消息先按发送方文档地址（<c>args.Source</c>，网页无法伪造）鉴权：
+/// 不是内部页面的直接丢弃，内部页面也只能调 <see cref="InternalPageRegistry"/> 给它登记的那几类消息。
+/// 宿主推送同理，只发给内部页面。
+/// </para>
 /// </summary>
 public sealed class WebMessageRouter
 {
@@ -42,6 +48,8 @@ public sealed class WebMessageRouter
     private readonly ThemeService _theme;
     private readonly ILogger<WebMessageRouter> _logger;
 
+    /// <summary>已记过「拒绝非内部页面消息」日志的标签（消息都在 UI 线程上处理，无需加锁）。</summary>
+    private readonly HashSet<int> _rejectedTabs = [];
     public WebMessageRouter(
         BrowserWindowManager windows,
         HistoryRepository history,
@@ -70,7 +78,7 @@ public sealed class WebMessageRouter
         _downloads.Changed += (_, _) => Broadcast("downloads.changed");
     }
 
-    /// <summary>向所有标签页推送一个事件。</summary>
+    /// <summary>向所有停留在内部页面上的标签推送一个事件（普通网页收不到）。</summary>
     public void Broadcast(string type, object? payload = null)
     {
         var json = JsonSerializer.Serialize(new { type, payload }, JsonOptions);
@@ -79,7 +87,10 @@ public sealed class WebMessageRouter
         {
             try
             {
-                tab.Core?.PostWebMessageAsJson(json);
+                if (tab.Core is { } core && InternalPageRegistry.IsInternalPage(core.Source))
+                {
+                    core.PostWebMessageAsJson(json);
+                }
             }
             catch (Exception ex)
             {
@@ -100,15 +111,35 @@ public sealed class WebMessageRouter
             using var document = JsonDocument.Parse(args.WebMessageAsJson);
             var root = document.RootElement;
 
-            var type = root.TryGetProperty("type", out var typeProp) ? typeProp.GetString() : null;
+            var type = root.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
+                ? typeProp.GetString()
+                : null;
             if (string.IsNullOrEmpty(type))
             {
                 return;
             }
 
-            if (root.TryGetProperty("requestId", out var idProp))
+            var source = args.Source;
+            if (!InternalPageRegistry.IsInternalPage(source))
+            {
+                // 普通网页发来的：不回执（不让网页探测到消息桥存在）。每个标签只记一次日志，
+                // 免得恶意页面循环发消息把日志写爆。
+                if (_rejectedTabs.Add(tab.Id))
+                {
+                    _logger.LogWarning("已拒绝来自非内部页面的宿主消息 {Type}，来源 {Source}（此标签后续同类拒绝不再记录）", type, source);
+                }
+
+                return;
+            }
+
+            if (root.TryGetProperty("requestId", out var idProp) && idProp.ValueKind == JsonValueKind.String)
             {
                 requestId = idProp.GetString();
+            }
+
+            if (!InternalPageRegistry.IsMessageAllowed(source, type))
+            {
+                throw new UnauthorizedAccessException($"页面 {InternalPageRegistry.NormalizeDisplayUrl(source)} 无权调用 {type}");
             }
 
             var payload = root.TryGetProperty("payload", out var payloadProp)
@@ -216,12 +247,14 @@ public sealed class WebMessageRouter
                 _downloads.Remove(GetString(payload, "id") ?? string.Empty);
                 return null;
 
+            // 只收下载记录的 id，路径由宿主自己查库——页面传来的路径一律不信，
+            // 否则「打开文件」就成了「执行任意本地程序」。
             case "downloads.openFile":
-                OpenDownloadedFile(GetString(payload, "path"));
+                OpenDownloadedFile(_downloads.Find(GetString(payload, "id") ?? string.Empty));
                 return null;
 
             case "downloads.revealInFolder":
-                RevealInExplorer(GetString(payload, "path"));
+                RevealInExplorer(_downloads.Find(GetString(payload, "id") ?? string.Empty)?.FilePath);
                 return null;
 
             // ---------------- 扩展 ----------------
@@ -230,7 +263,7 @@ public sealed class WebMessageRouter
 
             case "extensions.installFromFolder":
                 {
-                    var folder = PickFolder("选择扩展目录（须包含 manifest.json）");
+                    var folder = PickFolder(OwnerOf(manager), "选择扩展目录（须包含 manifest.json）");
                     if (folder is null)
                     {
                         return null;
@@ -243,7 +276,7 @@ public sealed class WebMessageRouter
 
             case "extensions.installFromCrx":
                 {
-                    var crx = PickFile("选择扩展包", "Chrome 扩展包 (*.crx)|*.crx|所有文件 (*.*)|*.*");
+                    var crx = PickFile(OwnerOf(manager), "选择扩展包", "Chrome 扩展包 (*.crx)|*.crx|所有文件 (*.*)|*.*");
                     if (crx is null)
                     {
                         return null;
@@ -270,7 +303,7 @@ public sealed class WebMessageRouter
                 return null;
 
             case "extensions.openManagedFolder":
-                RevealInExplorer(AppPaths.ManagedExtensionsFolder);
+                OpenFolder(AppPaths.ManagedExtensionsFolder);
                 return null;
 
             // ---------------- 设置 ----------------
@@ -279,12 +312,14 @@ public sealed class WebMessageRouter
 
             case "settings.update":
                 {
+                    // 只合并「用户偏好」字段：窗口几何等宿主自管的字段不归设置页管，
+                    // 整体替换会把它们清空（设置页根本不发这些字段）。
                     var updated = payload.Deserialize<AppSettings>(JsonOptions);
                     if (updated is not null)
                     {
-                        _settings.Replace(updated);
-                        _theme.Apply(updated.Theme);
-                        Broadcast("settings.changed", updated);
+                        _settings.Update(s => s.CopyPreferencesFrom(updated));
+                        _theme.Apply(_settings.Current.Theme);
+                        Broadcast("settings.changed", _settings.Current);
                     }
 
                     return null;
@@ -374,18 +409,24 @@ public sealed class WebMessageRouter
     // 系统对话框 / 资源管理器
     // --------------------------------------------------------------------- //
 
-    private static Window? Owner => Application.Current?.MainWindow;
+    /// <summary>
+    /// 发起操作的标签所在的窗口——系统对话框要挂在它上面。
+    /// 以前用 <c>Application.MainWindow</c>，多窗口时对话框会跑到第一个窗口后面。
+    /// </summary>
+    private Window? OwnerOf(TabManager manager) =>
+        _windows.Windows.FirstOrDefault(w => ReferenceEquals(w.Tabs, manager))
+        ?? Application.Current?.MainWindow;
 
-    private static string? PickFolder(string title)
+    private static string? PickFolder(Window? owner, string title)
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = title };
-        return dialog.ShowDialog(Owner) == true ? dialog.FolderName : null;
+        return dialog.ShowDialog(owner) == true ? dialog.FolderName : null;
     }
 
-    private static string? PickFile(string title, string filter)
+    private static string? PickFile(Window? owner, string title, string filter)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog { Title = title, Filter = filter, CheckFileExists = true };
-        return dialog.ShowDialog(Owner) == true ? dialog.FileName : null;
+        return dialog.ShowDialog(owner) == true ? dialog.FileName : null;
     }
 
     private void RevealInExplorer(string? path)
@@ -405,13 +446,29 @@ public sealed class WebMessageRouter
         }
     }
 
-    private void OpenDownloadedFile(string? path)
+    /// <summary>在资源管理器中打开一个目录（<see cref="RevealInExplorer"/> 只认文件，目录要走这里）。</summary>
+    private void OpenFolder(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        try
+        {
+            Directory.CreateDirectory(path);
+            System.Diagnostics.Process.Start("explorer.exe", $"\"{path}\"");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "打开目录失败：{Path}", path);
+        }
+    }
+
+    /// <summary>用系统默认程序打开一条<b>已完成</b>的下载。</summary>
+    private void OpenDownloadedFile(DownloadEntry? entry)
+    {
+        if (entry is not { State: DownloadState.Completed } || !File.Exists(entry.FilePath))
         {
             return;
         }
 
+        var path = entry.FilePath;
         try
         {
             // UseShellExecute 才能交给系统默认程序打开。

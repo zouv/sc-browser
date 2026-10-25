@@ -45,7 +45,31 @@ public sealed class DownloadRepository
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 2000));
+        return ReadEntries(command);
+    }
 
+    /// <summary>按 id 取一条下载记录；不存在返回 <c>null</c>。</summary>
+    public DownloadEntry? Find(string id)
+    {
+        if (string.IsNullOrEmpty(id))
+        {
+            return null;
+        }
+
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, url, file_path, file_name, total_bytes, received_bytes, state, started_utc
+            FROM downloads
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        return ReadEntries(command).FirstOrDefault();
+    }
+
+    private static List<DownloadEntry> ReadEntries(Microsoft.Data.Sqlite.SqliteCommand command)
+    {
         var result = new List<DownloadEntry>();
         using var reader = command.ExecuteReader();
         while (reader.Read())

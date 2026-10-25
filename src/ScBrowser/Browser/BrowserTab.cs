@@ -30,7 +30,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     private bool _usingJsFind;
     private int _jsFindCount;
     private int _jsFindIndex = -1;
-    private string? _logicalUrl;
+    private string? _pendingInternalPage;
     private bool _disposed;
 
     /// <summary>标签内部标识（单调递增，用于状态存储与日志）。</summary>
@@ -104,6 +104,9 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>渲染进程异常退出（用于错误页与恢复）。</summary>
     public event EventHandler<CoreWebView2ProcessFailedEventArgs>? ProcessFailed;
 
+    /// <summary>出于安全原因拦下了一次导航 / 开窗（携带说明），供调用方写日志。</summary>
+    public event EventHandler<string>? NavigationBlocked;
+
     /// <summary>页内查找的匹配数或当前匹配序号发生变化。</summary>
     public event EventHandler? FindStatusChanged;
 
@@ -146,8 +149,100 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
         _core = View.CoreWebView2;
         ConfigureSettings(_core.Settings);
+        ServeInternalPages(_core);
         WireEvents(_core);
         await EnableSecurityEventsAsync(_core).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// 由宿主直接供给 <c>browser://</c> 的页面与资源（scheme 在环境创建时注册，见
+    /// <see cref="BrowserEnvironmentProvider"/>）。过滤器必须在首次导航前加上。
+    /// </summary>
+    private static void ServeInternalPages(CoreWebView2 core)
+    {
+        const string filter = InternalPageRegistry.Scheme + "*";
+        try
+        {
+            core.AddWebResourceRequestedFilter(
+                filter,
+                CoreWebView2WebResourceContext.All,
+                CoreWebView2WebResourceRequestSourceKinds.Document);
+        }
+        catch (Exception)
+        {
+            // 旧运行时没有带来源类型的重载（ICoreWebView2_22）；退回旧版重载，行为对顶层文档一致。
+#pragma warning disable CS0618
+            core.AddWebResourceRequestedFilter(filter, CoreWebView2WebResourceContext.All);
+#pragma warning restore CS0618
+        }
+
+        core.WebResourceRequested += (_, e) =>
+        {
+            if (!InternalPageRegistry.IsInternalPage(e.Request.Uri))
+            {
+                return;
+            }
+
+            var path = InternalPageRegistry.ResolveResourcePath(e.Request.Uri);
+            if (path is null)
+            {
+                e.Response = core.Environment.CreateWebResourceResponse(null, 404, "Not Found", string.Empty);
+                return;
+            }
+
+            // 整个文件读进内存：WebUI 文件都很小，这样不必操心 WebView2 何时释放流、文件句柄何时关。
+            var content = new MemoryStream(File.ReadAllBytes(path), writable: false);
+            e.Response = core.Environment.CreateWebResourceResponse(
+                content,
+                200,
+                "OK",
+                $"Content-Type: {InternalPageRegistry.ContentTypeOf(path)}\r\n"
+                + "Cache-Control: no-cache\r\n"
+                // 内部页面不允许被任何页面嵌进 iframe（防点击劫持），也不加载插件/改基址。
+                + "Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'none'");
+        };
+    }
+
+    /// <summary>
+    /// 网页不得自行跳到内部页面（链接、<c>location=</c>、服务器重定向都算）：内部页面握有宿主能力，
+    /// 只该由用户（地址栏/菜单/快捷键）或内部页面自己打开。
+    /// 放行：宿主发起的导航、从内部页面出发的导航、前进/后退/刷新、空白页起步。
+    /// </summary>
+    private bool ShouldBlockInternalNavigation(CoreWebView2 core, CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (!InternalPageRegistry.TryGetPageName(e.Uri, out var target))
+        {
+            return false;
+        }
+
+        if (_pendingInternalPage is not null && string.Equals(_pendingInternalPage, target, StringComparison.Ordinal))
+        {
+            _pendingInternalPage = null;
+            return false;
+        }
+
+        var current = core.Source;
+        if (string.IsNullOrEmpty(current)
+            || current.StartsWith("about:", StringComparison.OrdinalIgnoreCase)
+            || InternalPageRegistry.IsInternalPage(current))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (e.NavigationKind is CoreWebView2NavigationKind.BackOrForward or CoreWebView2NavigationKind.Reload)
+            {
+                return false;
+            }
+        }
+        catch (Exception)
+        {
+            // 旧运行时拿不到导航类型：放行。消息桥按来源鉴权才是主防线，这里只是纵深防御。
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -219,8 +314,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
         try
         {
-            // 内部页面要按逻辑地址重走一遍，否则会丢掉 browser:// 的显示地址。
-            Navigate(_logicalUrl ?? failedSource);
+            Navigate(failedSource);
         }
         catch (Exception)
         {
@@ -258,8 +352,15 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         core.SourceChanged += (_, _) => UpdateUrlFromCore();
         core.HistoryChanged += (_, _) => UpdateHistoryState();
 
-        core.NavigationStarting += (_, _) =>
+        core.NavigationStarting += (_, e) =>
         {
+            if (ShouldBlockInternalNavigation(core, e))
+            {
+                e.Cancel = true;
+                NavigationBlocked?.Invoke(this, $"网页 {core.Source} 试图跳转到内部页面 {e.Uri}");
+                return;
+            }
+
             IsLoading = true;
             ClearNavigationError();
         };
@@ -273,6 +374,12 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                 _hasNavigated = true;
                 UpdateUrlFromCore();
                 ClearNavigationError();
+                if (InternalPageRegistry.IsInternalPage(DisplayUrl))
+                {
+                    // 内部页面不保证触发 FaviconChanged，导航完成时直接挂上品牌图标。
+                    Favicon = BrandIcon.Value;
+                }
+
                 NavigationFinished?.Invoke(this, EventArgs.Empty);
             }
             else if (e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled)
@@ -296,6 +403,14 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         {
             // 我们自行决定在新标签打开，而不是让 WebView2 弹一个无壳的裸窗口。
             e.Handled = true;
+
+            // 网页开窗到内部页面同样拦下（新标签由宿主导航，绕得过 NavigationStarting 的拦截）。
+            if (InternalPageRegistry.IsInternalPage(e.Uri) && !InternalPageRegistry.IsInternalPage(core.Source))
+            {
+                NavigationBlocked?.Invoke(this, $"网页 {core.Source} 试图在新窗口打开内部页面 {e.Uri}");
+                return;
+            }
+
             NewWindowRequested?.Invoke(this, new NewWindowRequestedEventArgs(
                 e.Uri,
                 foreground: true));
@@ -304,7 +419,11 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         core.WindowCloseRequested += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
         core.WebMessageReceived += (_, e) => WebMessageReceived?.Invoke(this, e);
         core.DownloadStarting += (_, e) => DownloadStarting?.Invoke(this, e);
-        core.ProcessFailed += (_, e) => ProcessFailed?.Invoke(this, e);
+        core.ProcessFailed += (_, e) =>
+        {
+            OnProcessFailed(e);
+            ProcessFailed?.Invoke(this, e);
+        };
 
         // 页内查找是较新的平台能力（需要 ICoreWebView2_28）。旧运行时上访问 Find
         // 会直接抛 NotImplementedException；此时退回到 ExecuteScript + CSS Highlight
@@ -319,6 +438,34 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         {
             _find = null;
         }
+    }
+
+    /// <summary>
+    /// 进程故障的用户可见处理。此前该事件只是转发、无人订阅——渲染进程崩了标签就静静地白屏。
+    /// <para>
+    /// 渲染进程退出/无响应：挂错误条，用户点「重新加载」即可恢复（WebView2 会重建渲染进程）。
+    /// 浏览器主进程退出：这个 WebView2 已不可再用，只能关掉标签重开——自动重建引擎属于
+    /// 「标签状态与引擎拆分」那一步（见 ROADMAP）。其余进程（GPU / 工具进程、子帧）由 Chromium 自行拉起。
+    /// </para>
+    /// </summary>
+    private void OnProcessFailed(CoreWebView2ProcessFailedEventArgs e)
+    {
+        var message = e.ProcessFailedKind switch
+        {
+            CoreWebView2ProcessFailedKind.RenderProcessExited => "页面已崩溃，点击「重新加载」恢复。",
+            CoreWebView2ProcessFailedKind.RenderProcessUnresponsive => "页面无响应，可以等待或点击「重新加载」。",
+            CoreWebView2ProcessFailedKind.BrowserProcessExited => "浏览器内核进程已退出，请关闭此标签后重新打开。",
+            _ => null,
+        };
+
+        if (message is null)
+        {
+            return;
+        }
+
+        _errorVersion++;            // 作废还在排队的导航错误提示，免得把崩溃提示盖掉
+        IsLoading = false;
+        LastError = message;
     }
 
     /// <summary>
@@ -366,7 +513,8 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 导航到指定地址。内部页面（<c>browser://</c>）会被解析成本地 WebUI 文件。
+    /// 导航到指定地址。内部页面（<c>browser://</c>）未登记时退回新标签页。
+    /// 这是宿主发起的导航，所以即使当前在普通网页上，也放行到内部页面（见 <see cref="ShouldBlockInternalNavigation"/>）。
     /// </summary>
     public void Navigate(string url)
     {
@@ -377,25 +525,19 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
         if (InternalPageRegistry.IsInternalPage(url))
         {
-            var fileUri = InternalPageRegistry.ResolveToFileUri(url);
-            if (fileUri is null)
+            // 未登记的内部页面：退回新标签页，避免落到 404。
+            var target = InternalPageRegistry.ToNavigableUri(url)
+                         ?? InternalPageRegistry.ToNavigableUri(InternalPageRegistry.NewTabUrl);
+            if (target is null || !InternalPageRegistry.TryGetPageName(target, out var page))
             {
-                // 未登记的内部页面：退回新标签页，避免落到空白。
-                fileUri = InternalPageRegistry.ResolveToFileUri(InternalPageRegistry.NewTabUrl);
-                if (fileUri is null)
-                {
-                    return;
-                }
-
-                url = InternalPageRegistry.NewTabUrl;
+                return;
             }
 
-            _logicalUrl = url;
-            _core.Navigate(fileUri);
+            _pendingInternalPage = page;
+            _core.Navigate(target);
         }
         else
         {
-            _logicalUrl = null;
             _core.Navigate(url);
         }
     }
@@ -764,8 +906,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 从 WebView2 的实际地址推导展示地址。
-    /// 内部页面在 WebView2 眼里是 <c>file://</c> 路径，但用户应看到 <c>browser://xxx</c>。
+    /// 从 WebView2 的实际地址推导展示地址：内部页面去掉尾部的 <c>/</c>（<c>browser://settings</c>），其余原样。
     /// </summary>
     private void UpdateUrlFromCore()
     {
@@ -775,38 +916,10 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         }
 
         var source = _core.Source ?? string.Empty;
-
-        // 仍在内部页面上（地址是 WebUI 目录下的文件）→ 继续展示逻辑地址。
-        if (_logicalUrl is not null && IsUnderWebUiFolder(source))
-        {
-            Url = source;
-            DisplayUrl = InternalPageRegistry.NormalizeDisplayUrl(_logicalUrl);
-            return;
-        }
-
-        _logicalUrl = null;
         Url = source;
-        DisplayUrl = source;
-    }
-
-    private static bool IsUnderWebUiFolder(string source)
-    {
-        if (!source.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        try
-        {
-            var localPath = new Uri(source).LocalPath;
-            var root = Path.GetFullPath(AppPaths.WebUiFolder);
-            var full = Path.GetFullPath(localPath);
-            return full.StartsWith(root, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (UriFormatException)
-        {
-            return false;
-        }
+        DisplayUrl = InternalPageRegistry.IsInternalPage(source)
+            ? InternalPageRegistry.NormalizeDisplayUrl(source)
+            : source;
     }
 
     private static string ResolveTitle(CoreWebView2 core)
@@ -828,9 +941,8 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
     private async Task UpdateFaviconAsync(CoreWebView2 core)
     {
-        // 内部页面没有 favicon——它们是 file:// 页面，Chromium 不会去取站标（实测
-        // FaviconChanged 根本不触发），于是标签条上会一直挂着通用的地球字形。
-        // 这里用应用图标兜底，让内部页面的标签也有品牌标识。
+        // 内部页面没有自己的 favicon（宿主对 /favicon.ico 返回 404），
+        // 标签条上会一直挂着通用的地球字形——用应用图标兜底，让内部页面的标签也有品牌标识。
         if (InternalPageRegistry.IsInternalPage(DisplayUrl))
         {
             Favicon = BrandIcon.Value;
