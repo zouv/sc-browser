@@ -9,7 +9,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>ScBrowser</AssemblyName>
     <RootNamespace>ScBrowser</RootNamespace>
-    <Version>0.2.2</Version>
+    <Version>0.3.0</Version>
     <LangVersion>latest</LangVersion>
     <!-- WebView2 运行时随程序分发；本机已装 Edge，此处不引入 fixed runtime -->
     <Platforms>AnyCPU;x64</Platforms>

@@ -16,7 +16,8 @@ public class VisibilityConverterTests
     [InlineData("   ", true, Visibility.Collapsed)]
     public void 有文本且非全屏才显示(string? text, bool chromeVisible, Visibility expected)
     {
-        var result = Converter.Convert([text, chromeVisible], typeof(Visibility), null, null!);
+        var values = new object[] { text!, chromeVisible };
+        var result = Converter.Convert(values, typeof(Visibility), null!, null!);
         Assert.Equal(expected, (Visibility)result);
     }
 
@@ -25,7 +26,9 @@ public class VisibilityConverterTests
     {
         // 绑定路径取不到值时会给空数组：必须退回 Collapsed，
         // 否则 Visibility 的默认值 Visible 会让空提示条闪出来（ARCHITECTURE §7）。
-        Assert.Equal(Visibility.Collapsed, (Visibility)Converter.Convert([], typeof(Visibility), null, null!));
-        Assert.Equal(Visibility.Collapsed, (Visibility)Converter.Convert([null], typeof(Visibility), null, null!));
+        Assert.Equal(Visibility.Collapsed, (Visibility)Converter.Convert([], typeof(Visibility), null!, null!));
+        Assert.Equal(
+            Visibility.Collapsed,
+            (Visibility)Converter.Convert(new object[] { null! }, typeof(Visibility), null!, null!));
     }
 }
