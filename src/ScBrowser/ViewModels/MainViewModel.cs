@@ -404,11 +404,15 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        // 会话惰性恢复：只有激活的那个标签立刻创建引擎，其余标签先只持有地址，
+        // 等用户点开时再加载（标签多时启动快得多，内存也不被 N 个 WebView2 占着）。
+        activeIndex = Math.Clamp(activeIndex, 0, urls.Count - 1);
         BrowserTab? toActivate = null;
         for (var i = 0; i < urls.Count; i++)
         {
-            var tab = await _tabs.CreateAsync(urls[i], activate: false);
-            if (i == activeIndex)
+            var isActive = i == activeIndex;
+            var tab = await _tabs.CreateAsync(urls[i], activate: false, deferLoad: !isActive);
+            if (isActive)
             {
                 toActivate = tab;
             }

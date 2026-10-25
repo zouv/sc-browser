@@ -25,8 +25,8 @@ public static class InternalPageRegistry
     /// <summary>所有页面共用的资源目录（<c>browser://&lt;页面&gt;/common/...</c>）。</summary>
     private const string CommonFolder = "common";
 
-    /// <summary>一个内部页面：WebUI 目录 + 它能调用的宿主消息（按前缀放行）。</summary>
-    private sealed record PageEntry(string Folder, string[] AllowedMessagePrefixes);
+    /// <summary>一个内部页面：WebUI 目录 + 标签标题 + 它能调用的宿主消息（按前缀放行）。</summary>
+    private sealed record PageEntry(string Folder, string Title, string[] AllowedMessagePrefixes);
 
     /// <summary>
     /// 内部页面名 → WebUI 目录与消息白名单。<c>browser://newtab/</c> → <c>Assets/ui/newtab/index.html</c>。
@@ -35,12 +35,12 @@ public static class InternalPageRegistry
     /// </summary>
     private static readonly Dictionary<string, PageEntry> Pages = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["newtab"] = new("newtab", ["navigation.", "history.topSites"]),
-        ["history"] = new("history", ["navigation.", "history."]),
-        ["bookmarks"] = new("bookmarks", ["navigation.", "bookmarks."]),
-        ["settings"] = new("settings", ["navigation.", "settings.", "app."]),
-        ["extensions"] = new("extensions", ["navigation.", "extensions."]),
-        ["downloads"] = new("downloads", ["navigation.", "downloads."]),
+        ["newtab"] = new("newtab", "新标签页", ["navigation.", "history.topSites"]),
+        ["history"] = new("history", "历史记录", ["navigation.", "history."]),
+        ["bookmarks"] = new("bookmarks", "书签", ["navigation.", "bookmarks."]),
+        ["settings"] = new("settings", "设置", ["navigation.", "settings.", "app."]),
+        ["extensions"] = new("extensions", "扩展程序", ["navigation.", "extensions."]),
+        ["downloads"] = new("downloads", "下载内容", ["navigation.", "downloads."]),
     };
 
     /// <summary>启动时使用的新标签页地址。</summary>
@@ -82,6 +82,12 @@ public static class InternalPageRegistry
     /// <summary>把内部页面地址规整化，供地址栏显示（<c>browser://settings/</c> → <c>browser://settings</c>）。</summary>
     public static string NormalizeDisplayUrl(string url) =>
         TryGetPageName(url, out var name) ? Scheme + name : url;
+
+    /// <summary>
+    /// 内部页面的显示标题（标签条用）。尚未加载引擎的标签也能据此显示「设置」而不是地址。
+    /// </summary>
+    public static string? GetPageTitle(string url) =>
+        TryGetPageName(url, out var name) && Pages.TryGetValue(name, out var page) ? page.Title : null;
 
     /// <summary>
     /// 某个内部页面能否调用某条宿主消息。来源不是已登记的内部页面（即普通网页、本地文件）一律拒绝。

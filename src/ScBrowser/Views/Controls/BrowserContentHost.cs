@@ -22,20 +22,23 @@ public sealed class BrowserContentHost : Grid, IBrowserTabHost
 {
     public void AttachTab(BrowserTab tab)
     {
-        if (Children.Contains(tab.View))
+        // 惰性恢复的标签还没有引擎（View 为 null）；引擎创建后 BrowserTab 会再发一次
+        // EngineAttached，那时才真正挂进来。
+        if (tab.View is not { } view || Children.Contains(view))
         {
             return;
         }
 
-        tab.View.Visibility = Visibility.Collapsed;
-        Children.Add(tab.View);
+        // 新挂入的控件默认按当前激活状态决定可见性——惰性标签是在「被激活」时才创建引擎的。
+        view.Visibility = tab.IsActive ? Visibility.Visible : Visibility.Collapsed;
+        Children.Add(view);
     }
 
     public void DetachTab(BrowserTab tab)
     {
-        if (Children.Contains(tab.View))
+        if (tab.View is { } view && Children.Contains(view))
         {
-            Children.Remove(tab.View);
+            Children.Remove(view);
         }
     }
 

@@ -100,9 +100,20 @@ public sealed class TabManager
     /// <param name="url">起始地址。</param>
     /// <param name="activate">是否切换过去。</param>
     /// <param name="insertAt">插入位置（标签条上的下标）；<c>null</c> 表示追加到末尾。</param>
-    public async Task<BrowserTab> CreateAsync(string url, bool activate = true, int? insertAt = null)
+    /// <param name="deferLoad">
+    /// 先不创建引擎，等被激活时再加载（会话惰性恢复）。标签地址与标题照常可用。
+    /// </param>
+    public async Task<BrowserTab> CreateAsync(
+        string url,
+        bool activate = true,
+        int? insertAt = null,
+        bool deferLoad = false)
     {
         var tab = new BrowserTab(_nextId++);
+        tab.SetInitialLocation(url);
+
+        // 引擎是后创建的，宿主得在那时把它挂进可视化树。
+        tab.EngineAttached += (_, _) => Host?.AttachTab(tab);
 
         Tabs.Add(tab);
         if (insertAt is { } index && index >= 0 && index < Tabs.Count - 1)
@@ -111,56 +122,84 @@ public sealed class TabManager
             Tabs.Move(Tabs.Count - 1, index);
         }
 
-        Host?.AttachTab(tab);
-
-        try
-        {
-            var environment = await _environment.GetAsync().ConfigureAwait(true);
-
-            // 控制器选项按会话类型生成一次后复用（同窗口所有标签共用一套 profile）。
-            if (!_controllerOptionsReady)
-            {
-                _controllerOptions = BrowserSession.CreateControllerOptions(environment, SessionKind);
-                _controllerOptionsReady = true;
-            }
-
-            await tab.InitializeAsync(environment, _controllerOptions).ConfigureAwait(true);
-
-            // CoreWebView2 就绪后才能拿到 profile 设置颜色方案，所以放在这里。
-            ApplyWebTheme(tab);
-        }
-        catch (Exception ex)
-        {
-            // 环境创建/初始化失败（常见于 WebView2 运行时缺失）。回收这个半成品标签，
-            // 让上层能给出明确错误，而不是留一个永远白屏的标签。
-            _logger.LogError(ex, "标签页 {TabId} 初始化失败", tab.Id);
-            Tabs.Remove(tab);
-            Host?.DetachTab(tab);
-            tab.Dispose();
-            throw;
-        }
-
         WireTabEvents(tab);
 
-        _logger.LogDebug("已创建标签页 {TabId} → {Url}", tab.Id, url);
+        _logger.LogDebug("已创建标签页 {TabId} → {Url}{Deferred}", tab.Id, url, deferLoad ? "（按需加载）" : string.Empty);
 
         TabCreated?.Invoke(this, tab);
+
+        if (!deferLoad)
+        {
+            try
+            {
+                await EnsureEngineAsync(tab).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                // 环境创建/初始化失败（常见于 WebView2 运行时缺失）。回收这个半成品标签，
+                // 让上层能给出明确错误，而不是留一个永远白屏的标签。
+                _logger.LogError(ex, "标签页 {TabId} 初始化失败", tab.Id);
+                Tabs.Remove(tab);
+                Host?.DetachTab(tab);
+                tab.Dispose();
+                throw;
+            }
+        }
 
         if (activate)
         {
             Activate(tab);
         }
-        else if (ActiveTab is null)
+        else if (ActiveTab is null && !deferLoad)
         {
-            // 首个标签即使不要求激活也应显示，否则窗口内容区是空的。
+            // 首个立即加载的标签即使不要求激活也应显示，否则窗口内容区是空的。
             Activate(tab);
         }
 
+        // 引擎未就绪时这里只会记下待加载地址，等激活初始化后补上。
         tab.Navigate(url);
         return tab;
     }
 
-    /// <summary>激活指定标签页。</summary>
+    /// <summary>
+    /// 确保标签的引擎已创建。失败时把原因挂到标签的错误条上，而不是抛到 UI 线程——
+    /// 这条路径由「激活一个惰性标签」触发，用户此刻正看着这个标签。
+    /// </summary>
+    /// <returns>初始化是否成功。</returns>
+    private async Task<bool> TryEnsureEngineAsync(BrowserTab tab)
+    {
+        try
+        {
+            await EnsureEngineAsync(tab).ConfigureAwait(true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "标签页 {TabId} 初始化失败", tab.Id);
+            tab.ShowEngineError("页面加载失败：无法初始化浏览器内核（请检查 WebView2 运行时）。");
+            return false;
+        }
+    }
+
+    /// <summary>创建引擎并把当前应用主题写进它的 profile。</summary>
+    private async Task EnsureEngineAsync(BrowserTab tab)
+    {
+        var environment = await _environment.GetAsync().ConfigureAwait(true);
+
+        // 控制器选项按会话类型生成一次后复用（同窗口所有标签共用一套 profile）。
+        if (!_controllerOptionsReady)
+        {
+            _controllerOptions = BrowserSession.CreateControllerOptions(environment, SessionKind);
+            _controllerOptionsReady = true;
+        }
+
+        await tab.EnsureInitializedAsync(environment, _controllerOptions).ConfigureAwait(true);
+
+        // CoreWebView2 就绪后才能拿到 profile 设置颜色方案，所以放在这里。
+        ApplyWebTheme(tab);
+    }
+
+    /// <summary>激活指定标签页；若它的引擎尚未创建（惰性恢复），现在加载。</summary>
     public void Activate(BrowserTab tab)
     {
         if (!Tabs.Contains(tab) || ReferenceEquals(tab, ActiveTab))
@@ -176,6 +215,12 @@ public sealed class TabManager
         ActiveTab = tab;
         tab.IsActive = true;
         Host?.SetActiveTab(tab);
+
+        if (!tab.IsInitialized)
+        {
+            _ = TryEnsureEngineAsync(tab);
+        }
+
         ActiveTabChanged?.Invoke(this, tab);
     }
 
@@ -308,7 +353,10 @@ public sealed class TabManager
             // 页面自己上色前的底色也跟着主题，否则深色下新建标签会闪一下白。
             // 注意：这个属性挂在 WPF 的 WebView2 控件上（对应的 CoreWebView2Controller.DefaultBackgroundColor
             // 在 WPF 封装里就是它），不是 CoreWebView2 上的属性。
-            tab.View.DefaultBackgroundColor = WebTheme.DefaultBackground(_webTheme.IsDark);
+            if (tab.View is { } view)
+            {
+                view.DefaultBackgroundColor = WebTheme.DefaultBackground(_webTheme.IsDark);
+            }
         }
         catch (Exception ex)
         {

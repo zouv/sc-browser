@@ -438,7 +438,7 @@
                                                 Background="Transparent" BorderThickness="0"
                                                 Cursor="Hand" Click="MenuZoomReset"
                                                 ToolTip="重置为 100% (Ctrl+0)">
-                                            <TextBlock Text="{Binding ActiveTab.View.ZoomFactor, StringFormat={}{0:P0}}"
+                                            <TextBlock Text="{Binding ActiveTab.ZoomFactor, StringFormat={}{0:P0}, FallbackValue=1.0}"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center"
                                                        Foreground="{DynamicResource TextPrimaryBrush}" />

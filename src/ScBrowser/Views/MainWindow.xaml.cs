@@ -678,13 +678,9 @@ public partial class MainWindow : Window
 
     private void AdjustZoom(double delta)
     {
+        // 惰性标签也有 ZoomFactor（记在标签状态里），引擎创建后会补上，所以这里不要求引擎已就绪。
         var tab = _viewModel.ActiveTab;
-        if (tab?.Core is null)
-        {
-            return;
-        }
-
-        tab.SetZoom(tab.View.ZoomFactor + delta);
+        tab?.SetZoom(tab.ZoomFactor + delta);
     }
 
     // --------------------------------------------------------------------- //
@@ -752,7 +748,7 @@ public partial class MainWindow : Window
 
         if (focusContent)
         {
-            _viewModel.ActiveTab?.View.Focus();
+            _viewModel.ActiveTab?.FocusContent();
         }
     }
 

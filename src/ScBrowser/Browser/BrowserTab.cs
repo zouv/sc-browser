@@ -36,14 +36,24 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>标签内部标识（单调递增，用于状态存储与日志）。</summary>
     public int Id { get; }
 
-    /// <summary>标签页的 WebView2 控件；由 <see cref="IBrowserTabHost"/> 挂入可视化树。</summary>
-    public WebView2 View { get; }
+    /// <summary>
+    /// 标签页的 WebView2 控件；<b>尚未加载引擎时为 <c>null</c></b>。
+    /// <para>
+    /// 引擎是<b>按需</b>创建的（见 <see cref="EnsureInitializedAsync"/>）：会话恢复出来的后台标签
+    /// 只持有地址与标题，激活时才真正创建 WebView2。这正是「标签状态」与「引擎」分开的意义——
+    /// 标签集合不再等于 N 个 WebView2 进程。
+    /// </para>
+    /// </summary>
+    public WebView2? View { get; private set; }
 
-    /// <summary>底层 CoreWebView2；在 <see cref="InitializeAsync"/> 完成前为 <c>null</c>。</summary>
+    /// <summary>底层 CoreWebView2；在引擎初始化完成前为 <c>null</c>。</summary>
     public CoreWebView2? Core => _core;
 
-    /// <summary>是否已完成 WebView2 初始化。</summary>
+    /// <summary>引擎是否已就绪（WebView2 已创建并初始化）。</summary>
     public bool IsInitialized => _core is not null;
+
+    /// <summary>WebView2 控件已创建，宿主该把它挂进可视化树了。</summary>
+    public event EventHandler? EngineAttached;
 
     // ---- 可观察状态（绑定到标签条 / 工具栏 / 地址栏）----
 
@@ -80,6 +90,19 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>导航失败时的错误描述；成功时为 <c>null</c>。</summary>
     [ObservableProperty]
     private string? _lastError;
+
+    /// <summary>缩放比例（引擎未创建时也记着，创建后补上）。</summary>
+    [ObservableProperty]
+    private double _zoomFactor = 1.0;
+
+    /// <summary>待加载的地址：引擎还没创建时先记着，初始化完成后再导航。</summary>
+    private string? _pendingUrl;
+
+    /// <summary>待应用的缩放：引擎还没创建时先记着。</summary>
+    private double? _pendingZoom;
+
+    /// <summary>引擎初始化任务（并发激活时复用同一次初始化）。</summary>
+    private Task? _initialization;
 
     // ---- 对外事件（由 TabManager 订阅）----
 
@@ -119,23 +142,58 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>当前页面是否可执行页内查找（原生 API 或 JS 兜底任一可用）。</summary>
     public bool IsFindSupported => _core is not null;
 
-    public BrowserTab(int id)
+    public BrowserTab(int id) => Id = id;
+
+    /// <summary>
+    /// 在引擎创建前先写好「这个标签要显示什么」：地址、显示地址与标题。
+    /// 惰性恢复的标签没有任何引擎，标签条与会话保存都得靠这份状态。
+    /// </summary>
+    public void SetInitialLocation(string url)
     {
-        Id = id;
-        View = new WebView2();
+        Url = url;
+        DisplayUrl = InternalPageRegistry.IsInternalPage(url)
+            ? InternalPageRegistry.NormalizeDisplayUrl(url)
+            : url;
+        Title = InternalPageRegistry.GetPageTitle(url)
+                ?? (string.IsNullOrWhiteSpace(url) ? "新标签页" : DisplayUrl);
     }
 
     /// <summary>
-    /// 绑定 WebView2 环境并接线全部事件。必须在控件已挂入可视化树之后调用。
+    /// 按需创建引擎并接线事件。重复调用复用同一次初始化；失败后允许重试（下次激活/导航时再来一次）。
     /// </summary>
-    /// <param name="environment">全应用共用的那一个环境。</param>
-    /// <param name="controllerOptions">
-    /// 控制器选项；无痕窗口传 InPrivate 选项，普通窗口传 <c>null</c>（沿用默认 profile）。
-    /// </param>
-    public async Task InitializeAsync(
+    public async Task EnsureInitializedAsync(
         CoreWebView2Environment environment,
         CoreWebView2ControllerOptions? controllerOptions = null)
     {
+        var task = _initialization ??= InitializeCoreAsync(environment, controllerOptions);
+        try
+        {
+            await task.ConfigureAwait(true);
+        }
+        catch
+        {
+            // 失败的初始化不该被永久缓存：运行时更新完、资源恢复后应该能重来。
+            if (ReferenceEquals(_initialization, task))
+            {
+                _initialization = null;
+            }
+
+            throw;
+        }
+    }
+
+    private async Task InitializeCoreAsync(
+        CoreWebView2Environment environment,
+        CoreWebView2ControllerOptions? controllerOptions)
+    {
+        if (View is null)
+        {
+            View = new WebView2 { Visibility = System.Windows.Visibility.Collapsed };
+
+            // 宿主必须在 EnsureCoreWebView2Async 之前把控件挂进可视化树。
+            EngineAttached?.Invoke(this, EventArgs.Empty);
+        }
+
         // 复用同一个环境 → 与其它标签共享 Cookie / 缓存 / 扩展安装态；
         // 无痕则靠 controllerOptions 换一套内存 profile。
         if (controllerOptions is null)
@@ -152,6 +210,19 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         ServeInternalPages(_core);
         WireEvents(_core);
         await EnableSecurityEventsAsync(_core).ConfigureAwait(true);
+
+        // 引擎就绪前收到的导航 / 缩放请求，现在补上。
+        if (_pendingZoom is { } zoom)
+        {
+            _pendingZoom = null;
+            SetZoom(zoom);
+        }
+
+        if (_pendingUrl is { } pending)
+        {
+            _pendingUrl = null;
+            Navigate(pending);
+        }
     }
 
     /// <summary>
@@ -468,6 +539,14 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
         LastError = message;
     }
 
+    /// <summary>由宿主挂一条错误提示（例如引擎初始化失败）。</summary>
+    public void ShowEngineError(string message)
+    {
+        _errorVersion++;
+        IsLoading = false;
+        LastError = message;
+    }
+
     /// <summary>
     /// 打开 CDP 的 Security 域并订阅状态变化，用于驱动地址栏的安全图标。
     /// 这与原 C++ 示例的做法一致（<c>Security.enable</c> + <c>Security.securityStateChanged</c>）。
@@ -520,6 +599,9 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     {
         if (_core is null)
         {
+            // 引擎还没创建（惰性恢复的后台标签）：先记下来，初始化完成后再导航。
+            _pendingUrl = url;
+            SetInitialLocation(url);
             return;
         }
 
@@ -591,11 +673,21 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
     public void SetZoom(double factor)
     {
-        if (View.CoreWebView2 is not null)
+        var value = Math.Clamp(factor, 0.25, 5.0);
+        ZoomFactor = value;
+
+        if (View?.CoreWebView2 is null)
         {
-            View.ZoomFactor = Math.Clamp(factor, 0.25, 5.0);
+            // 引擎未创建：记下来，初始化完成后补上（菜单里显示的比例也已经是新值）。
+            _pendingZoom = value;
+            return;
         }
+
+        View.ZoomFactor = value;
     }
+
+    /// <summary>把输入焦点交给页面（切回网页内容时用）；引擎未创建时无操作。</summary>
+    public void FocusContent() => View?.Focus();
 
     // --------------------------------------------------------------------- //
     // 页内查找
@@ -1008,13 +1100,15 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
         try
         {
-            View.Dispose();
+            // 惰性恢复的标签可能从未创建过引擎。
+            View?.Dispose();
         }
         catch (Exception)
         {
             // 关闭期的释放异常无需上抛。
         }
 
+        View = null;
         _core = null;
         _find = null;
         _usingJsFind = false;
