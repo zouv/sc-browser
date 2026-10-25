@@ -84,8 +84,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作（DWM 深色/圆角、最大化钉工作区） | 加系统级外观/窗口行为 |
 | `src/ScBrowser/Assets/sc-browser.ico` + `docs/icons/` | 应用图标（exe 内嵌 + 窗口 `Icon`）；`docs/icons/` 是设计源（SVG 为源，附各尺寸导出） | 换图标 |
 | `src/ScBrowser/Browser/BrowserEnvironmentProvider.cs` | 创建并缓存**唯一**的 WebView2 环境（含扩展总开关） | 改环境级选项（代理/扩展开关） |
-| `src/ScBrowser/Browser/BrowserTab.cs` | **单标签页**：持有 WebView2 + 全部可观察状态 + 事件接线 + 页内查找（原生/JS 兜底） | 改单页行为（导航/事件/图标/查找） |
-| `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建/关闭/切换/相邻选择/历史记录 + **网页颜色方案** | 改标签生命周期语义 |
+| `src/ScBrowser/Browser/BrowserTab.cs` | **单标签页**：全部可观察状态 + **按需创建**的 WebView2 引擎 + 事件接线 + 页内查找（原生/JS 兜底） | 改单页行为（导航/事件/图标/查找）；引擎生命周期见 §7 |
+| `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建（含惰性）/关闭/切换/相邻选择/历史记录 + **按需初始化引擎** + 网页颜色方案 | 改标签生命周期语义 |
 | `src/ScBrowser/Browser/WebTheme.cs` | 应用主题 → `CoreWebView2Profile.PreferredColorScheme` 映射 | 改「深色如何影响网页」 |
 | `src/ScBrowser/Browser/BrowserSession.cs` | 会话类型（普通/无痕）→ WebView2 控制器选项 | 加新的隔离会话 |
 | `src/ScBrowser/Browser/ClosedTabHistory.cs` | 「最近关闭的标签」栈（Ctrl+Shift+T，容量 25） | 改重开策略 |
@@ -164,7 +164,9 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 
 | 我要改的东西 | 关键函数 / 锚点 | 备注 |
 |---|---|---|
-| 新增标签 | `TabManager.CreateAsync` | 顺序：入集合 →（可选挪位）→ 挂树 → 初始化 → 接线 → 激活 → 导航；`insertAt` 供「在右侧新增」 |
+| 新增标签 | `TabManager.CreateAsync` | 顺序：入集合 →（可选挪位）→ 接线 → 创建引擎（除非 `deferLoad`）→ 激活 → 导航；`insertAt` 供「在右侧新增」 |
+| 按需加载（惰性恢复） | `CreateAsync(deferLoad: true)` → 激活时 `Activate` → `TryEnsureEngineAsync`；引擎创建后 `BrowserTab.EngineAttached` → `IBrowserTabHost.AttachTab` | `BrowserTab.View` 可能为 `null`，所有调用点要空安全 |
+| 未加载标签的地址/标题/缩放 | `BrowserTab.SetInitialLocation` / `ZoomFactor` / `_pendingUrl` / `_pendingZoom` | 引擎就绪后自动补导航与缩放 |
 | 重开已关闭的标签 | `TabManager.ReopenLastClosedAsync` + `ClosedTabHistory` | `Close` 时入栈（Dispose 前取状态） |
 | 标签排序 | `TabManager.Move` | 由标签条拖拽调用；下标语义见 §2.1 的 `TabButton_DragOver` |
 | 无痕 / 普通差异 | `TabManager.SessionKind` / `IsIncognito`；`RecordHistory` 直接跳过 | 控制器选项见 `Browser/BrowserSession.cs` |
@@ -237,6 +239,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | §3.4 | 主题贯穿：应用主题 → 外壳 → 网页内容 | 改主题 |
 | arch/flows.md §3.5 | 多窗口与无痕（一份 vs 共享） | 动窗口/标签的装配 |
 | arch/flows.md §3.6 | 地址栏下拉（omnibox 建议） | 改地址栏 |
+| arch/flows.md §3.7 | 标签惰性恢复（状态与引擎分离） | 改标签创建 / 会话恢复 |
 
 ---
 
@@ -335,6 +338,12 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   资源过滤器优先用带 `RequestSourceKinds` 的重载，旧运行时退回旧重载（`BrowserTab.ServeInternalPages`）。
 - **防目录穿越要「目录 + 分隔符」前缀比较**（`PathSafety.IsUnderDirectory`）：只比目录本身，
   `…\foo-evil\x` 也以 `…\foo` 开头，同级同前缀目录会被放行。
+- **标签状态与引擎分离（惰性恢复）**：`BrowserTab` 的构造函数**不再创建 WebView2**，`View` 在第一次
+  `EnsureInitializedAsync` 时才创建并触发 `EngineAttached`（宿主据此挂树）。会话恢复时只有激活的标签
+  立刻建引擎，其余只持有地址/标题，激活时才加载——标签数不再等于 WebView2 进程数。
+  **改单页行为时注意**：`View` / `Core` 都可能为 `null`，导航与缩放会被记成「待处理」，初始化完成后补上；
+  宿主挂载必须在 `EnsureCoreWebView2Async` 之前完成，所以挂树动作只能由 `EngineAttached` 触发，不要提前调用。
+  顺带的好处：恢复出来的后台标签不再重复写历史（导航完成才记历史）。
 - **无痕不能用「新环境」实现**：必须同一个 `CoreWebView2Environment` + InPrivate 的
   `CoreWebView2ControllerOptions`（见 §3.5）。
 - **主题令牌键必须成对存在**：`Theme.Light.xaml` 与 `Theme.Dark.xaml` 键名不一致时，换肤会缺键。

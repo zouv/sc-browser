@@ -4,6 +4,20 @@
 > 文件职责总表与易踩的坑；「高频改动区到底怎么连」这类纵深内容拆到这里，避免主文件变成 token 黑洞。
 > 编号沿用主文件（§3.x），交叉引用不会因此失效。
 
+### 3.7 标签惰性恢复（状态与引擎分离）
+
+- **为什么**：恢复 N 个标签时若立刻建 N 个 WebView2，启动慢、内存被占满。现在标签是「状态 + 按需引擎」：
+  `BrowserTab` 先持有地址/标题/缩放，`View` 为空；被激活时才 `EnsureInitializedAsync` 创建 WebView2。
+- **链路**：`MainViewModel.StartAsync`（只有 activeIndex 那个 `deferLoad:false`）
+  → `TabManager.CreateAsync(..., deferLoad)`（`SetInitialLocation` 写好状态、`WireTabEvents` 接 tab 级事件）
+  → 用户点开标签 → `TabManager.Activate` → `TryEnsureEngineAsync` → `BrowserTab.EnsureInitializedAsync`
+  → `EngineAttached`（宿主 `AttachTab` 挂树）→ `EnsureCoreWebView2Async` → 补 `_pendingUrl` 导航 / `_pendingZoom`。
+- **注意**：
+  1. `View` / `Core` 都可能为 `null`，所有读写它们的地方要空安全；缩放与导航在引擎未就绪时记成待处理。
+  2. `TabCreated` 现在在引擎创建**之前**触发（tab 级事件订阅者不受影响）。
+  3. 激活时初始化失败不抛到 UI 线程，而是把原因挂到该标签的错误条（`ShowEngineError`）。
+  4. 惰性标签不会在启动时导航，因此不会重复写历史。
+
 ---
 
 ## 3. 重点链路详解（高频改动区 / 容易写错的地方）

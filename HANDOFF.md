@@ -18,15 +18,17 @@
 ## 状态快照
 
 - **最近更新**：2026-10-25
-- **整体状态**：✅ 无进行中的开发任务（体检加固 S1 安全 + S2 稳定性已完成，**尚未提交**；下一阶段 S3 待用户确认）
-- **当前分支（必填）**：`main`（S1/S2 改动都在工作区，未 commit）
+- **整体状态**：✅ 无进行中的开发任务（体检加固 S1/S2 与 S3 标签惰性恢复已完成；后续见 `ROADMAP` §🟡 S3b / F-* / E-*）
+- **当前分支（必填）**：`main`
 - **最后验证状态**：
-  · 2026-10-25：`sh manager.sh verify` ✅（**136/136** + 文档体检）。
-  · 用 `SCBROWSER_DATA_DIR` 隔离实例实跑 ✅：内部页面在 `browser://` 下渲染与取数正常、地址栏显示 `browser://settings`；
-    本地 http「恶意页」调 `history.query` / `downloads.openFile` 被拒且收不到回执，跳 `browser://settings/` 被拦；
-    带网址二次启动 1s 内转交主实例开新标签；20s 定期存会话；结束渲染进程出现崩溃条，「重新加载」恢复。
-  · 未端到端验证：`Ctrl+W` 关最后一个标签后清会话（逻辑在 `BrowserWindowManager.SaveSessionCore`）、
-    下载页「打开 / 所在文件夹」按 id（需真实下载一次）。
+  · 2026-10-25：`sh manager.sh verify` ✅（**141/141** + 文档体检）。
+  · 隔离实例实跑（`SCBROWSER_DATA_DIR`）✅：
+    - 内部页面在 `browser://` 下渲染与取数正常；本地 http 恶意页调宿主能力被拒且收不到回执，跳 `browser://` 被拦。
+    - 带网址二次启动 1s 内转交主实例开新标签；20s 定期存会话。
+    - 结束渲染进程出现崩溃条，「重新加载」恢复。
+    - **惰性恢复**：5 标签会话只建 1 个渲染进程，标签条显示地址/「历史记录」「扩展程序」；
+      点开惰性标签后引擎创建（渲染进程 1→2）、地址栏正确；会话文件仍含全部 5 个标签。
+  · 未端到端验证：`Ctrl+W` 关最后一个标签后清会话、下载页按 id 打开（需真实下载一次）。
 - **已发布**：`v0.2.2`（2026-10-22，https://github.com/zouv/sc-browser/releases/tag/v0.2.2 ）。
 
 ---
@@ -55,9 +57,10 @@
 
 ## 下一步（Next Steps）
 
-1. 推进顺序见 `ROADMAP.md` §🟡 顶部：**S3 标签状态/引擎拆分** → F-* 日常功能 → E-* 扩展兼容。
-   S3 起点：`Browser/BrowserTab.cs` 构造函数里的 `new WebView2()`——先抽出可序列化的标签状态，再让引擎按需挂载。
-2. `ARCHITECTURE.md` 约 376 行，接近 400 上限；下次再涨先把 §2 任务反查表拆到 `arch/`。
+1. 推进顺序见 `ROADMAP.md` §🟡：**S3b**（后台标签休眠 / 拖出成窗口 / 内核主进程退出后重建引擎）→
+   **S4** 数据层加固 → **F-*** 日常功能 → **E-*** 扩展兼容。
+   S3b 的起点：`BrowserTab.EnsureInitializedAsync`（引擎按需创建）与 `TabManager.Activate`（激活入口）。
+2. `ARCHITECTURE.md` 约 384 行，接近 400 上限；下次再涨先把 §2 任务反查表拆到 `arch/`。
 3. 发布流程（下次发版照做）：`sh manager.sh package`（或 `package.bat`）→
    从 `dist/release/` 取 `ScBrowser_<版本>_x64-setup.exe` 与 `ScBrowser_<版本>_x64-unpack.zip`
    → `gh release create <tag> <文件>`。**两者必须同时上传**；`dist/dev` 的 Debug zip 不上传。
@@ -112,6 +115,9 @@
 - **内部页面走 `browser://` 自定义 scheme + 消息桥按来源鉴权**：WebView2 给所有网页都注入消息桥，
   `file://` 无法区分来源、https 虚拟主机会被扩展 `<all_urls>` 注入，所以选自定义 scheme（详见 ARCHITECTURE §7）。
 - **单实例按数据根目录区分**：`SCBROWSER_DATA_DIR` 起的测试实例可与日常实例并存，方便实跑验证。
+- **标签状态与引擎分离**：`BrowserTab` 不再在构造函数里 `new WebView2()`，引擎由 `EnsureInitializedAsync`
+  按需创建；`View`/`Core` 可能为 `null`，导航与缩放会记为待处理、初始化完成后补上。
+  会话恢复只立即加载激活标签——这就是惰性恢复（实测 5 标签只起 1 个渲染进程）。
 - **页内查找优先原生、旧运行时走 JS 兜底**：`CoreWebView2.Find` 需要 `ICoreWebView2_28`，
   本机 WebView2 131 没有该接口（访问即抛 `NotImplementedException`）。`BrowserTab` 在原生不可用
   或启动失败时退回 `ExecuteScriptAsync` + `TreeWalker` + `CSS.highlights`；升级运行时后自动走原生。
