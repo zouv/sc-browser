@@ -18,7 +18,7 @@
 ## 状态快照
 
 - **最近更新**：2026-10-26
-- **整体状态**：✅ 无进行中的开发任务（S3b + F-1～F-7 已完成；版本号已提升到 **0.3.0**，待打包发布）
+- **整体状态**：✅ 无进行中的开发任务（**v0.3.0 已打包并发布**）
 - **当前分支（必填）**：`main`
 - **最后验证状态**：
   · 2026-10-26：`sh manager.sh test` ✅（**150/150**）；`sh check-docs.sh` ✅。
@@ -31,8 +31,9 @@
     原因：实跑到一半工作站锁屏，GUI 自动化无法继续。
   · 期间修掉三个实现期缺陷：错误条/状态栏绑定被 `ClearValue` 清掉导致红条残留；
     下载指示器不消失（先发通知后移除活跃项）；站点信息浮层重复 `Close()` 抛异常。
-- **已发布**：`v0.2.2`（2026-10-22，https://github.com/zouv/sc-browser/releases/tag/v0.2.2 ）。
-- **待发布**：`v0.3.0`（版本号已写入 `ScBrowser.csproj`，`CHANGELOG [0.3.0]` 已归档；尚未打包 / 打 tag）。
+- **已发布**：`v0.3.0`（2026-10-26，https://github.com/zouv/sc-browser/releases/tag/v0.3.0 ）——
+  上传 `ScBrowser_0.3.0_x64-setup.exe` 与 `ScBrowser_0.3.0_x64-unpack.zip`；安装器 `ProductVersion=0.3.0`、`CompanyName=zouv`。
+- **上一版**：`v0.2.2`（2026-10-22）。
 
 ---
 
@@ -60,10 +61,10 @@
 
 ## 下一步（Next Steps）
 
-1. 发布 `v0.3.0`：`sh manager.sh package` → 取 `dist/release/` 的 setup 与 unpack zip → `gh release create v0.3.0 …`。
-2. 用户在场时补做未实跑项（顺序建议）：拖出标签成新窗口 → 内核重建（结束 msedgewebview2 的 browser 进程）→
+1. 用户在场时补做未实跑项（顺序建议）：拖出标签成新窗口 → 内核重建（结束 msedgewebview2 的 browser 进程）→
    `Ctrl+P/S/U` → 证书错误（可用自签名站）→ 「设为默认浏览器」（会写 HKCU）。
-3. 之后按 `ROADMAP` §🟡 推进：**E-*** 扩展兼容（安装链路 → 扩展界面 → API 缺口 PoC）→ **S4** 数据层加固。
+2. 之后按 `ROADMAP` §🟡 推进：**E-*** 扩展兼容（安装链路 → 扩展界面 → API 缺口 PoC）→ **S4** 数据层加固
+   → P2-* 增强（书签文件夹、历史分组、标签组等）。
 
 ## 如何运行 / 测试（Quick Verify）
 
