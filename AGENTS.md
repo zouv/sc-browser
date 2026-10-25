@@ -90,6 +90,10 @@
   用 `innerHTML` 等于开 XSS 口子。
 - **用户数据只落 `%LOCALAPPDATA%\sc-browser`**，绝不写进仓库目录；路径统一从 `Infrastructure/AppPaths.cs` 取，禁止硬编码。
 - **CRX 解包必须做目录穿越校验**（`CrxPackage.ExtractTo` 已有），不要绕过。
+- **宿主能力只对内部页面开放**：WebView2 给**所有**网页都注入了 `chrome.webview.postMessage`。
+  新增宿主能力时只能在 `WebMessageRouter.DispatchAsync` 加 `case` 并在 `InternalPageRegistry.Pages`
+  给需要的页面登记白名单前缀；**不要绕过 `HandleAsync` 的来源鉴权**，也不要信任页面传来的本地路径
+  （按记录 id 由宿主查库）。内部页面只走 `browser://` 自定义 scheme，不要改回 `file://` 或 https 虚拟主机。
 - **扩展来源不可信**：本项目没有商店与签名校验，安装扩展即等于信任其代码；涉及扩展的功能不要号称「安全沙箱」。
 - **密钥/凭证不进仓库**：本项目当前无需任何密钥；若将来引入，只放 `.env`（已 gitignore）。
 - **个人信息 / 本机信息不入库**：仓库（含提交历史与提交信息、文档、示例、截图、构建产物元数据）不得出现
@@ -112,6 +116,8 @@
 - 涉及 UI / WebView2 行为的改动，尽量**实跑**：`sh manager.sh start`，
   用会话恢复机制可以快速直达某个内部页面（往 `%LOCALAPPDATA%\sc-browser\session.json`
   写 `{"Urls":["browser://extensions"],"ActiveIndex":0,"SavedAt":"..."}` 再启动）。
+  **用户可能正开着日常实例**（单实例会把你的启动转交给它）：实跑优先设 `SCBROWSER_DATA_DIR`
+  指向临时目录起一个隔离实例，session.json 也写到那里；不要擅自结束用户的进程。
 - 应用日志：`sh manager.sh logs`（Serilog 按天滚动，保留 7 天）。
 - **文档体检（机械兜底）**：`sh check-docs.sh`——查占位符残留 / 文档体量 / CHANGELOG 疑似漏记。
   语义漂移仍需 `doc-audit`。

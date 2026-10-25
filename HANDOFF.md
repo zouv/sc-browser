@@ -17,29 +17,25 @@
 
 ## 状态快照
 
-- **最近更新**：2026-10-22
-- **整体状态**：✅ 无进行中的开发任务（v0.2.2 已发布；隐私红线已写入 `AGENTS.md` §3）
-- **当前分支（必填）**：`main`
+- **最近更新**：2026-10-25
+- **整体状态**：✅ 无进行中的开发任务（体检加固 S1 安全 + S2 稳定性已完成，**尚未提交**；下一阶段 S3 待用户确认）
+- **当前分支（必填）**：`main`（S1/S2 改动都在工作区，未 commit）
 - **最后验证状态**：
-  · 2026-10-22 发布前：`sh manager.sh verify` ✅（**94/94** + 文档体检）；`sh manager.sh package` ✅；
-    setup 的 `CompanyName=zouv`，release 无 PDB；产物：
-    `dist/dev/ScBrowser_0.2.2_x64-unpack-debug.zip`（内带同名根目录）、`dist/release/unpack/`、
-    `ScBrowser_0.2.2_x64-unpack.zip`（zip 根下直接是程序文件）与 `ScBrowser_0.2.2_x64-setup.exe`。
-  · `Ctrl+F` 已用 UI Automation 实跑通过（打开/关闭、输入即搜、计数、Enter/Shift+Enter/F3 跳转、
-    切换标签自动收起、重开保留关键词）；本机 WebView2 131 不支持原生 Find，已验证 JS 兜底路径。
-- **已发布**：`v0.2.2`（2026-10-22，https://github.com/zouv/sc-browser/releases/tag/v0.2.2 ），
-  上传 `ScBrowser_0.2.2_x64-setup.exe` 与 `ScBrowser_0.2.2_x64-unpack.zip`。
-- **上一版**：`v0.2.1`（2026-10-19）；更早 `v0.2.0`。
+  · 2026-10-25：`sh manager.sh verify` ✅（**136/136** + 文档体检）。
+  · 用 `SCBROWSER_DATA_DIR` 隔离实例实跑 ✅：内部页面在 `browser://` 下渲染与取数正常、地址栏显示 `browser://settings`；
+    本地 http「恶意页」调 `history.query` / `downloads.openFile` 被拒且收不到回执，跳 `browser://settings/` 被拦；
+    带网址二次启动 1s 内转交主实例开新标签；20s 定期存会话；结束渲染进程出现崩溃条，「重新加载」恢复。
+  · 未端到端验证：`Ctrl+W` 关最后一个标签后清会话（逻辑在 `BrowserWindowManager.SaveSessionCore`）、
+    下载页「打开 / 所在文件夹」按 id（需真实下载一次）。
+- **已发布**：`v0.2.2`（2026-10-22，https://github.com/zouv/sc-browser/releases/tag/v0.2.2 ）。
 
 ---
 
 ## 当前任务（In Progress）
 
-- **目标**：无
+- **目标**：无（S1/S2 已完结，成果见 `CHANGELOG [未发布]` 与 `ROADMAP` M5）
 - **范围 / 涉及文件**：无
 - **完成定义（Definition of Done）**：无
-
-> 当前：无进行中的任务，等待下一个开发需求。
 
 ---
 
@@ -49,24 +45,22 @@
 
 ## 进行中（半成品 / 未提交）
 
-- （无。）
+- S1/S2 全部改动未提交（`git status` 可见）。提交信息按 AGENTS §5.3 用 `安全：` / `修复：` 等前缀。
 
 ## 阻塞 / 待决策（Blockers）
 
-- （无。）
+- S3「标签状态与引擎拆分」是架构级重构，开工前需用户确认（会改变标签生命周期与会话恢复行为）。
 
 ---
 
 ## 下一步（Next Steps）
 
-1. 产品功能候选见 `ROADMAP.md` §🟡 近期规划（P1-4 会话惰性恢复、P2-* 增强）。
-2. `ARCHITECTURE.md` 已按 AGENTS §1.1 拆分：§3 链路详解在 [`arch/flows.md`](arch/flows.md)
-   （主文件约 350 行）；§2 任务反查表仍在主文件，下次再涨就先拆它。
+1. 推进顺序见 `ROADMAP.md` §🟡 顶部：**S3 标签状态/引擎拆分** → F-* 日常功能 → E-* 扩展兼容。
+   S3 起点：`Browser/BrowserTab.cs` 构造函数里的 `new WebView2()`——先抽出可序列化的标签状态，再让引擎按需挂载。
+2. `ARCHITECTURE.md` 约 376 行，接近 400 上限；下次再涨先把 §2 任务反查表拆到 `arch/`。
 3. 发布流程（下次发版照做）：`sh manager.sh package`（或 `package.bat`）→
-   从 `dist/release/` 取 `ScBrowser_<版本>_x64-setup.exe` 与
-   `ScBrowser_<版本>_x64-unpack.zip` → `gh release create <tag> <文件>`。
-   **两者必须同时上传**；`dist/dev` 的 Debug zip 不上传。
-   安装程序按用户安装（无需管理员权限）。
+   从 `dist/release/` 取 `ScBrowser_<版本>_x64-setup.exe` 与 `ScBrowser_<版本>_x64-unpack.zip`
+   → `gh release create <tag> <文件>`。**两者必须同时上传**；`dist/dev` 的 Debug zip 不上传。
 
 ## 如何运行 / 测试（Quick Verify）
 
@@ -81,9 +75,9 @@
   `dist/release/ScBrowser_<版本>_x64-unpack.zip` +
   `ScBrowser_<版本>_x64-setup.exe`；`clean` 保留 `dist`。
 - 看日志：`sh manager.sh logs`
-- 端到端自查技巧：往 `%LOCALAPPDATA%\sc-browser\session.json` 写
+- 端到端自查技巧：设 `SCBROWSER_DATA_DIR=<临时目录>` 起隔离实例（不打扰日常实例），往该目录的 `session.json` 写
   `{"Urls":["browser://extensions"],"ActiveIndex":0,"SavedAt":"2026-10-16T00:00:00+00:00"}` 再启动，
-  可直接落在指定内部页面；`ScBrowser.exe --install-extension <目录|.crx>` 可验证扩展安装。
+  可直接落在指定内部页面；后台窗口截图用 `PrintWindow`（外壳区截不到，外壳状态用 UI Automation 读）；`ScBrowser.exe --install-extension <目录|.crx>` 可验证扩展安装。
 
 ---
 
@@ -115,6 +109,9 @@
 - **窗口缩放靠「内缩一圈」而不是加大命中带**：缩放命中带必须落在 WPF 自绘的区域上，
   因为 WebView2 是独立子 HWND、会吃掉落在它身上的鼠标事件（见 ARCHITECTURE §7）。
 - **下拉/菜单/浮层一律走独立顶层窗口**：airspace 决定的，不是风格选择——WPF 元素盖不到 WebView2 上。
+- **内部页面走 `browser://` 自定义 scheme + 消息桥按来源鉴权**：WebView2 给所有网页都注入消息桥，
+  `file://` 无法区分来源、https 虚拟主机会被扩展 `<all_urls>` 注入，所以选自定义 scheme（详见 ARCHITECTURE §7）。
+- **单实例按数据根目录区分**：`SCBROWSER_DATA_DIR` 起的测试实例可与日常实例并存，方便实跑验证。
 - **页内查找优先原生、旧运行时走 JS 兜底**：`CoreWebView2.Find` 需要 `ICoreWebView2_28`，
   本机 WebView2 131 没有该接口（访问即抛 `NotImplementedException`）。`BrowserTab` 在原生不可用
   或启动失败时退回 `ExecuteScriptAsync` + `TreeWalker` + `CSS.highlights`；升级运行时后自动走原生。

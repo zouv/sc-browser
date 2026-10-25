@@ -55,10 +55,11 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 多窗口 / 无痕 / 窗口级装配 | `Services/BrowserWindowManager.cs`、`Browser/BrowserSession.cs`、`Views/MainWindow.xaml.cs`（窗口与几何部分） | Storage/、Assets/ | arch/flows.md §3.5 |
 | 改地址栏（解析/下拉建议） | `Browser/AddressBarResolver.cs`、`Services/OmniboxSuggestions.cs`、`Views/AddressBarPopup.xaml(.cs)`、`ViewModels/MainViewModel.cs`（Suggestions 部分） | Storage/、Assets/ | arch/flows.md §3.6 |
 | 改页内查找（Ctrl+F） | `Views/MainWindow.xaml(.cs)`（查找条/快捷键）、`Browser/BrowserTab.cs`（Find 封装与 JS 兜底） | Storage/、Assets/ | §2.1、§2.2、§7 |
-| 加/改内部页面（WebUI） | `Assets/ui/<page>/*`、`Browser/WebMessageRouter.cs`、`Browser/InternalPageRegistry.cs` | Views/、Storage/（除非要新数据） | §2.3、§4 |
+| 加/改内部页面（WebUI） | `Assets/ui/<page>/*`、`Browser/WebMessageRouter.cs`、`Browser/InternalPageRegistry.cs`（含消息白名单） | Views/、Storage/（除非要新数据） | §2.3、§4、§7 |
 | 加/改数据存储（历史/书签/下载） | `Storage/*` | Views/、Assets/ | §2.4、§4 |
 | 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Assets/ui/extensions/*` | Views/、Storage/ | §2.5、arch/flows.md §3.2 |
 | 改主题/设置/会话（含「深色影响网页」） | `Services/SettingsService.cs`、`Services/ThemeService.cs`、`Services/SessionStore.cs`、`Browser/WebTheme.cs`、`Themes/*` | Storage/、Views/ | §2.6、arch/flows.md §3.4 |
+| 启动流程 / 单实例 / 命令行参数 | `App.xaml.cs`、`Services/SingleInstance.cs`、`Services/StartupCommandRunner.cs`、`Services/BrowserWindowManager.cs`（`HandleForwardedArgsAsync`） | Storage/、Assets/ | §2.6 |
 | 改启停/构建/发布（运维） | `manager.sh`、`*.bat`、`installer/*`、`.gitattributes`、`ScBrowser.csproj`、`docs/02-使用说明.md` | 所有业务代码 | §6 |
 
 > 跨多个区域的任务才需要跨列读；仍遵循「**先定位函数名，再只读那几个函数**」。
@@ -73,7 +74,9 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 |---|---|---|
 | `src/ScBrowser/App.xaml(.cs)` | 应用入口：DI 装配、Serilog 日志、全局异常兜底、启动期初始化顺序 | 增删服务注册 / 改启动流程 |
 | `src/ScBrowser/app.manifest` | PerMonitorV2 DPI 感知、Win10/11 兼容性声明 | 改 DPI 策略 |
-| `src/ScBrowser/Infrastructure/AppPaths.cs` | **路径单一源**（用户数据/扩展/日志/DB/会话/WebUI） | 新增落盘位置 |
+| `src/ScBrowser/Infrastructure/AppPaths.cs` | **路径单一源**（用户数据/扩展/日志/DB/会话/WebUI）；`SCBROWSER_DATA_DIR` 开发覆盖 | 新增落盘位置 |
+| `src/ScBrowser/Infrastructure/PathSafety.cs` | 防目录穿越的路径判定（**补分隔符**比较），CRX 解包与内部页面资源共用 | 新增「把外部路径落到本地」的地方 |
+| `src/ScBrowser/Infrastructure/AtomicFile.cs` | 原子写文件（临时文件 + 替换），settings/session 用 | 新增需防半截写坏的配置文件 |
 | `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作：深色标题栏、圆角窗口 | 新增窗口级原生外观 |
 | `src/ScBrowser/Themes/Theme.{Light,Dark}.xaml` | 颜色令牌（键名必须成对一致） | 调色 / 加令牌 |
 | `src/ScBrowser/Themes/Controls.xaml` | 控件样式（工具栏按钮/标签/窗口按钮/地址栏） | 改控件外观 |
@@ -87,10 +90,10 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Browser/BrowserSession.cs` | 会话类型（普通/无痕）→ WebView2 控制器选项 | 加新的隔离会话 |
 | `src/ScBrowser/Browser/ClosedTabHistory.cs` | 「最近关闭的标签」栈（Ctrl+Shift+T，容量 25） | 改重开策略 |
 | `src/ScBrowser/Browser/IBrowserTabHost.cs` | 内容区宿主抽象（视图层实现，防 TabManager 依赖控件） | 改挂载约定 |
-| `src/ScBrowser/Browser/InternalPageRegistry.cs` | `browser://xxx` → 本地 WebUI 文件映射 | 新增内部页面 |
+| `src/ScBrowser/Browser/InternalPageRegistry.cs` | `browser://<页面>/` 自定义 scheme：地址解析、资源路径、**每页消息白名单** | 新增内部页面 / 调整页面权限 |
 | `src/ScBrowser/Browser/AddressBarResolver.cs` | 地址栏输入 → 地址/搜索词判定 | 改地址解析规则 |
 | `src/ScBrowser/Browser/SecurityState.cs` | 安全状态枚举（锁形图标语义） | 加安全状态 |
-| `src/ScBrowser/Browser/WebMessageRouter.cs` | **内部页面 ↔ 宿主消息路由**（协议唯一实现处） | 新增 WebUI 能调用的能力 |
+| `src/ScBrowser/Browser/WebMessageRouter.cs` | **内部页面 ↔ 宿主消息路由**（协议唯一实现处，按来源鉴权） | 新增 WebUI 能调用的能力 |
 | `src/ScBrowser/Browser/ExtensionService.cs` | 扩展列出/安装/启停/卸载 | 改扩展能力 |
 | `src/ScBrowser/Browser/CrxPackage.cs` | CRX 解包（v2/v3 头解析 + ZIP 提取 + 目录穿越防护） | 改解包逻辑 |
 | `src/ScBrowser/Storage/BrowserDatabase.cs` | SQLite 建表 / 连接工厂（WAL） | 改 schema |
@@ -103,7 +106,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Services/OmniboxSuggestions.cs` | 地址栏下拉候选构建（纯函数：搜索行 / 直接打开 / 历史匹配排序） | 改下拉内容 |
 | `src/ScBrowser/Services/SessionStore.cs` | 会话保存/恢复（JSON） | 改会话内容 |
 | `src/ScBrowser/Services/DownloadManager.cs` | 下载接管、进度节流落盘、列表 | 改下载行为 |
-| `src/ScBrowser/Services/StartupCommandRunner.cs` | 启动命令行参数（`--install-extension`） | 加启动参数 |
+| `src/ScBrowser/Services/StartupCommandRunner.cs` | 命令行参数：网址/本地文件（`ExtractUrls`）、`--install-extension` | 加启动参数 |
+| `src/ScBrowser/Services/SingleInstance.cs` | 单实例锁 + 命名管道转发二次启动参数（按数据根目录区分） | 改二次启动行为 |
 | `src/ScBrowser/ViewModels/MainViewModel.cs` | 外壳状态投影与命令（不碰 WebView2） | 加工具栏/菜单命令 |
 | `src/ScBrowser/Views/MainWindow.xaml(.cs)` | 外壳布局（含自绘窗口边框 + 页内查找条）+ 窗口外观 + **键盘快捷键** | 改外壳结构/快捷键/查找条 |
 | `src/ScBrowser/Views/Controls/BrowserContentHost.cs` | 内容区宿主实现（WebView2 挂载与显示切换） | 改内容区挂载方式 |
@@ -117,7 +121,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 
 | 路径 | 职责 |
 |---|---|
-| `tests/ScBrowser.Tests/` | xUnit 单测（地址栏解析、CRX 解包） |
+| `tests/ScBrowser.Tests/` | xUnit 单测（地址栏解析、CRX 解包、内部页面注册表与消息鉴权、命令行/原子写等加固项） |
 | `samples/extensions/hello-sc-browser/` | 示例扩展，用于验证扩展加载链路 |
 | `manager.sh` | 统一管理脚本（构建/运行/测试/打包/清理/日志）·**命令语义的单一来源** |
 | `installer/ScBrowser.iss` | Inno Setup 7 安装脚本：按用户安装、卸载、开始菜单/桌面快捷方式 |
@@ -165,8 +169,11 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 标签排序 | `TabManager.Move` | 由标签条拖拽调用；下标语义见 §2.1 的 `TabButton_DragOver` |
 | 无痕 / 普通差异 | `TabManager.SessionKind` / `IsIncognito`；`RecordHistory` 直接跳过 | 控制器选项见 `Browser/BrowserSession.cs` |
 | 关闭标签的邻居选择 | `TabManager.Close` | 优先右邻，否则左邻（Chrome 语义） |
-| 页内导航到内部页面 | `BrowserTab.Navigate` + `InternalPageRegistry.ResolveToFileUri` | 内部页面用 `_logicalUrl` 保逻辑地址 |
-| 地址栏显示地址的推导 | `BrowserTab.UpdateUrlFromCore` | 内部页面显示 `browser://xxx` 而非 `file://` |
+| 页内导航到内部页面 | `BrowserTab.Navigate` + `InternalPageRegistry.ToNavigableUri` | 未登记页面退回 newtab；宿主发起的导航放行 |
+| 内部页面资源供给 | `BrowserTab.ServeInternalPages`（`WebResourceRequested`）+ `InternalPageRegistry.ResolveResourcePath` | scheme 注册在 `BrowserEnvironmentProvider.CreateAsync` |
+| 网页→内部页面拦截 | `BrowserTab.ShouldBlockInternalNavigation`（NavigationStarting）+ `NewWindowRequested` 里的判断 | 放行宿主导航 / 内部页出发 / 前进后退刷新 |
+| 地址栏显示地址的推导 | `BrowserTab.UpdateUrlFromCore` | 内部页面去尾部 `/`（`browser://settings`） |
+| 崩溃 / 无响应提示 | `BrowserTab.OnProcessFailed` → `LastError`；错误条「重新加载」= `ReloadTabCommand` | 主进程退出时环境缓存由 `BrowserEnvironmentProvider` 作废 |
 | 安全图标数据来源 | `BrowserTab.EnableSecurityEventsAsync` / `OnSecurityStateChanged` | CDP `Security.enable` + `securityStateChanged` |
 | favicon 获取 | `BrowserTab.UpdateFaviconAsync` | `Core.GetFaviconAsync(Png)` |
 | 历史入库时机 | `TabManager.RecordHistory`（订阅 `BrowserTab.NavigationFinished`） | 跳过 `browser://`/`about:`/`file://` |
@@ -178,8 +185,9 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 
 | 我要改的东西 | 关键函数 / 锚点 | 备注 |
 |---|---|---|
-| 新增一个内部页面 | `InternalPageRegistry.Pages` 加一行 + 建 `Assets/ui/<name>/index.html` | |
-| 新增页面可调用的宿主能力 | `WebMessageRouter.DispatchAsync` 加一个 `case` | 同时更新 §4 契约表 |
+| 新增一个内部页面 | `InternalPageRegistry.Pages` 加一行（**含该页的消息前缀白名单**）+ 建 `Assets/ui/<name>/index.html` | 引用公共资源照旧写 `../common/x` |
+| 新增页面可调用的宿主能力 | `WebMessageRouter.DispatchAsync` 加一个 `case` + 给需要的页面加白名单前缀 | 同时更新 §4 契约表；未登记即被拒 |
+| 消息鉴权 | `WebMessageRouter.HandleAsync` → `InternalPageRegistry.IsMessageAllowed(args.Source, type)` | 非内部页面直接丢弃不回执；`Broadcast` 只发内部页面 |
 | WebUI 侧发请求 | `browser-api.js` 的 `sc.send` / `sc.emit` / `sc.on` | |
 | 宿主推事件给页面 | `WebMessageRouter.Broadcast` | 例：`downloads.changed`、`extensions.changed` |
 | 取值助手（容错解析） | `GetString` / `GetBool` / `GetInt` / `GetLong` | 字段缺失时返回兜底值 |
@@ -202,16 +210,17 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 从目录安装 | `ExtensionService.InstallFromFolderAsync` | 先校验 `manifest.json` |
 | 从 `.crx` 安装 | `ExtensionService.InstallFromCrxAsync` → `CrxPackage.ExtractTo` | 解到 `AppPaths.ManagedExtensionsFolder` |
 | 定位 ZIP 偏移 | `CrxPackage.FindZipOffset` | v2：16+key+sig；v3：12+header |
-| 解包 | `CrxPackage.ExtractTo` | **ZIP 段要切独立流**，见 §7 |
+| 解包 | `CrxPackage.ExtractTo` → `ValidateEntries`（先校验再删旧目录） | **ZIP 段要切独立流**，见 §7；上限 `MaxEntries` / `MaxExtractedBytes` |
 | 目录名规整 | `CrxPackage.DeriveFolderName` | 不得以 `_` 开头 |
 
 ### 2.6 设置 / 主题 / 会话（`Services/`）
 
 | 我要改的东西 | 关键函数 / 锚点 | 备注 |
 |---|---|---|
-| 加设置项 | `AppSettings` 加属性（**必须给默认值**） + `SettingsService.Normalize` | 旧配置才能平滑升级 |
+| 加设置项 | `AppSettings` 加属性（**必须给默认值**） + `SettingsService.Normalize`；设置页可改的还要进 `AppSettings.CopyPreferencesFrom` | 旧配置才能平滑升级；设置页保存是「合并偏好字段」不是整体替换 |
 | 换肤 | `ThemeService.Apply` / `SwapDictionary` | 替换 `MergedDictionaries[0]` |
-| 会话保存/恢复 | `SessionStore.Save` / `Load` / `SnapshotUrls` | 落 `session.json` |
+| 会话保存/恢复 | `SessionStore.Save` / `Load`；`BrowserWindowManager.SaveSession(closing)` / `EnsureAutoSave`（20s 定期、内容不变不写） | 落 `session.json`（原子写）；关最后一个标签会清会话 |
+| 单实例 / 命令行网址 | `App.OnStartup`（`SingleInstance.Acquire` / `TryForward` / `StartListening`）→ `BrowserWindowManager.HandleForwardedArgsAsync`；主窗口自身网址在 `MainWindow.OnLoaded` | 锁/管道名带数据根目录哈希 |
 | 下载接管 | `DownloadManager.OnDownloadStarting` / `OnProgress` | 进度按 1% 节流落盘 |
 
 ---
@@ -245,16 +254,18 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | newtab | `history.topSites` | `limit` | `HistoryEntry[]` |
 | bookmarks | `bookmarks.query` / `bookmarks.add` / `bookmarks.remove` / `bookmarks.toggle` / `bookmarks.exists` | `url`, `title`, `id` | 视消息而定 |
 | downloads | `downloads.query` / `downloads.clear` / `downloads.remove` | `id` | `DownloadEntry[]` |
-| downloads | `downloads.openFile` / `downloads.revealInFolder` | `path` | — |
+| downloads | `downloads.openFile` / `downloads.revealInFolder` | `id`（**不收路径**，宿主查库） | — |
 | extensions | `extensions.list` | — | `ExtensionInfo[]` |
 | extensions | `extensions.installFromFolder` / `extensions.installFromCrx` | —（弹系统对话框） | `ExtensionInfo \| null` |
 | extensions | `extensions.remove` / `extensions.setEnabled` / `extensions.openManagedFolder` | `id`, `enabled` | — |
 | settings | `settings.get` | — | `AppSettings` |
-| settings | `settings.update` / `settings.setTheme` | `AppSettings` 全量 / `theme` | — |
+| settings | `settings.update` / `settings.setTheme` | 偏好字段（合并，见 `CopyPreferencesFrom`） / `theme` | — |
 | settings | `app.info` | — | 版本与各路径 |
 | settings | `app.clearBrowsingData` | `cache`, `cookies`, `storage` | — |
 
-**宿主 → 页面事件**：`downloads.changed`、`extensions.changed`、`settings.changed`。
+**宿主 → 页面事件**：`downloads.changed`、`extensions.changed`、`settings.changed`（只推给停在内部页面上的标签）。
+
+**鉴权**：每条消息按发送文档地址（`args.Source`）判定，只有 `InternalPageRegistry.Pages` 登记的页面、且类型命中该页白名单前缀才处理；普通网页 / `file://` 的消息直接丢弃且不回执。
 
 **数据铁律**：
 - 内部页面渲染不可信文本（标题/地址/扩展名）一律用 `textContent`，**禁止 `innerHTML`**（防 XSS）。
@@ -287,7 +298,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   的全部文件，不触碰用户浏览数据。`clean` 只清 bin/obj 与旧产物，保留 `dist/` 成品包。
 - **行尾策略**：`.gitattributes` 钉住 `*.sh`=LF、`*.bat`=CRLF。改脚本时优先按属性办事，
   别让 Windows 的 `core.autocrlf` 把 `.sh` 检成 CRLF（bash 会报 `No such file or directory` / 变量尾带 `\r` 而假失败）。
-- **路径单一源**：`Infrastructure/AppPaths.cs`；`manager.sh` 中的 `APPDATA_DIR` 必须与其保持一致。
+- **路径单一源**：`Infrastructure/AppPaths.cs`；`manager.sh` 中的 `APPDATA_DIR` 必须与其保持一致
+  （两边都认 `SCBROWSER_DATA_DIR` 开发覆盖，用法见 `docs/02-使用说明.md` §2.4.2）。
 - **提交前闸门**：`sh manager.sh verify` = 构建(-warnaserror) + 单测 + `check-docs.sh`。
 
 ---
@@ -314,6 +326,15 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   `Margin="6,0,6,6"` 的内缩带（`MainWindow.xaml`），改布局时别把这圈吃掉，否则窗口又变成拖不动尺寸。
   **但最大化时必须把它收成 0**：最大化不需要缩放，留着白让出 14×8 px 视口，
   宽度卡得紧的页面（例如自建面板）会因此冒出滚动条——`MainWindow.ApplyWindowedFrame` 负责切换。
+- **任何网页都能 `chrome.webview.postMessage`**：WebView2 给所有顶层文档注入消息桥，并非只给内部页面。
+  宿主能力必须按 `args.Source` 鉴权（`InternalPageRegistry.IsMessageAllowed`），页面传来的路径一律不信（下载按 id 查库）。
+  内部页面因此用自定义 scheme `browser://<页面>/`（每页一个来源）而不是 `file://`；也不要换成 `https` 虚拟主机映射——
+  扩展内容脚本的 `<all_urls>` 会匹配到它，扩展就能注入内部页面借道越权。
+- **`CoreWebView2EnvironmentOptions.CustomSchemeRegistrations` 是只读且默认 null**：只能经构造函数
+  `new CoreWebView2EnvironmentOptions(customSchemeRegistrations: …)` 传入，`.Add` 会空引用。
+  资源过滤器优先用带 `RequestSourceKinds` 的重载，旧运行时退回旧重载（`BrowserTab.ServeInternalPages`）。
+- **防目录穿越要「目录 + 分隔符」前缀比较**（`PathSafety.IsUnderDirectory`）：只比目录本身，
+  `…\foo-evil\x` 也以 `…\foo` 开头，同级同前缀目录会被放行。
 - **无痕不能用「新环境」实现**：必须同一个 `CoreWebView2Environment` + InPrivate 的
   `CoreWebView2ControllerOptions`（见 §3.5）。
 - **主题令牌键必须成对存在**：`Theme.Light.xaml` 与 `Theme.Dark.xaml` 键名不一致时，换肤会缺键。

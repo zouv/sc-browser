@@ -11,15 +11,21 @@
 ### 3.1 内部页面消息链路（WebUI ↔ 宿主）
 
 - **需求语义**：内部页面（HTML/JS）要能读写历史、书签、扩展、设置等宿主能力。
-- **关键坑**：WebUI 跑在 `file://` 下，不能用 `fetch` 调宿主；必须走 WebView2 消息桥。
-  请求/响应要能配对，否则页面无法 `await` 结果。
+- **页面怎么来的**：`browser://<页面>/` 是环境创建时注册的自定义 scheme（`BrowserEnvironmentProvider.CreateAsync`），
+  由 `BrowserTab.ServeInternalPages` 拦 `WebResourceRequested`、按 `InternalPageRegistry.ResolveResourcePath`
+  从 `Assets/ui/` 读文件回应。页面里的 `../common/x` 会被浏览器规整成 `browser://<页面>/common/x`，所以无需改引用。
+- **关键坑**：
+  1. 页面不能用 `fetch` 调宿主；必须走 WebView2 消息桥。请求/响应要能配对，否则页面无法 `await` 结果。
+  2. **消息桥对所有网页开放**（WebView2 给每个顶层文档都注入 `chrome.webview`），所以宿主必须按来源鉴权，
+     见下方第 2 步；网页也不得自行跳到 `browser://`（`BrowserTab.ShouldBlockInternalNavigation`）。
 - **正确实现**：
   1. 页面 `sc.send(type, payload)` → `window.chrome.webview.postMessage({type, requestId, payload})`
-  2. 宿主 `TabManager.WebMessageReceived` → `WebMessageRouter.HandleAsync` → `DispatchAsync`
-  3. 宿主 `WebMessageRouter.Reply` 回 `{type:"response", requestId, ok, result|error}`
+  2. 宿主 `TabManager.WebMessageReceived` → `WebMessageRouter.HandleAsync`：
+     `args.Source` 不是内部页面 → 丢弃不回执；是内部页面但不在白名单（`InternalPageRegistry.IsMessageAllowed`）→ 回错误
+  3. 通过鉴权 → `DispatchAsync` → `WebMessageRouter.Reply` 回 `{type:"response", requestId, ok, result|error}`
   4. 页面侧按 `requestId` 配对 resolve/reject（含 15s 超时兜底）
 - **调用链**：`Assets/ui/*.js` → `browser-api.js` → WebView2 bridge → `TabManager.WebMessageReceived`
-  → `WebMessageRouter.HandleAsync` → `DispatchAsync` → `Storage/*` 或 `Services/*`
+  → `WebMessageRouter.HandleAsync`（鉴权）→ `DispatchAsync` → `Storage/*` 或 `Services/*`
 
 ### 3.2 扩展加载与运行
 
