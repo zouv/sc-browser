@@ -51,6 +51,23 @@ public sealed class AppSettings
 
     /// <summary>关闭时是否为最大化。</summary>
     public bool WindowMaximized { get; set; }
+
+    /// <summary>
+    /// 从另一份设置拷贝「用户偏好」字段（设置页「保存」场景）。
+    /// 窗口几何由宿主自己维护，不在此列——设置页不发这些字段，整体替换会把它们清空。
+    /// <b>新增用户可在设置页修改的字段时，记得在这里补一行。</b>
+    /// </summary>
+    public void CopyPreferencesFrom(AppSettings other)
+    {
+        SearchTemplate = other.SearchTemplate;
+        Theme = other.Theme;
+        HomePage = other.HomePage;
+        RestoreSessionOnStartup = other.RestoreSessionOnStartup;
+        DownloadsFolder = other.DownloadsFolder;
+        AskWhereToSaveDownloads = other.AskWhereToSaveDownloads;
+        EnableExtensions = other.EnableExtensions;
+        RememberSessionOnExit = other.RememberSessionOnExit;
+    }
 }
 
 /// <summary>
@@ -120,25 +137,11 @@ public sealed class SettingsService
         Changed?.Invoke(this, _current);
     }
 
-    /// <summary>把设置整体替换（设置页「保存」场景）。</summary>
-    public void Replace(AppSettings settings)
-    {
-        lock (_gate)
-        {
-            Normalize(settings);
-            _current = settings;
-            Save();
-        }
-
-        Changed?.Invoke(this, _current);
-    }
-
     private void Save()
     {
         try
         {
-            Directory.CreateDirectory(AppPaths.AppDataRoot);
-            File.WriteAllText(SettingsFile, JsonSerializer.Serialize(_current, JsonOptions));
+            AtomicFile.WriteAllText(SettingsFile, JsonSerializer.Serialize(_current, JsonOptions));
         }
         catch (Exception ex)
         {

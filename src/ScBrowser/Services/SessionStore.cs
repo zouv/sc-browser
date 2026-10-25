@@ -32,7 +32,7 @@ public sealed class SessionStore
             }
 
             var snapshot = new SessionSnapshot(meaningful, Math.Clamp(activeIndex, 0, meaningful.Count - 1), DateTimeOffset.UtcNow);
-            File.WriteAllText(
+            AtomicFile.WriteAllText(
                 AppPaths.SessionFile,
                 JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true }));
         }
