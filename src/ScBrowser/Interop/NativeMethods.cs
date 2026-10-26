@@ -222,6 +222,12 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     private static extern bool AllowSetForegroundWindow(int processId);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    /// <summary>当前前台窗口的句柄；用于区分「切到别的程序」与「焦点进了自己的浮动窗口」。</summary>
+    public static IntPtr GetForegroundWindowHandle() => GetForegroundWindow();
+
     /// <summary>
     /// 允许任意进程（实际就是已在运行的那个实例）把自己的窗口切到前台。
     /// Windows 只允许「当前前台进程」抢前台；二次启动的进程此刻正是前台进程，

@@ -54,8 +54,6 @@ public partial class MainWindow : Window
 
         InitializeComponent();
         DataContext = viewModel;
-        FindBar.CustomPopupPlacementCallback = PlaceFindBar;
-        FindBar.Opened += (_, _) => FocusFindBox();
         RestoreWindowPlacement();
 
         // 最后一个标签关闭即退出（Chrome 语义）。外壳自己决定怎么响应，TabManager 不越权。
@@ -68,10 +66,15 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
         Closing += OnClosing;
         StateChanged += OnStateChanged;
+        StateChanged += (_, _) => SyncFindBarWithWindowState();
         LocationChanged += OnWindowGeometryChanged;
         SizeChanged += OnWindowGeometryChanged;
         Deactivated += (_, _) => HideSuggestionPopup();
-        Activated += (_, _) => HideSuggestionPopup();
+        Activated += (_, _) =>
+        {
+            HideSuggestionPopup();
+            ShowFindBarWhenActive();
+        };
 
         // 标签拖拽的候选状态从「按下标签」开始，但鼠标一旦移出按钮，按钮就收不到 MouseMove 了——
         // 于是「按下后往下拖出标签条」永远起不了拖拽。窗口级再挂一份（handledEventsToo），
@@ -86,12 +89,12 @@ public partial class MainWindow : Window
             _ = RunFindAsync();
         };
 
-        // 查找条是窗口级的：切换标签时收起，避免把上一个页面的匹配状态带过去。
+        // 切换标签时查找条跟着换关键词（每个标签各自记住），不关闭。
         _viewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(MainViewModel.ActiveTab))
             {
-                CloseFindBar(focusContent: false);
+                OnActiveTabChanged();
             }
         };
     }
@@ -423,7 +426,12 @@ public partial class MainWindow : Window
 
         if (!visible)
         {
-            FindBar.IsOpen = false;
+            _findWindow?.Hide();
+        }
+        else if (_findBarVisible)
+        {
+            PositionFindWindow();
+            _findWindow?.Show();
         }
 
         // 全屏时标签条不可见，若标题栏命中区还在，点网页顶部会变成拖窗口。

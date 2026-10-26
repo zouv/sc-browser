@@ -55,7 +55,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 多窗口 / 无痕 / 窗口级装配 | `Services/BrowserWindowManager.cs`、`Browser/BrowserSession.cs`、`Views/MainWindow.xaml.cs`（窗口与几何部分） | Storage/、Assets/ | arch/flows.md §3.5 |
 | 改地址栏（解析/下拉建议） | `Browser/AddressBarResolver.cs`、`Services/OmniboxSuggestions.cs`、`Views/AddressBarPopup.xaml(.cs)`、`ViewModels/MainViewModel.cs`（Suggestions 部分） | Storage/、Assets/ | arch/flows.md §3.6 |
 | 改全屏 / 站点信息 / 证书提示 | `Views/MainWindow.xaml(.cs)`（`ToggleFullScreen` / `SecurityButton_Click` / `AskAboutCertificateError`）、`Views/SiteInfoPopup.xaml(.cs)`、`Interop/NativeMethods.cs`（`FillMonitor`）、`Browser/BrowserTab.cs`（`FullScreenChanged` / `CertificateErrorDetected`） | Storage/、Assets/ | §2.1、§7 |
-| 改页内查找（Ctrl+F） | `Views/MainWindow.xaml(.cs)`（查找条/快捷键）、`Browser/BrowserTab.cs`（Find 封装与 JS 兜底） | Storage/、Assets/ | §2.1、§2.2、§7 |
+| 改页内查找（Ctrl+F） | `Views/FindBarWindow.xaml(.cs)`、`Views/MainWindow.Find.cs`（会话/防抖/按标签记忆）、`Views/MainWindow.Shortcuts.cs`（快捷键）、`Browser/BrowserTab.cs`（Find 封装与 JS 兜底） | Storage/、Assets/ | §2.1、§2.2、§7 |
 | 加/改内部页面（WebUI） | `Assets/ui/<page>/*`、`Browser/WebMessageRouter.cs`、`Browser/InternalPageRegistry.cs`（含消息白名单） | Views/、Storage/（除非要新数据） | §2.3、§4、§7 |
 | 加/改数据存储（历史/书签/下载） | `Storage/*`（含 `BrowserDatabase` 的 `user_version` 迁移） | Views/、Assets/ | §2.4、§4 |
 | 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Browser/ExtensionManifest.cs`、`Browser/ExtensionStoreClient.cs`、`Browser/ExtensionApiBridge.cs`、`Views/ExtensionPopupWindow.xaml(.cs)`、`Assets/ui/extensions/*` | Views/（除弹窗）、Storage/ | §2.5、arch/flows.md §3.2、docs/03 |
@@ -121,6 +121,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的落点换算（指针落在哪个槽位，纯函数 + 单测） | 改拖拽落点规则 |
 | `src/ScBrowser/Views/AboutDialog.xaml(.cs)` | 「关于」对话框（图标 / 版本 / 用户数据目录） | 改关于页 |
 | `src/ScBrowser/Views/SiteInfoPopup.xaml(.cs)` | 站点信息浮层（来源 / 安全状态 / 站点权限 / 清除站点数据） | 改站点信息与权限管理 |
+| `src/ScBrowser/Views/FindBarWindow.xaml(.cs)` | **浮动查找条**（独立顶层窗口，输入框/计数/上一下一/关闭）；搜索逻辑在 `MainWindow.Find.cs` | 改查找条外观与交互 |
 | `src/ScBrowser/Views/ExtensionPopupWindow.xaml(.cs)` | 扩展工具栏弹窗（同 profile 的 WebView2 + `chrome.tabs` 兼容层） | 改扩展弹窗 |
 | `src/ScBrowser/Views/MainWindow.{Tabs,Shortcuts,Find}.cs` | 主窗口的 partial 分册（标签条交互 / 快捷键 / 页内查找） | 改对应区域 |
 | `src/ScBrowser/Assets/ui/**` | **WebUI 内部页面**（HTML/CSS/JS） | 改内部页面 |
