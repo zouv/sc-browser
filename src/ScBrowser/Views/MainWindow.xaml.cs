@@ -69,11 +69,15 @@ public partial class MainWindow : Window
         StateChanged += (_, _) => SyncFindBarWithWindowState();
         LocationChanged += OnWindowGeometryChanged;
         SizeChanged += OnWindowGeometryChanged;
-        Deactivated += (_, _) => HideSuggestionPopup();
+        Deactivated += (_, _) =>
+        {
+            HideSuggestionPopup();
+            HideFindBarForBackground();
+        };
         Activated += (_, _) =>
         {
             HideSuggestionPopup();
-            ShowFindBarWhenActive();
+            RestoreFindBarForForeground();
         };
 
         // 标签拖拽的候选状态从「按下标签」开始，但鼠标一旦移出按钮，按钮就收不到 MouseMove 了——
@@ -427,11 +431,11 @@ public partial class MainWindow : Window
         if (!visible)
         {
             _findWindow?.Hide();
+            IsFindBarVisible = false;
         }
-        else if (_findBarVisible)
+        else
         {
-            PositionFindWindow();
-            _findWindow?.Show();
+            RestoreFindBarForForeground();
         }
 
         // 全屏时标签条不可见，若标题栏命中区还在，点网页顶部会变成拖窗口。

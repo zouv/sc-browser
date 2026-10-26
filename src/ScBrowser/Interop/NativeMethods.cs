@@ -228,6 +228,28 @@ internal static class NativeMethods
     /// <summary>当前前台窗口的句柄；用于区分「切到别的程序」与「焦点进了自己的浮动窗口」。</summary>
     public static IntPtr GetForegroundWindowHandle() => GetForegroundWindow();
 
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    /// <summary>当前前台窗口所属进程；无法取得时返回 0。用于判断焦点是否还在本应用内。</summary>
+    public static uint GetForegroundProcessId()
+    {
+        var handle = GetForegroundWindow();
+        if (handle == IntPtr.Zero)
+        {
+            return 0;
+        }
+
+        _ = GetWindowThreadProcessId(handle, out var processId);
+        return processId;
+    }
+
+    /// <summary>把指定窗口切到前台（同一进程内调用；用于让浮动查找条真正拿到键盘焦点）。</summary>
+    public static void BringToForeground(IntPtr handle) => _ = SetForegroundWindow(handle);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
+
     /// <summary>
     /// 允许任意进程（实际就是已在运行的那个实例）把自己的窗口切到前台。
     /// Windows 只允许「当前前台进程」抢前台；二次启动的进程此刻正是前台进程，

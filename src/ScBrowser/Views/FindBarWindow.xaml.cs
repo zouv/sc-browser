@@ -16,6 +16,22 @@ public partial class FindBarWindow : Window
 {
     public FindBarWindow() => InitializeComponent();
 
+    /// <summary>
+    /// 本次激活时是否把焦点交给输入框。
+    /// 切换标签时会重新显示面板，但焦点应该留在网页里，所以默认不抢。
+    /// </summary>
+    public bool FocusBoxOnActivate { get; set; }
+
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+
+        if (FocusBoxOnActivate)
+        {
+            FocusAndSelect();
+        }
+    }
+
     /// <summary>输入框文本变化（MainWindow 据此防抖重搜）。</summary>
     public event EventHandler? SearchTextChanged;
 
