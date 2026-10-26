@@ -103,8 +103,14 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>主页地址（取自设置）。</summary>
     public string HomePageUrl => _settings.Current.HomePage;
 
-    /// <summary>按输入内容重算地址栏下拉（本地历史 + 「使用 XX 搜索」行）。</summary>
-    public void UpdateSuggestions(string? query)
+    /// <summary>下拉候选的版本号：连续输入时旧的异步查询结果必须作废。</summary>
+    private int _suggestionVersion;
+
+    /// <summary>
+    /// 按输入内容重算地址栏下拉（本地历史 + 「使用 XX 搜索」行）。
+    /// 历史查询在后台线程执行；每次输入都会递增版本号，旧结果直接丢弃。
+    /// </summary>
+    public async Task UpdateSuggestionsAsync(string? query)
     {
         var text = query ?? string.Empty;
 
@@ -117,10 +123,17 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var version = ++_suggestionVersion;
+
         // 历史查询交给 SQL 过滤（url/title LIKE），这里多取一些供排序挑选。
-        var history = _history.Query(
+        var history = await _history.QueryAsync(
             string.IsNullOrWhiteSpace(text) ? null : text,
-            OmniboxSuggestions.MaxItems * 4);
+            OmniboxSuggestions.MaxItems * 4).ConfigureAwait(true);
+
+        if (version != _suggestionVersion)
+        {
+            return;
+        }
 
         Suggestions.Clear();
         foreach (var item in OmniboxSuggestions.Build(text, history, _settings.Current.SearchTemplate))
@@ -354,9 +367,9 @@ public sealed partial class MainViewModel : ObservableObject
     // 书签
     // --------------------------------------------------------------------- //
 
-    /// <summary>切换当前页面的书签状态（Ctrl+D）。</summary>
+    /// <summary>切换当前页面的书签状态（Ctrl+D）。写库在后台线程。</summary>
     [RelayCommand]
-    private void ToggleBookmark()
+    private async Task ToggleBookmarkAsync()
     {
         var tab = ActiveTab;
         if (tab is null || string.IsNullOrWhiteSpace(tab.DisplayUrl) || InternalPageRegistry.IsInternalPage(tab.DisplayUrl))
@@ -364,7 +377,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        IsActiveTabBookmarked = _bookmarks.Toggle(tab.DisplayUrl, tab.Title);
+        IsActiveTabBookmarked = await _bookmarks.ToggleAsync(tab.DisplayUrl, tab.Title).ConfigureAwait(true);
     }
 
     // --------------------------------------------------------------------- //
@@ -487,8 +500,23 @@ public sealed partial class MainViewModel : ObservableObject
     private void RefreshBookmarkState()
     {
         var url = ActiveTab?.DisplayUrl;
-        IsActiveTabBookmarked = !string.IsNullOrWhiteSpace(url)
-                                && !InternalPageRegistry.IsInternalPage(url)
-                                && _bookmarks.Exists(url);
+        if (string.IsNullOrWhiteSpace(url) || InternalPageRegistry.IsInternalPage(url))
+        {
+            IsActiveTabBookmarked = false;
+            return;
+        }
+
+        _ = RefreshBookmarkStateAsync(url);
+    }
+
+    private async Task RefreshBookmarkStateAsync(string url)
+    {
+        var exists = await _bookmarks.ExistsAsync(url).ConfigureAwait(true);
+
+        // 查询期间切了标签就别再写回状态。
+        if (string.Equals(ActiveTab?.DisplayUrl, url, StringComparison.Ordinal))
+        {
+            IsActiveTabBookmarked = exists;
+        }
     }
 }

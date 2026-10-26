@@ -1347,7 +1347,7 @@ public partial class MainWindow : Window
     /// </summary>
     private bool _suppressSuggestions;
 
-    private void AddressBar_TextChanged(object sender, TextChangedEventArgs e)
+    private async void AddressBar_TextChanged(object sender, TextChangedEventArgs e)
     {
         // 只对「用户在地址栏里敲出来的改动」反应：IsAddressBarEditing 由 PreviewKeyDown 置位，
         // 而「页面导航完成后回填地址」不会经过键盘事件——否则每加载一个页面就弹一次下拉。
@@ -1356,12 +1356,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        _viewModel.UpdateSuggestions(AddressBar.Text);
+        await _viewModel.UpdateSuggestionsAsync(AddressBar.Text);
         SyncSuggestionPopup();
     }
 
     /// <summary>聚焦即全选并展开最近访问（与 Chrome 一致）；启动时的程序性聚焦除外。</summary>
-    private void AddressBar_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    private async void AddressBar_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         AddressBar.SelectAll();
 
@@ -1372,15 +1372,15 @@ public partial class MainWindow : Window
 
         // 聚焦时输入框里是当前页地址，直接拿它过滤只会命中当前页，
         // 因此按「空输入」处理 → 列出最近访问。
-        _viewModel.UpdateSuggestions(null);
+        await _viewModel.UpdateSuggestionsAsync(null);
         SyncSuggestionPopup();
     }
 
     /// <summary>键盘在上面、鼠标点进来的情况在这里解除抑制并立刻展开。</summary>
-    private void AddressBar_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private async void AddressBar_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _suppressSuggestions = false;
-        _viewModel.UpdateSuggestions(null);
+        await _viewModel.UpdateSuggestionsAsync(null);
         SyncSuggestionPopup();
     }
 

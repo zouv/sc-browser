@@ -196,48 +196,75 @@ public sealed class WebMessageRouter
 
             // ---------------- 历史 ----------------
             case "history.query":
-                return _history.Query(
+                return await _history.QueryAsync(
                     GetString(payload, "search"),
                     GetInt(payload, "limit", 500),
-                    GetInt(payload, "offset", 0));
+                    GetInt(payload, "offset", 0)).ConfigureAwait(true);
+
+            case "history.visits":
+                return await _history.QueryVisitsAsync(
+                    GetString(payload, "search"),
+                    GetDate(payload, "from"),
+                    GetDate(payload, "to"),
+                    GetInt(payload, "limit", 1000)).ConfigureAwait(true);
 
             case "history.remove":
-                _history.Remove(GetLong(payload, "id", -1));
+                await _history.RemoveAsync(GetLong(payload, "id", -1)).ConfigureAwait(true);
                 return null;
 
             case "history.removeByUrl":
-                _history.RemoveByUrl(GetString(payload, "url") ?? string.Empty);
+                await _history.RemoveByUrlAsync(GetString(payload, "url") ?? string.Empty).ConfigureAwait(true);
                 return null;
 
             case "history.clear":
-                _history.Clear();
+                await _history.ClearAsync().ConfigureAwait(true);
                 return null;
 
             case "history.topSites":
-                return _history.QueryTopSites(GetInt(payload, "limit", 8));
+                return await _history.QueryTopSitesAsync(GetInt(payload, "limit", 8)).ConfigureAwait(true);
 
             // ---------------- 书签 ----------------
             case "bookmarks.query":
-                return _bookmarks.GetAll();
+                return await _bookmarks.GetAllAsync().ConfigureAwait(true);
 
             case "bookmarks.add":
-                _bookmarks.Add(GetString(payload, "url") ?? string.Empty, GetString(payload, "title") ?? string.Empty);
-                return null;
+                return await _bookmarks.AddAsync(
+                    GetString(payload, "url") ?? string.Empty,
+                    GetString(payload, "title") ?? string.Empty,
+                    GetLong(payload, "parentId", 0)).ConfigureAwait(true);
+
+            case "bookmarks.addFolder":
+                return await _bookmarks.AddFolderAsync(
+                    GetString(payload, "title") ?? "新建文件夹",
+                    GetLong(payload, "parentId", 0)).ConfigureAwait(true);
+
+            case "bookmarks.rename":
+                return await _bookmarks.RenameAsync(
+                    GetLong(payload, "id", -1),
+                    GetString(payload, "title") ?? string.Empty).ConfigureAwait(true);
+
+            case "bookmarks.move":
+                return await _bookmarks.MoveAsync(
+                    GetLong(payload, "id", -1),
+                    GetLong(payload, "parentId", 0)).ConfigureAwait(true);
 
             case "bookmarks.remove":
-                return _bookmarks.Remove(GetString(payload, "url") ?? string.Empty);
+                return await _bookmarks.RemoveAsync(GetString(payload, "url") ?? string.Empty).ConfigureAwait(true);
+
+            case "bookmarks.removeById":
+                return await _bookmarks.RemoveByIdAsync(GetLong(payload, "id", -1)).ConfigureAwait(true);
 
             case "bookmarks.toggle":
-                return _bookmarks.Toggle(
+                return await _bookmarks.ToggleAsync(
                     GetString(payload, "url") ?? string.Empty,
-                    GetString(payload, "title") ?? string.Empty);
+                    GetString(payload, "title") ?? string.Empty).ConfigureAwait(true);
 
             case "bookmarks.exists":
-                return _bookmarks.Exists(GetString(payload, "url") ?? string.Empty);
+                return await _bookmarks.ExistsAsync(GetString(payload, "url") ?? string.Empty).ConfigureAwait(true);
 
             // ---------------- 下载 ----------------
             case "downloads.query":
-                return _downloads.List();
+                return await _downloads.ListAsync().ConfigureAwait(true);
 
             case "downloads.clear":
                 _downloads.Clear();
@@ -520,6 +547,15 @@ public sealed class WebMessageRouter
         && value.TryGetInt32(out var number)
             ? number
             : fallback;
+
+    /// <summary>ISO 8601 时间串 → <see cref="DateTimeOffset"/>；缺失或格式不对返回 <c>null</c>。</summary>
+    private static DateTimeOffset? GetDate(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.String
+        && DateTimeOffset.TryParse(value.GetString(), out var parsed)
+            ? parsed
+            : null;
 
     private static long GetLong(JsonElement element, string name, long fallback) =>
         element.ValueKind == JsonValueKind.Object

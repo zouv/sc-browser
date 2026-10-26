@@ -572,9 +572,15 @@ public sealed class TabManager
             return;
         }
 
+        // 写库放到后台线程：SQLite 是同步 IO，放在 UI 线程上会卡住界面切换。
+        _ = RecordHistorySafeAsync(url, tab.Title);
+    }
+
+    private async Task RecordHistorySafeAsync(string url, string title)
+    {
         try
         {
-            _history.RecordVisit(url, tab.Title);
+            await _history.RecordVisitAsync(url, title).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

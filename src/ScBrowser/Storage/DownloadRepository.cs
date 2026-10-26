@@ -88,6 +88,16 @@ public sealed class DownloadRepository
         return result;
     }
 
+    public Task UpsertAsync(DownloadEntry entry) => Task.Run(() => Upsert(entry));
+
+    public Task<IReadOnlyList<DownloadEntry>> QueryAsync(int limit = 200) => Task.Run(() => Query(limit));
+
+    public Task<DownloadEntry?> FindAsync(string id) => Task.Run(() => Find(id));
+
+    public Task RemoveAsync(string id) => Task.Run(() => Remove(id));
+
+    public Task ClearAsync() => Task.Run(Clear);
+
     public void Clear()
     {
         using var connection = _database.OpenConnection();

@@ -1,5 +1,30 @@
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .bookmark-row {
   cursor: default;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folder-row {
+  cursor: pointer;
+}
+
+.bookmark-icon {
+  flex: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
 }
 
 .bookmark-main {
@@ -17,26 +42,22 @@
   color: var(--text-secondary);
 }
 
-.row-action {
-  visibility: hidden;
+.bookmark-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
 }
 
-.list-row:hover .row-action {
-  visibility: visible;
+.list-row:hover .bookmark-actions {
+  opacity: 1;
 }
 
-.icon-btn {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  font-size: 15px;
-  line-height: 1;
+.move-picker {
+  height: 30px;
+  max-width: 220px;
 }
 
-.icon-btn:hover {
-  background: var(--hover);
-  color: var(--text-primary);
+.bookmark-children:empty {
+  display: none;
 }

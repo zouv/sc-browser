@@ -1,40 +1,72 @@
-// 历史记录页。
+// 历史记录页：按日期分组展示「访问流水」，支持时间范围与关键字筛选。
 (function () {
   "use strict";
 
   var listEl = document.getElementById("list");
   var summaryEl = document.getElementById("summary");
   var searchEl = document.getElementById("search");
+  var rangeEl = document.getElementById("range");
   var clearBtn = document.getElementById("clear-all");
 
   var debounceTimer = null;
 
-  function formatTime(iso) {
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) {
-      return "";
-    }
+  var WEEKDAYS = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 
-    var today = new Date();
-    var sameDay = d.toDateString() === today.toDateString();
-    return sameDay
-      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  function startOfDay(date) {
+    var d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
   }
 
-  function render(entries) {
-    if (!entries || entries.length === 0) {
-      listEl.innerHTML = '<div class="list-empty">没有匹配的历史记录</div>';
-      summaryEl.textContent = "0 条记录";
-      return;
+  /** 时间范围 → 起始时间（本地零点，转 ISO 交给宿主按 UTC 比较）。 */
+  function rangeStart() {
+    var today = startOfDay(new Date());
+    switch (rangeEl.value) {
+      case "today": return today;
+      case "7d": return new Date(today.getTime() - 6 * 24 * 3600 * 1000);
+      case "30d": return new Date(today.getTime() - 29 * 24 * 3600 * 1000);
+      default: return null;
     }
+  }
 
-    summaryEl.textContent = entries.length + " 条记录";
-    listEl.innerHTML = "";
+  function dayKey(d) {
+    return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  }
 
-    entries.forEach(function (entry) {
+  function dayLabel(d) {
+    var today = startOfDay(new Date());
+    var yesterday = new Date(today.getTime() - 24 * 3600 * 1000);
+    if (dayKey(d) === dayKey(today)) {
+      return "今天";
+    }
+    if (dayKey(d) === dayKey(yesterday)) {
+      return "昨天";
+    }
+    return d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日 " + WEEKDAYS[d.getDay()];
+  }
+
+  function timeText(d) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function appendGroup(entries) {
+    var group = document.createElement("section");
+    group.className = "history-group";
+
+    var header = document.createElement("div");
+    header.className = "history-group-header";
+    header.textContent = entries.label + " · " + entries.items.length + " 条";
+    group.appendChild(header);
+
+    entries.items.forEach(function (entry) {
+      var visited = new Date(entry.visited);
+
       var row = document.createElement("div");
       row.className = "list-row history-row";
+
+      var time = document.createElement("div");
+      time.className = "history-time";
+      time.textContent = isNaN(visited.getTime()) ? "" : timeText(visited);
 
       var main = document.createElement("div");
       main.className = "history-main";
@@ -51,49 +83,90 @@
       main.appendChild(title);
       main.appendChild(url);
 
-      var meta = document.createElement("div");
-      meta.className = "history-meta";
-
-      var time = document.createElement("span");
-      time.className = "history-time";
-      time.textContent = formatTime(entry.lastVisit);
-      meta.appendChild(time);
-
-      if (entry.visitCount > 1) {
-        var count = document.createElement("span");
-        count.textContent = entry.visitCount + " 次";
-        meta.appendChild(count);
-      }
-
       var del = document.createElement("button");
       del.className = "icon-btn row-action";
       del.textContent = "×";
-      del.title = "从历史记录中删除";
+      del.title = "从历史记录中删除该网址的全部记录";
       del.addEventListener("click", function (e) {
         e.stopPropagation();
-        sc.send("history.remove", { id: entry.id }).then(refresh);
+        if (!confirm("从历史记录中删除这个网址的全部记录？")) {
+          return;
+        }
+        sc.send("history.removeByUrl", { url: entry.url }).then(refresh);
       });
-      meta.appendChild(del);
 
+      row.appendChild(time);
       row.appendChild(main);
-      row.appendChild(meta);
+      row.appendChild(del);
 
-      // 整行点击即导航。
       row.addEventListener("click", function () {
         sc.emit("navigation.navigate", { url: entry.url });
       });
 
-      listEl.appendChild(row);
+      group.appendChild(row);
+    });
+
+    return group;
+  }
+
+  function render(visits) {
+    listEl.textContent = "";
+
+    if (!visits || visits.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "list-empty";
+      empty.textContent = "没有匹配的历史记录";
+      listEl.appendChild(empty);
+      summaryEl.textContent = "0 条记录";
+      return;
+    }
+
+    summaryEl.textContent = visits.length + " 条访问记录";
+
+    // 宿主已按时间倒序返回；这里只顺序切分成「同一天」的组。
+    var groups = [];
+    var current = null;
+
+    visits.forEach(function (entry) {
+      var d = new Date(entry.visited);
+      var key = isNaN(d.getTime()) ? "unknown" : dayKey(d);
+
+      if (!current || current.key !== key) {
+        current = {
+          key: key,
+          label: isNaN(d.getTime()) ? "未知日期" : dayLabel(d),
+          items: [],
+        };
+        groups.push(current);
+      }
+
+      current.items.push(entry);
+    });
+
+    groups.forEach(function (group) {
+      listEl.appendChild(appendGroup(group));
     });
   }
 
   function refresh() {
+    var from = rangeStart();
+    var payload = {
+      search: searchEl.value.trim(),
+      limit: 1000,
+    };
+    if (from) {
+      payload.from = from.toISOString();
+    }
+
     return sc
-      .send("history.query", { search: searchEl.value.trim(), limit: 500 })
+      .send("history.visits", payload)
       .then(render)
       .catch(function (err) {
-        listEl.innerHTML = '<div class="list-empty"></div>';
-        listEl.firstChild.textContent = "读取历史失败：" + err.message;
+        listEl.textContent = "";
+        var box = document.createElement("div");
+        box.className = "list-empty";
+        box.textContent = "读取历史失败：" + err.message;
+        listEl.appendChild(box);
       });
   }
 
@@ -101,6 +174,8 @@
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(refresh, 180);
   });
+
+  rangeEl.addEventListener("change", refresh);
 
   clearBtn.addEventListener("click", function () {
     if (!confirm("确定要清除全部历史记录吗？此操作不可撤销。")) {

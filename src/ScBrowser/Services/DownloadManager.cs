@@ -53,7 +53,26 @@ public sealed class DownloadManager
     /// <summary>下载列表发生变化（进度/状态），供界面实时刷新。</summary>
     public event EventHandler? Changed;
 
+    /// <summary>落盘串行队列：进度更新按产生顺序写库，避免并发写乱序。</summary>
+    private readonly object _persistGate = new();
+    private Task _persist = Task.CompletedTask;
+
+    private void QueuePersist(DownloadEntry entry)
+    {
+        lock (_persistGate)
+        {
+            _persist = _persist.ContinueWith(
+                _ => _repository.Upsert(entry),
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default);
+        }
+    }
+
     public IReadOnlyList<DownloadEntry> List() => _repository.Query();
+
+    /// <summary>下载列表（后台线程读库，供内部页面查询）。</summary>
+    public Task<IReadOnlyList<DownloadEntry>> ListAsync() => _repository.QueryAsync();
 
     /// <summary>按 id 取一条下载记录（内部页面只传 id，路径以库里的为准）。</summary>
     public DownloadEntry? Find(string id) => _repository.Find(id);
@@ -92,7 +111,7 @@ public sealed class DownloadManager
         {
             _pausedByUser.TryRemove(id, out _);
             track.Operation.Resume();
-            _repository.Upsert(track.Entry with { State = DownloadState.InProgress });
+            QueuePersist(track.Entry with { State = DownloadState.InProgress });
             Changed?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
@@ -187,7 +206,7 @@ public sealed class DownloadManager
             DateTimeOffset.UtcNow);
 
         _active[id] = new DownloadTrack(entry, LastPersistedPercent: 0, operation);
-        _repository.Upsert(entry);
+        QueuePersist(entry);
 
         _logger.LogInformation("开始下载 {File} ← {Url}", entry.FileName, entry.Url);
 
@@ -258,7 +277,7 @@ public sealed class DownloadManager
         // 节流：只在状态变化或进度前进 1% 时落盘 / 通知界面。
         if (stateChanged || progressed || finished)
         {
-            _repository.Upsert(updated);
+            QueuePersist(updated);
             Changed?.Invoke(this, EventArgs.Empty);
         }
     }
