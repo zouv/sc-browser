@@ -1,114 +1,143 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title description">
   <title id="title">SC-Browser application icon</title>
-  <desc id="description">An icy-blue S and a turquoise C monogram over a glowing blue globe with soft continents, an orbital ring and a satellite. The sphere reads as a world/browser mark; everything outside it is transparent.</desc>
+  <desc id="description">A refined blue globe with a soft ocean gradient, faint graticule, muted continents and a gentle terminator, wrapped by a thin orbital ring. An icy S and turquoise C monogram sits on top. Everything outside the sphere is transparent.</desc>
 
   <defs>
-    <!-- 海洋：左上是光源，向右下逐渐沉入深海，球体的体积感全靠它 -->
-    <radialGradient id="ocean" cx="0" cy="0" r="1" gradientTransform="translate(186 150) rotate(53) scale(340 340)" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#3FA9DE"/>
-      <stop offset="0.35" stop-color="#12608F"/>
-      <stop offset="0.72" stop-color="#07304F"/>
-      <stop offset="1" stop-color="#02121F"/>
+    <!-- 海洋：五段渐变让球面过渡更细腻，右下沉入深蓝 -->
+    <radialGradient id="ocean" cx="0" cy="0" r="1" gradientTransform="translate(176 142) rotate(50) scale(352 352)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6FCDF4"/>
+      <stop offset="0.28" stop-color="#2F97CE"/>
+      <stop offset="0.55" stop-color="#156A9F"/>
+      <stop offset="0.8" stop-color="#0A3D62"/>
+      <stop offset="1" stop-color="#03131F"/>
     </radialGradient>
 
-    <!-- 大气层：球体外面一圈很淡的青光，让边缘不至于硬切在黑底上 -->
-    <radialGradient id="atmosphere" cx="0" cy="0" r="1" gradientTransform="translate(256 256) scale(256 256)" gradientUnits="userSpaceOnUse">
-      <stop offset="0.82" stop-color="#4FC8FF" stop-opacity="0"/>
-      <stop offset="0.925" stop-color="#4FC8FF" stop-opacity="0.32"/>
-      <stop offset="1" stop-color="#4FC8FF" stop-opacity="0"/>
+    <!-- 边缘内阴影：贴着球体轮廓压暗一圈，体积感主要来自这里 -->
+    <radialGradient id="inner-shadow" cx="0" cy="0" r="1" gradientTransform="translate(256 256) scale(232 232)" gradientUnits="userSpaceOnUse">
+      <stop offset="0.72" stop-color="#020D18" stop-opacity="0"/>
+      <stop offset="0.93" stop-color="#020D18" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#020D18" stop-opacity="0.5"/>
     </radialGradient>
 
-    <!-- 晨昏线：右下压暗，左上提亮 -->
-    <radialGradient id="terminator" cx="0" cy="0" r="1" gradientTransform="translate(196 168) rotate(52) scale(330 330)" gradientUnits="userSpaceOnUse">
-      <stop offset="0.55" stop-color="#04182C" stop-opacity="0"/>
-      <stop offset="0.88" stop-color="#04182C" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="#020C18" stop-opacity="0.6"/>
+    <!-- 晨昏线：右下更暗，但比上一版收敛 -->
+    <radialGradient id="terminator" cx="0" cy="0" r="1" gradientTransform="translate(206 176) rotate(52) scale(332 332)" gradientUnits="userSpaceOnUse">
+      <stop offset="0.6" stop-color="#02111E" stop-opacity="0"/>
+      <stop offset="0.88" stop-color="#02111E" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#010910" stop-opacity="0.38"/>
     </radialGradient>
 
-    <!-- 高光：球体左上方的一小片反光 -->
-    <radialGradient id="specular" cx="0" cy="0" r="1" gradientTransform="translate(170 132) rotate(40) scale(118 86)" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF" stop-opacity="0.55"/>
-      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.14"/>
+    <!-- 高光：左上方一小片柔和反光 -->
+    <radialGradient id="specular" cx="0" cy="0" r="1" gradientTransform="translate(168 128) rotate(42) scale(126 82)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.34"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.1"/>
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
     </radialGradient>
 
-    <linearGradient id="continent" x1="96" y1="120" x2="392" y2="404" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#A6F3CE"/>
-      <stop offset="0.5" stop-color="#4FCB95"/>
-      <stop offset="1" stop-color="#227F60"/>
+    <!-- 大气：球体之外的一圈柔光 -->
+    <radialGradient id="atmosphere" cx="0" cy="0" r="1" gradientTransform="translate(256 256) scale(258 258)" gradientUnits="userSpaceOnUse">
+      <stop offset="0.86" stop-color="#5CCBFF" stop-opacity="0"/>
+      <stop offset="0.935" stop-color="#5CCBFF" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#5CCBFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 轮廓亮边：左亮右暗，暗示光源方向 -->
+    <linearGradient id="rim" x1="96" y1="96" x2="428" y2="436" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D6F3FF" stop-opacity="0.75"/>
+      <stop offset="0.45" stop-color="#9ADCF8" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#5FBFE8" stop-opacity="0.12"/>
     </linearGradient>
+
+    <!-- 大陆：低饱和青绿，边缘用模糊柔化 -->
+    <linearGradient id="continent" x1="110" y1="110" x2="400" y2="410" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6FC7A4"/>
+      <stop offset="0.55" stop-color="#357F68"/>
+      <stop offset="1" stop-color="#1B5A49"/>
+    </linearGradient>
+
+    <filter id="soft-land" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur stdDeviation="3.2"/>
+    </filter>
 
     <linearGradient id="s-ink" x1="134" y1="150" x2="241" y2="355" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF"/>
-      <stop offset="0.5" stop-color="#EAFBFF"/>
-      <stop offset="1" stop-color="#A9DDFF"/>
+      <stop offset="0.55" stop-color="#F0FCFF"/>
+      <stop offset="1" stop-color="#B9E4FF"/>
     </linearGradient>
 
     <linearGradient id="c-ink" x1="319" y1="156" x2="391" y2="344" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8CFBEC"/>
-      <stop offset="0.48" stop-color="#43D3F6"/>
-      <stop offset="1" stop-color="#5B93FF"/>
+      <stop stop-color="#9AFCF0"/>
+      <stop offset="0.5" stop-color="#4ED8F7"/>
+      <stop offset="1" stop-color="#6C9EFF"/>
     </linearGradient>
 
-    <linearGradient id="orbit-ink" x1="90" y1="332" x2="438" y2="164" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8ED8FF" stop-opacity="0.05"/>
-      <stop offset="0.52" stop-color="#8ED8FF" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="#8DFFF1" stop-opacity="0.8"/>
+    <linearGradient id="orbit-ink" x1="72" y1="340" x2="446" y2="158" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7FD4FF" stop-opacity="0.02"/>
+      <stop offset="0.55" stop-color="#9FE3FF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#9DFFF2" stop-opacity="0.55"/>
     </linearGradient>
+
+    <radialGradient id="grid-fade" cx="0" cy="0" r="1" gradientTransform="translate(256 256) scale(232 232)" gradientUnits="userSpaceOnUse">
+      <stop offset="0.7" stop-color="#FFFFFF"/>
+      <stop offset="0.93" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <mask id="grid-mask">
+      <circle cx="256" cy="256" r="230" fill="url(#grid-fade)"/>
+    </mask>
 
     <clipPath id="globe-clip">
       <circle cx="256" cy="256" r="230"/>
     </clipPath>
   </defs>
 
-  <!-- 大气光辉（球体之外的那圈淡青） -->
+  <!-- 大气柔光 -->
   <circle cx="256" cy="256" r="256" fill="url(#atmosphere)"/>
 
   <g clip-path="url(#globe-clip)">
-    <!-- 海洋 -->
     <circle cx="256" cy="256" r="230" fill="url(#ocean)"/>
 
-    <!-- 经纬网：线条很淡，只在球体内部，用来读成「球」而不是「圆」 -->
-    <g stroke="#DDF6FF" stroke-opacity="0.11" stroke-width="1.6">
-      <ellipse cx="256" cy="256" rx="230" ry="46"/>
-      <ellipse cx="256" cy="256" rx="230" ry="104"/>
-      <ellipse cx="256" cy="256" rx="230" ry="160"/>
-      <ellipse cx="256" cy="256" rx="230" ry="206"/>
-      <ellipse cx="256" cy="256" rx="52" ry="230"/>
-      <ellipse cx="256" cy="256" rx="118" ry="230"/>
-      <ellipse cx="256" cy="256" rx="180" ry="230"/>
+    <!-- 大陆：低透明度 + 柔化边缘，只当纹理，不抢字母 -->
+    <g filter="url(#soft-land)" fill="url(#continent)" fill-opacity="0.38" stroke="#CFF7E4" stroke-opacity="0.12" stroke-width="2">
+      <path d="M 86 96 C 128 66 196 70 214 102 C 228 124 206 142 180 146 C 152 150 138 162 114 154 C 90 145 72 120 86 96 Z"/>
+      <path d="M 366 92 C 402 80 436 106 442 140 C 448 168 424 186 398 182 C 374 178 356 156 356 132 C 356 114 356 98 366 92 Z"/>
+      <path d="M 96 304 C 126 286 166 294 176 320 C 186 346 164 374 136 379 C 106 384 82 358 84 332 C 86 316 88 308 96 304 Z"/>
+      <path d="M 336 366 C 366 350 402 366 412 394 C 422 422 398 446 368 446 C 338 446 316 422 318 396 C 320 380 326 372 336 366 Z"/>
     </g>
 
-    <!-- 大陆：几块抽象色块，避开正中（那里放字母），别做成真实地图 -->
-    <g fill="url(#continent)" fill-opacity="0.8">
-      <path d="M 92 88 C 136 62 194 72 214 104 C 226 126 206 146 178 150 C 150 154 132 166 112 156 C 88 145 74 118 92 88 Z"/>
-      <path d="M 362 94 C 398 80 434 104 442 138 C 450 170 426 190 398 186 C 372 182 354 158 354 132 C 354 116 354 100 362 94 Z"/>
-      <path d="M 100 300 C 130 282 168 290 178 318 C 188 344 166 374 138 380 C 108 387 80 360 82 332 C 84 314 90 305 100 300 Z"/>
-      <path d="M 332 362 C 364 346 402 362 412 392 C 422 422 398 448 366 448 C 336 448 314 422 316 394 C 318 376 320 368 332 362 Z"/>
+    <!-- 经纬网：只留六条，线更细更淡 -->
+    <g stroke="#E6F9FF" stroke-opacity="0.09" stroke-width="1.3" mask="url(#grid-mask)">
+      <ellipse cx="256" cy="256" rx="230" ry="62"/>
+      <ellipse cx="256" cy="256" rx="230" ry="132"/>
+      <ellipse cx="256" cy="256" rx="230" ry="192"/>
+      <ellipse cx="256" cy="256" rx="78" ry="230"/>
+      <ellipse cx="256" cy="256" rx="150" ry="230"/>
+      <ellipse cx="256" cy="256" rx="202" ry="230"/>
     </g>
 
-    <!-- 晨昏线与高光：一个压暗右下，一个提亮左上 -->
     <circle cx="256" cy="256" r="230" fill="url(#terminator)"/>
+    <circle cx="256" cy="256" r="230" fill="url(#inner-shadow)"/>
     <circle cx="256" cy="256" r="230" fill="url(#specular)"/>
+    <circle cx="256" cy="256" r="221" fill="none" stroke="#EAF9FF" stroke-opacity="0.07" stroke-width="12"/>
   </g>
 
-  <!-- 球体边缘：一圈亮边，让轮廓在深色任务栏上也清楚 -->
-  <circle cx="256" cy="256" r="229" stroke="#AEE8FF" stroke-opacity="0.55" stroke-width="3"/>
+  <!-- 轮廓亮边 -->
+  <circle cx="256" cy="256" r="229.5" stroke="url(#rim)" stroke-width="2.5"/>
 
-  <!-- 轨道：斜跨球体的一圈，末端有个小「卫星」 -->
+  <!-- 轨道：更细，卫星更小 -->
   <g>
-    <ellipse cx="256" cy="256" rx="252" ry="138" transform="rotate(-24 256 256)" stroke="url(#orbit-ink)" stroke-width="3"/>
-    <circle cx="455" cy="150" r="7" fill="#A8FFF4"/>
-    <circle cx="455" cy="150" r="14" fill="#A8FFF4" fill-opacity="0.22"/>
+    <ellipse cx="256" cy="256" rx="250" ry="136" transform="rotate(-24 256 256)" stroke="url(#orbit-ink)" stroke-width="2"/>
+    <circle cx="452" cy="147" r="5" fill="#B6FFF5"/>
+    <circle cx="452" cy="147" r="10" fill="#B6FFF5" fill-opacity="0.16"/>
   </g>
 
-  <!-- SC 字母：先铺一层深色粗描边保证在球体上也有对比，再压上冰蓝/青色 -->
+  <!-- SC 字母：深色底描边更柔和，主体渐变提亮 -->
   <g id="monogram" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <g stroke="#03141F" stroke-opacity="0.55" stroke-width="64" transform="translate(2 3)">
+    <g stroke="#041A2E" stroke-opacity="0.36" stroke-width="60" transform="translate(2 3)">
       <path d="M 237 179 C 216 155 174 151 146 168 C 116 186 117 219 150 237 L 210 266 C 246 283 246 316 216 337 C 189 356 147 351 122 327"/>
       <path d="M 399 181 C 374 155 334 151 306 179 C 277 209 277 288 306 320 C 333 350 373 350 399 322"/>
     </g>
-    <g stroke-width="46">
+    <g stroke-width="44">
       <path id="letter-s" d="M 237 179 C 216 155 174 151 146 168 C 116 186 117 219 150 237 L 210 266 C 246 283 246 316 216 337 C 189 356 147 351 122 327" stroke="url(#s-ink)"/>
       <path id="letter-c" d="M 399 181 C 374 155 334 151 306 179 C 277 209 277 288 306 320 C 333 350 373 350 399 322" stroke="url(#c-ink)"/>
     </g>

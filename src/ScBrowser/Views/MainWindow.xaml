@@ -301,7 +301,6 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0" Style="{StaticResource ToolbarButtonStyle}"
@@ -373,36 +372,46 @@
                                               Converter={StaticResource SecurityStateToGlyph}}" />
                         </Button>
 
-                        <TextBox Grid.Column="1"
-                                 x:Name="AddressBar"
-                                 Style="{StaticResource AddressBarTextBoxStyle}"
-                                 FontFamily="Segoe UI"
-                                 Text="{Binding AddressBarText, UpdateSourceTrigger=PropertyChanged}"
-                                 KeyDown="AddressBar_KeyDown"
-                                 PreviewKeyDown="AddressBar_PreviewKeyDown"
-                                 TextChanged="AddressBar_TextChanged"
-                                 PreviewMouseLeftButtonDown="AddressBar_PreviewMouseLeftButtonDown"
-                                 GotKeyboardFocus="AddressBar_GotKeyboardFocus"
-                                 LostKeyboardFocus="AddressBar_LostKeyboardFocus" />
+                        <Grid Grid.Column="1">
+                            <TextBox x:Name="AddressBar"
+                                     Style="{StaticResource AddressBarTextBoxStyle}"
+                                     FontFamily="Segoe UI"
+                                     Padding="12,0,34,0"
+                                     Text="{Binding AddressBarText, UpdateSourceTrigger=PropertyChanged}"
+                                     KeyDown="AddressBar_KeyDown"
+                                     PreviewKeyDown="AddressBar_PreviewKeyDown"
+                                     TextChanged="AddressBar_TextChanged"
+                                     PreviewMouseLeftButtonDown="AddressBar_PreviewMouseLeftButtonDown"
+                                     GotKeyboardFocus="AddressBar_GotKeyboardFocus"
+                                     LostKeyboardFocus="AddressBar_LostKeyboardFocus" />
+
+                            <!-- 查找指示：查找面板打开时出现在输入框右端（Chrome 的做法）。
+                                 Focusable=False，点它不会把焦点从地址栏抢走。 -->
+                            <Button HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Width="26" Height="26"
+                                    Margin="0,0,4,0"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Focusable="False"
+                                    ToolTip="在页面中查找 (Ctrl+F)"
+                                    Visibility="{Binding IsFindBarVisible,
+                                                 RelativeSource={RelativeSource AncestorType=Window},
+                                                 Converter={StaticResource BoolToVisibility},
+                                                 FallbackValue=Collapsed}"
+                                    Click="FindButton_Click">
+                                <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="13"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           Text="&#xE721;" />
+                            </Button>
+                        </Grid>
                     </Grid>
                 </Border>
 
-                <!-- 查找指示：查找面板打开时出现（与 Chrome 地址栏右侧的放大镜一致） -->
-                <Button Grid.Column="5"
-                        Style="{StaticResource ToolbarButtonStyle}"
-                        ToolTip="在页面中查找 (Ctrl+F)"
-                        Visibility="{Binding IsFindBarVisible,
-                                     RelativeSource={RelativeSource AncestorType=Window},
-                                     Converter={StaticResource BoolToVisibility},
-                                     FallbackValue=Collapsed}"
-                        Click="FindButton_Click">
-                    <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15"
-                               Foreground="{DynamicResource AccentBrush}"
-                               Text="&#xE721;" />
-                </Button>
-
                 <!-- 扩展按钮：先「拼图」菜单（未固定的扩展），再已固定的扩展按钮 -->
-                <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Style="{StaticResource ToolbarButtonStyle}"
                             ToolTip="扩展程序（未固定）"
                             Visibility="{Binding HasUnpinnedExtensions,
@@ -442,7 +451,7 @@
                 </StackPanel>
 
                 <!-- 书签星标：未收藏为空心星，已收藏为实心星 + 强调色 -->
-                <Button Grid.Column="7" Style="{StaticResource ToolbarButtonStyle}"
+                <Button Grid.Column="6" Style="{StaticResource ToolbarButtonStyle}"
                         ToolTip="收藏此页 (Ctrl+D)"
                         Command="{Binding ToggleBookmarkCommand}">
                     <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15">
@@ -462,7 +471,7 @@
                 </Button>
 
                 <!-- 下载指示：只在有进行中的下载时出现，点击直达下载内容页 -->
-                <Button Grid.Column="8" Style="{StaticResource ToolbarButtonStyle}"
+                <Button Grid.Column="7" Style="{StaticResource ToolbarButtonStyle}"
                         ToolTip="下载内容 (Ctrl+J)"
                         Visibility="{Binding HasActiveDownloads,
                                      Converter={StaticResource BoolToVisibility},
@@ -474,7 +483,7 @@
                 </Button>
 
                 <!-- 主菜单 -->
-                <Button Grid.Column="9" x:Name="MenuButton"
+                <Button Grid.Column="8" x:Name="MenuButton"
                         Style="{StaticResource ToolbarButtonStyle}"
                         Content="&#xE712;" ToolTip="菜单"
                         Click="MenuButton_Click">
