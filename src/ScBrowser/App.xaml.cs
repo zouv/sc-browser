@@ -102,6 +102,7 @@ public partial class App : Application
         _ = services.GetRequiredService<DownloadManager>();   // 订阅各窗口的下载事件
         _ = services.GetRequiredService<WebMessageRouter>();  // 订阅内部页面消息
         windows.Downloads = services.GetRequiredService<DownloadManager>();  // 工具栏下载指示器 / 另存为对话框的宿主
+        windows.Extensions = services.GetRequiredService<ExtensionService>();  // 工具栏扩展按钮
 
         windows.CreateWindow(new BrowserWindowOptions(IsPrimary: true)).Show();
 

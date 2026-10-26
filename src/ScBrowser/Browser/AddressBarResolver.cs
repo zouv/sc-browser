@@ -16,7 +16,7 @@ public static class AddressBarResolver
     private static readonly string[] KnownSchemes =
     [
         "http://", "https://", "file://", "about:", "data:", "view-source:",
-        "edge://", "chrome://", "browser://", "ftp://",
+        "edge://", "chrome://", "chrome-extension://", "browser://", "ftp://",
     ];
 
     /// <summary>

@@ -83,6 +83,27 @@
       <p class="hint warn">该开关在 WebView2 环境创建时生效，<strong>改动需要重启应用</strong>。</p>
     </section>
 
+    <!-- 密码与自动填充 -->
+    <section class="card">
+      <h2 class="card-title">密码与自动填充</h2>
+      <div class="field row">
+        <label for="save-passwords">保存密码</label>
+        <label class="switch">
+          <input type="checkbox" id="save-passwords" />
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="field row">
+        <label for="autofill-forms">自动填充表单</label>
+        <label class="switch">
+          <input type="checkbox" id="autofill-forms" />
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <p class="hint">密码由浏览器内核保存在本机用户数据目录，不会上传。关闭后新密码不再保存；
+        已保存的密码可在下方「清除浏览数据」里删除。</p>
+    </section>
+
     <!-- 隐私 -->
     <section class="card">
       <h2 class="card-title">隐私与数据</h2>
@@ -91,6 +112,8 @@
         <label><input type="checkbox" id="clear-cache" /> 缓存的图片与文件</label>
         <label><input type="checkbox" id="clear-cookies" /> Cookie 及网站登录状态</label>
         <label><input type="checkbox" id="clear-storage" /> 网站存储数据（LocalStorage / IndexedDB）</label>
+        <label><input type="checkbox" id="clear-passwords" /> 已保存的密码</label>
+        <label><input type="checkbox" id="clear-autofill" /> 表单自动填充数据</label>
       </div>
       <button class="btn btn-danger" id="clear-now">清除所选数据</button>
     </section>

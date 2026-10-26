@@ -131,6 +131,19 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
     partial void OnIsMutedChanged(bool value) => OnPropertyChanged(nameof(ShowAudioIcon));
 
+    /// <summary>所属标签组的名称；不在组里时为 <c>null</c>。</summary>
+    [ObservableProperty]
+    private string? _groupName;
+
+    /// <summary>标签组颜色（#RRGGBB）。</summary>
+    [ObservableProperty]
+    private string? _groupColor;
+
+    /// <summary>是否属于某个标签组。</summary>
+    public bool HasGroup => !string.IsNullOrEmpty(GroupName);
+
+    partial void OnGroupNameChanged(string? value) => OnPropertyChanged(nameof(HasGroup));
+
     /// <summary>最近一次被激活的时间；后台标签据此判断是否可以休眠。</summary>
     public DateTime LastActivatedAt { get; private set; } = DateTime.UtcNow;
 

@@ -7,7 +7,11 @@
 
   function render(entries) {
     if (!entries || entries.length === 0) {
-      listEl.innerHTML = '<div class="list-empty">尚未安装任何扩展。用上方按钮加载。</div>';
+      listEl.textContent = "";
+      var empty = document.createElement("div");
+      empty.className = "list-empty";
+      empty.textContent = "尚未安装任何扩展。可以粘贴商店链接安装，或用上方按钮加载本地扩展。";
+      listEl.appendChild(empty);
       summaryEl.textContent = "0 个扩展";
       return;
     }
@@ -23,17 +27,69 @@
       var main = document.createElement("div");
       main.className = "extension-main";
 
+      var head = document.createElement("div");
+      head.className = "extension-head";
+
+      if (entry.iconDataUrl) {
+        var icon = document.createElement("img");
+        icon.className = "extension-icon";
+        icon.src = entry.iconDataUrl;
+        icon.alt = "";
+        head.appendChild(icon);
+      }
+
+      var names = document.createElement("div");
+      names.className = "extension-names";
+
       var name = document.createElement("div");
       name.className = "extension-name truncate";
       name.textContent = entry.name || "(未命名扩展)";
+      names.appendChild(name);
 
       var id = document.createElement("div");
       id.className = "extension-id truncate";
-      id.textContent = entry.id;
+      id.textContent = [
+        entry.version ? "v" + entry.version : null,
+        entry.manifestVersion ? "Manifest V" + entry.manifestVersion : null,
+        entry.id,
+      ].filter(Boolean).join(" · ");
       id.title = entry.id;
+      names.appendChild(id);
 
-      main.appendChild(name);
-      main.appendChild(id);
+      head.appendChild(names);
+      main.appendChild(head);
+
+      if (entry.manifestVersion && entry.manifestVersion < 3) {
+        var mvWarning = document.createElement("div");
+        mvWarning.className = "extension-warning";
+        mvWarning.textContent = "Manifest V2 扩展：新版 Chromium 已逐步停止支持。";
+        main.appendChild(mvWarning);
+      }
+
+      if (entry.description) {
+        var description = document.createElement("div");
+        description.className = "extension-description";
+        description.textContent = entry.description;
+        main.appendChild(description);
+      }
+
+      if (entry.permissions && entry.permissions.length > 0) {
+        var perms = document.createElement("div");
+        perms.className = "extension-permissions";
+        entry.permissions.slice(0, 8).forEach(function (perm) {
+          var chip = document.createElement("span");
+          chip.className = "permission-chip";
+          chip.textContent = perm;
+          perms.appendChild(chip);
+        });
+        if (entry.permissions.length > 8) {
+          var more = document.createElement("span");
+          more.className = "permission-chip";
+          more.textContent = "+" + (entry.permissions.length - 8);
+          perms.appendChild(more);
+        }
+        main.appendChild(perms);
+      }
 
       var actions = document.createElement("div");
       actions.className = "extension-actions";
@@ -59,6 +115,19 @@
       label.appendChild(checkbox);
       label.appendChild(track);
       actions.appendChild(label);
+
+      if (entry.optionsPath) {
+        var optionsBtn = document.createElement("button");
+        optionsBtn.className = "btn";
+        optionsBtn.textContent = "选项";
+        optionsBtn.addEventListener("click", function () {
+          sc.emit("navigation.openInNewTab", {
+            url: "chrome-extension://" + entry.id + "/" + entry.optionsPath,
+            active: true,
+          });
+        });
+        actions.appendChild(optionsBtn);
+      }
 
       var removeBtn = document.createElement("button");
       removeBtn.className = "btn btn-danger";
@@ -107,6 +176,29 @@
       .then(function (info) {
         if (info) {
           sc.toast("已安装：" + (info.name || info.id));
+        }
+      })
+      .catch(function (err) {
+        sc.toast("安装失败：" + err.message);
+      });
+  });
+
+  document.getElementById("install-store").addEventListener("click", function () {
+    var input = document.getElementById("store-input");
+    var value = input.value.trim();
+    if (!value) {
+      sc.toast("请先粘贴商店链接或扩展 ID");
+      return;
+    }
+
+    sc.toast("正在下载并校验扩展…");
+    sc.send("extensions.installFromStore", { input: value })
+      .then(function (info) {
+        if (info) {
+          input.value = "";
+          sc.toast("已安装：" + (info.name || info.id));
+        } else {
+          sc.toast("已取消安装");
         }
       })
       .catch(function (err) {

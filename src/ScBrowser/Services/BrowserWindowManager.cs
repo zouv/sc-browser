@@ -72,6 +72,15 @@ public sealed class BrowserWindowManager
         _defaultBrowser = defaultBrowser;
         _loggerFactory = loggerFactory;
         _logger = logger;
+
+        // 密码保存 / 自动填充是 profile 级设置：改完立刻应用到所有窗口的标签。
+        _settings.Changed += (_, _) =>
+        {
+            foreach (var manager in _tabManagers)
+            {
+                manager.ApplyProfilePreferences();
+            }
+        };
     }
 
     /// <summary>所有窗口（含无痕窗口）。</summary>
@@ -97,6 +106,7 @@ public sealed class BrowserWindowManager
         var tabs = new TabManager(
             _environment,
             _history,
+            _settings,
             _loggerFactory.CreateLogger<TabManager>(),
             options.Kind);
 
@@ -104,7 +114,7 @@ public sealed class BrowserWindowManager
         tabs.ApplyWebTheme(_webTheme);
         TabManagerCreated?.Invoke(this, tabs);
 
-        var viewModel = new MainViewModel(tabs, _bookmarks, _settings, _history, Downloads);
+        var viewModel = new MainViewModel(tabs, _bookmarks, _settings, _history, Downloads, Extensions);
         var window = new MainWindow(
             viewModel,
             tabs,
@@ -133,6 +143,9 @@ public sealed class BrowserWindowManager
     /// 两边互相依赖，所以由组合根（<c>App</c>）在创建窗口前把实例挂进来，而不是走构造函数注入。
     /// </summary>
     public DownloadManager? Downloads { get; set; }
+
+    /// <summary>扩展服务（工具栏扩展按钮用）。由组合根在创建窗口前挂上。</summary>
+    public ExtensionService? Extensions { get; set; }
 
     /// <summary>某个标签页集合所属的窗口；找不到返回 <c>null</c>（系统对话框要挂在它上面）。</summary>
     public MainWindow? WindowOf(TabManager tabs) =>
@@ -314,7 +327,7 @@ public sealed class BrowserWindowManager
             return;
         }
 
-        _session.Save(snapshot, activeIndex);
+        _session.Save(snapshot, SessionStore.SnapshotGroups(tabs!.Tabs), activeIndex);
         _lastSavedSessionKey = key;
     }
 

@@ -121,14 +121,22 @@ public sealed class StartupCommandRunner
             if (Directory.Exists(path))
             {
                 var info = await _extensions.InstallFromFolderAsync(profile, path).ConfigureAwait(true);
-                _logger.LogInformation("命令行安装扩展成功：{Name}（{Id}）", info.Name, info.Id);
+                if (info is not null)
+                {
+                    _logger.LogInformation("命令行安装扩展成功：{Name}（{Id}）", info.Name, info.Id);
+                }
+
                 return;
             }
 
             if (File.Exists(path) && Path.GetExtension(path).Equals(".crx", StringComparison.OrdinalIgnoreCase))
             {
                 var info = await _extensions.InstallFromCrxAsync(profile, path).ConfigureAwait(true);
-                _logger.LogInformation("命令行安装 CRX 成功：{Name}（{Id}）", info.Name, info.Id);
+                if (info is not null)
+                {
+                    _logger.LogInformation("命令行安装 CRX 成功：{Name}（{Id}）", info.Name, info.Id);
+                }
+
                 return;
             }
 

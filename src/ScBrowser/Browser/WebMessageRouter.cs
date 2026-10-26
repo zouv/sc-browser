@@ -308,8 +308,14 @@ public sealed class WebMessageRouter
                         return null;
                     }
 
-                    var info = await _extensions.InstallFromFolderAsync(ProfileOf(tab), folder).ConfigureAwait(true);
-                    Broadcast("extensions.changed");
+                    var info = await _extensions
+                        .InstallFromFolderAsync(ProfileOf(tab), folder, m => ConfirmExtensionInstall(manager, m))
+                        .ConfigureAwait(true);
+                    if (info is not null)
+                    {
+                        Broadcast("extensions.changed");
+                    }
+
                     return info;
                 }
 
@@ -321,8 +327,34 @@ public sealed class WebMessageRouter
                         return null;
                     }
 
-                    var info = await _extensions.InstallFromCrxAsync(ProfileOf(tab), crx).ConfigureAwait(true);
-                    Broadcast("extensions.changed");
+                    var info = await _extensions
+                        .InstallFromCrxAsync(ProfileOf(tab), crx, m => ConfirmExtensionInstall(manager, m))
+                        .ConfigureAwait(true);
+                    if (info is not null)
+                    {
+                        Broadcast("extensions.changed");
+                    }
+
+                    return info;
+                }
+
+            case "extensions.installFromStore":
+                {
+                    // 支持直接粘扩展 ID，或商店详情页链接（Chrome / Edge）。
+                    var input = GetString(payload, "input") ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(input))
+                    {
+                        return null;
+                    }
+
+                    var info = await _extensions
+                        .InstallFromStoreAsync(ProfileOf(tab), input, m => ConfirmExtensionInstall(manager, m))
+                        .ConfigureAwait(true);
+                    if (info is not null)
+                    {
+                        Broadcast("extensions.changed");
+                    }
+
                     return info;
                 }
 
@@ -424,6 +456,16 @@ public sealed class WebMessageRouter
             kinds |= CoreWebView2BrowsingDataKinds.LocalStorage | CoreWebView2BrowsingDataKinds.IndexedDb;
         }
 
+        if (GetBool(payload, "passwords", false))
+        {
+            kinds |= CoreWebView2BrowsingDataKinds.PasswordAutosave;
+        }
+
+        if (GetBool(payload, "autofill", false))
+        {
+            kinds |= CoreWebView2BrowsingDataKinds.GeneralAutofill;
+        }
+
         if (kinds == 0)
         {
             return;
@@ -483,6 +525,38 @@ public sealed class WebMessageRouter
         {
             _logger.LogError(ex, "在资源管理器中定位文件失败：{Path}", path);
         }
+    }
+
+    /// <summary>
+    /// 安装前把扩展申请的权限摊给用户看。扩展代码等于本机程序，装之前至少要知道它能做什么。
+    /// </summary>
+    private bool ConfirmExtensionInstall(TabManager manager, ExtensionMetadata metadata)
+    {
+        var permissions = metadata.Permissions.Count > 0
+            ? string.Join(Environment.NewLine, metadata.Permissions.Select(p => "  - " + p))
+            : "  （未声明权限）";
+
+        var manifestNote = metadata.ManifestVersion < 3
+            ? Environment.NewLine + Environment.NewLine + "注意：这是 Manifest V2 扩展，新版 Chromium 已逐步停止支持。"
+            : string.Empty;
+
+        var owner = _windows.WindowOf(manager) ?? Application.Current?.MainWindow;
+
+        var nl = Environment.NewLine;
+        var message = $"扩展：{metadata.Name}{nl}"
+                      + $"版本：{metadata.Version}（Manifest V{metadata.ManifestVersion}）{nl}{nl}"
+                      + "它将申请以下权限：" + nl + permissions + manifestNote
+                      + nl + nl + "扩展代码会以这些权限运行，确认安装？";
+
+        var answer = MessageBox.Show(
+            owner!,
+            message,
+            "安装扩展",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+
+        return answer == MessageBoxResult.Yes;
     }
 
     /// <summary>在资源管理器中打开一个目录（<see cref="RevealInExplorer"/> 只认文件，目录要走这里）。</summary>

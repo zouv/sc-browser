@@ -15,6 +15,7 @@ public sealed class TabManager
 {
     private readonly BrowserEnvironmentProvider _environment;
     private readonly HistoryRepository _history;
+    private readonly SettingsService _settings;
     private readonly ILogger<TabManager> _logger;
     private int _nextId = 1;
 
@@ -28,11 +29,13 @@ public sealed class TabManager
     public TabManager(
         BrowserEnvironmentProvider environment,
         HistoryRepository history,
+        SettingsService settings,
         ILogger<TabManager> logger,
         BrowserSessionKind sessionKind = BrowserSessionKind.Normal)
     {
         _environment = environment;
         _history = history;
+        _settings = settings;
         _logger = logger;
         SessionKind = sessionKind;
 
@@ -249,6 +252,36 @@ public sealed class TabManager
 
         // CoreWebView2 就绪后才能拿到 profile 设置颜色方案，所以放在这里。
         ApplyWebTheme(tab);
+        ApplyProfilePreferences(tab);
+    }
+
+    /// <summary>把「保存密码 / 自动填充」写进 profile（profile 级设置，所有标签共享）。</summary>
+    private void ApplyProfilePreferences(BrowserTab tab)
+    {
+        if (tab.Core?.Profile is not { } profile)
+        {
+            return;
+        }
+
+        try
+        {
+            profile.IsPasswordAutosaveEnabled = _settings.Current.SavePasswords;
+            profile.IsGeneralAutofillEnabled = _settings.Current.AutofillForms;
+        }
+        catch (Exception ex)
+        {
+            // 旧运行时没有这两个属性：只是少了自动填充，不影响浏览。
+            _logger.LogDebug(ex, "同步密码 / 自动填充设置失败");
+        }
+    }
+
+    /// <summary>设置变更后，把 profile 级偏好重新应用到本窗口所有已就绪的标签。</summary>
+    public void ApplyProfilePreferences()
+    {
+        foreach (var tab in Tabs)
+        {
+            ApplyProfilePreferences(tab);
+        }
     }
 
     /// <summary>引擎创建后把控件挂进本窗口的内容区（由 <see cref="BrowserTab.EngineAttached"/> 触发）。</summary>
@@ -384,6 +417,36 @@ public sealed class TabManager
 
         var index = Tabs.IndexOf(ActiveTab);
         Activate(Tabs[(index - 1 + Tabs.Count) % Tabs.Count]);
+    }
+
+    /// <summary>标签组配色（按创建顺序循环使用）。</summary>
+    public static readonly IReadOnlyList<string> GroupColors =
+    [
+        "#1a73e8", "#d93025", "#188038", "#f9ab00", "#a142f4", "#12b5cb",
+    ];
+
+    /// <summary>当前窗口里已有的标签组（按名称去重，保持出现顺序）。</summary>
+    public IReadOnlyList<(string Name, string Color)> Groups =>
+        Tabs.Where(t => t.GroupName is { Length: > 0 })
+            .Select(t => (Name: t.GroupName!, Color: t.GroupColor ?? GroupColors[0]))
+            .DistinctBy(g => g.Name, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>把一组标签放进同一个标签组（同名同色）。</summary>
+    public void AssignGroup(IEnumerable<BrowserTab> tabs, string name, string color)
+    {
+        foreach (var tab in tabs)
+        {
+            tab.GroupName = name;
+            tab.GroupColor = color;
+        }
+    }
+
+    /// <summary>把标签移出标签组。</summary>
+    public void RemoveFromGroup(BrowserTab tab)
+    {
+        tab.GroupName = null;
+        tab.GroupColor = null;
     }
 
     /// <summary>把标签移动到新位置（拖拽重排）。</summary>

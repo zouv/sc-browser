@@ -146,7 +146,13 @@ public partial class MainWindow : Window
         // 主窗口按会话恢复；其它窗口用创建时给的地址（无痕窗口永远不读写会话）。
         var urls = _options.Urls;
         var activeIndex = _options.ActiveIndex;
-        if (_options.IsPrimary && _settings.Current.RestoreSessionOnStartup && _session.Load() is { } snapshot)
+        SessionSnapshot? snapshot = null;
+        if (_options.IsPrimary && _settings.Current.RestoreSessionOnStartup)
+        {
+            snapshot = _session.Load();
+        }
+
+        if (snapshot is not null)
         {
             urls = snapshot.Urls;
             activeIndex = snapshot.ActiveIndex;
@@ -163,8 +169,11 @@ public partial class MainWindow : Window
         // 空列表 = 拖出成新窗口：不建初始标签，等被拖来的标签挂进来。
         if (_options.Urls is not { Count: 0 })
         {
-            await _viewModel.StartAsync(urls, activeIndex);
+            await _viewModel.StartAsync(urls, activeIndex, snapshot?.Groups);
         }
+
+        // 首个标签就绪后才有 profile，才能列扩展。
+        _ = _viewModel.RefreshExtensionsAsync();
 
         // 命令行请求（如 --install-extension）要在首个标签就绪后再执行：扩展按 profile 管理。
         if (_startupCommands is not null)
@@ -312,216 +321,6 @@ public partial class MainWindow : Window
         _windows.CreateWindow(new BrowserWindowOptions(Kind: BrowserSessionKind.Incognito)).Show();
 
     // --------------------------------------------------------------------- //
-    // 标签条交互：中键关闭 / 左键拖拽重排 / 右键菜单
-    //
-    // 拖拽没有用 WPF 的 DragDrop（它接管鼠标、显示系统拖拽影像、只在落点才换位），
-    // 而是自己捕获鼠标：被拖标签跟着鼠标**横向**移动，其他标签实时让位——即 Chrome 的手感。
-    // 位置补偿是关键：把渲染偏移设成「视觉左边缘 − 布局左边缘」，这样挪位后标签不会跳。
-    // --------------------------------------------------------------------- //
-
-    /// <summary>超过这个位移（逻辑像素）才算拖拽，否则「点击」会被误判成拖拽。</summary>
-    private const double DragThreshold = 4;
-
-    /// <summary>拖拽中的标签抬到最上层，避免被相邻标签盖住。</summary>
-    private const int DraggingZIndex = 100;
-
-    /// <summary>标签条容器（ItemsControl 的 ItemsPanel 实例）；延迟解析，因为模板要等首帧才应用。</summary>
-    private Panel? _tabStripPanel;
-
-    private BrowserTab? _dragTab;
-    private FrameworkElement? _dragElement;
-    private TranslateTransform? _dragTransform;
-    private Point _dragStartPoint;
-    private double _dragGrabOffset;
-    private bool _isDragging;
-
-    /// <summary>鼠标中键点击标签 → 关闭（与 Chrome 一致：中键永远是「关掉它」）。</summary>
-    private void TabButton_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ChangedButton == MouseButton.Middle && TabOf(sender) is { } tab)
-        {
-            e.Handled = true;
-            _viewModel.CloseTabCommand.Execute(tab);
-        }
-    }
-
-    private void TabButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (TabOf(sender) is not { } tab || sender is not FrameworkElement element || ResolveTabStripPanel() is not { } panel)
-        {
-            return;
-        }
-
-        // 只有一个标签：拖它等于拖窗口（Chrome 行为）。标签条本身是标题栏命中区，
-        // 但按钮标了 IsHitTestVisibleInChrome，系统不会自动把它当标题栏，所以这里手动 DragMove。
-        if (_tabs.Tabs.Count == 1)
-        {
-            e.Handled = true;
-            try
-            {
-                DragMove();
-            }
-            catch (InvalidOperationException)
-            {
-                // 鼠标已经松开等边界情况：忽略。
-            }
-
-            return;
-        }
-
-        // 先只记录，不捕获鼠标——否则普通点击也会走拖拽路径、标签激活不了。
-        _dragTab = tab;
-        _dragElement = element;
-        _dragStartPoint = e.GetPosition(panel);
-
-        // 抓取偏移 = 指针相对「标签当前槽位左边缘」的距离。必须用槽位几何：
-        // 元素本身在 DataTemplate 里，对它调 VisualTreeHelper.GetOffset 得到的是
-        // 「相对 ContentPresenter」的偏移（恒为 0），不是标签条坐标——用它算补偿会跳位。
-        var index = _tabs.Tabs.IndexOf(tab);
-        var slots = EnumerateTabSlots();
-        _dragGrabOffset = _dragStartPoint.X - (index >= 0 && index < slots.Count ? slots[index].Left : 0);
-
-        _isDragging = false;
-    }
-
-    private void TabButton_PreviewMouseMove(object sender, MouseEventArgs e) => ContinueDrag(e);
-
-    private void OnWindowMouseMove(object sender, MouseEventArgs e) => ContinueDrag(e);
-
-    /// <summary>拖拽候选 → 正式拖拽 → 跟随鼠标。</summary>
-    private void ContinueDrag(MouseEventArgs e)
-    {
-        if (_dragTab is null || _dragElement is null || ResolveTabStripPanel() is not { } panel
-            || e.LeftButton != MouseButtonState.Pressed)
-        {
-            return;
-        }
-
-        var now = e.GetPosition(panel);
-
-        if (!_isDragging)
-        {
-            // 横竖都要看：只判断横向的话，往下拖（拖出去合并/分窗）永远起不了拖拽。
-            if (Math.Abs(now.X - _dragStartPoint.X) < DragThreshold
-                && Math.Abs(now.Y - _dragStartPoint.Y) < DragThreshold)
-            {
-                return;
-            }
-
-            BeginDrag();
-        }
-
-        UpdateDragPosition(now);
-    }
-
-    /// <summary>
-    /// 结束拖拽。拖拽过程中必须吞掉这次鼠标抬起，否则按钮会把它当成一次点击、
-    /// 顺手把标签激活——那样「拖完就跳走」会很突兀。
-    /// </summary>
-    private void TabButton_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => FinishDrag(e);
-
-    private void OnWindowMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        if (_isDragging)
-        {
-            FinishDrag(e);
-        }
-    }
-
-    private void FinishDrag(MouseButtonEventArgs e)
-    {
-        if (!_isDragging)
-        {
-            _dragTab = null;
-            _dragElement = null;
-            return;
-        }
-
-        var dragged = _dragTab;
-        var stillInStrip = IsInTabStrip(e.GetPosition(TabItems));
-
-        // 屏幕坐标用「窗口 Left/Top + 窗口内偏移」算：拖到窗口外时偏移可以是负数，
-        // 仍然得到正确的屏幕 DIP，且不必处理 PointToScreen 的物理像素/DPI 换算。
-        var local = e.GetPosition(this);
-        var screenPoint = new Point(Left + local.X, Top + local.Y);
-
-        EndDrag();
-        e.Handled = true;
-
-        if (dragged is null)
-        {
-            return;
-        }
-
-        // 1) 松手时落在别的窗口的标签条上 → 合并进去（插到指针所在的槽位）。
-        var target = _windows.FindWindowAtTabStrip(screenPoint, this);
-        Serilog.Log.Debug(
-            "拖拽结束：标签 {TabId}，落点 ({X},{Y})，本窗口标签条内={InStrip}，目标窗口={Target}",
-            dragged.Id, screenPoint.X, screenPoint.Y, stillInStrip, target?.Title ?? "（无）");
-
-        if (target is not null && target.IsIncognito == IsIncognito)
-        {
-            _windows.MoveTabToWindow(dragged, target, target.TabIndexAtWindowX(screenPoint.X - target.Left));
-            return;
-        }
-
-        // 2) 否则只要离开了本窗口的标签条，就在指针位置开新窗口把标签迁过去。
-        //    （无痕与普通窗口之间不合并，所以上面不匹配时也走这条。）
-        if (!stillInStrip)
-        {
-            _windows.MoveTabToNewWindow(dragged, screenPoint);
-        }
-    }
-
-    /// <summary>本窗口是否无痕（拖拽合并时用来拒绝跨隐私会话迁移）。</summary>
-    public bool IsIncognito => _viewModel.IsIncognito;
-
-    /// <summary>
-    /// 屏幕点（DIP）是否落在本窗口的标签条上——跨窗口合并的判定区。
-    /// 用窗口几何而不是 HitTest：拖动时鼠标被原窗口捕获，命中测试拿不到别的窗口。
-    /// </summary>
-    public bool ContainsTabStripPoint(Point screenPoint)
-    {
-        const double tolerance = 8;
-        return IsVisible
-               && screenPoint.X >= Left - tolerance
-               && screenPoint.X <= Left + Width + tolerance
-               && screenPoint.Y >= Top - tolerance
-               && screenPoint.Y <= Top + TabStrip.ActualHeight + tolerance;
-    }
-
-    /// <summary>指针（相对本窗口的 X）落在标签条的哪个插入位置。</summary>
-    public int TabIndexAtWindowX(double windowX)
-    {
-        var panel = ResolveTabStripPanel();
-        if (panel is null)
-        {
-            return _tabs.Tabs.Count;
-        }
-
-        var origin = panel.TransformToAncestor(this).Transform(new Point(0, 0));
-        var x = windowX - origin.X;
-        var slots = EnumerateTabSlots();
-
-        for (var i = 0; i < slots.Count; i++)
-        {
-            if (x < (slots[i].Left + slots[i].Right) / 2)
-            {
-                return i;
-            }
-        }
-
-        return slots.Count;
-    }
-
-    /// <summary>指针是否仍算「在标签条里」（上下留 8px 容差，避免手抖就拖出窗口）。</summary>
-    private static bool IsInTabStrip(Point point, double height) =>
-        point.Y >= -8 && point.Y <= height + 8;
-
-    private bool IsInTabStrip(Point point) =>
-        IsInTabStrip(point, TabItems.ActualHeight);
-
-    // --------------------------------------------------------------------- //
     // 全屏（F11 + 网页视频全屏）与站点信息 / 证书
     // --------------------------------------------------------------------- //
 
@@ -641,6 +440,54 @@ public partial class MainWindow : Window
             RootLayout.Margin = default;
             ContentFrame.BorderThickness = default;
         }
+    }
+
+    /// <summary>点工具栏上的扩展按钮：有弹窗就开弹窗，否则打开选项页。</summary>
+    private void ExtensionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not MainViewModel.ExtensionButton item)
+        {
+            return;
+        }
+
+        var tab = _viewModel.ActiveTab;
+        if (tab?.Core is null)
+        {
+            return;
+        }
+
+        if (item.PopupUrl is { } popupUrl)
+        {
+            OpenExtensionPopup(item, popupUrl, (FrameworkElement)sender);
+            return;
+        }
+
+        if (item.OptionsUrl is { } optionsUrl)
+        {
+            _ = _tabs.CreateAsync(optionsUrl, activate: true);
+        }
+    }
+
+    private void OpenExtensionPopup(MainViewModel.ExtensionButton item, string url, FrameworkElement anchor)
+    {
+        var core = _viewModel.ActiveTab?.Core;
+        if (core is null)
+        {
+            return;
+        }
+
+        // 弹窗必须与标签共用同一个环境/profile，扩展的 chrome.* 能力才在弹窗里可用。
+        var options = _tabs.IsIncognito
+            ? BrowserSession.CreateControllerOptions(core.Environment, BrowserSessionKind.Incognito)
+            : null;
+
+        var screen = anchor.PointToScreen(new Point(0, anchor.ActualHeight));
+        var dpi = VisualTreeHelper.GetDpi(anchor);
+        var anchorDip = new Point(screen.X / dpi.DpiScaleX, screen.Y / dpi.DpiScaleY);
+
+        var popup = new ExtensionPopupWindow { Owner = this, Title = item.Name };
+        popup.Show();
+        _ = popup.OpenAsync(core.Environment, options, url, anchorDip, _tabs);
     }
 
     /// <summary>点锁形图标：显示站点信息（来源 / 安全状态 / 权限）。</summary>
@@ -795,6 +642,52 @@ public partial class MainWindow : Window
     private void TabMenu_Duplicate(object sender, RoutedEventArgs e) =>
         _viewModel.DuplicateTabCommand.Execute(TabOf(sender));
 
+    private void TabMenu_Opening(object sender, ContextMenuEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.ContextMenu is not { } menu || TabOf(sender) is not { } tab)
+        {
+            return;
+        }
+
+        var addTo = menu.Items.OfType<MenuItem>().FirstOrDefault(m => Equals(m.Tag, "add-to-group"));
+        if (addTo is null)
+        {
+            return;
+        }
+
+        addTo.Items.Clear();
+        foreach (var (name, color) in _tabs.Groups)
+        {
+            var item = new MenuItem { Header = name, Tag = color };
+            item.Click += (_, _) => _tabs.AssignGroup([tab], name, color);
+            addTo.Items.Add(item);
+        }
+
+        addTo.Visibility = addTo.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>把标签放进一个新组（名字按已有组数量递增，颜色循环）。</summary>
+    private void TabMenu_AddToNewGroup(object sender, RoutedEventArgs e)
+    {
+        if (TabOf(sender) is not { } tab)
+        {
+            return;
+        }
+
+        var index = _tabs.Groups.Count;
+        var name = $"标签组 {index + 1}";
+        var color = TabManager.GroupColors[index % TabManager.GroupColors.Count];
+        _tabs.AssignGroup([tab], name, color);
+    }
+
+    private void TabMenu_RemoveFromGroup(object sender, RoutedEventArgs e)
+    {
+        if (TabOf(sender) is { } tab)
+        {
+            _tabs.RemoveFromGroup(tab);
+        }
+    }
+
     private void TabMenu_Close(object sender, RoutedEventArgs e)
     {
         if (TabOf(sender) is { } tab)
@@ -808,491 +701,6 @@ public partial class MainWindow : Window
 
     private void TabMenu_CloseRight(object sender, RoutedEventArgs e) =>
         _viewModel.CloseTabsToRightCommand.Execute(TabOf(sender));
-
-    // --------------------------------------------------------------------- //
-    // 键盘快捷键
-    //
-    // 为什么放在窗口级 PreviewKeyDown 就够：WPF 版 WebView2 内部会把
-    // CoreWebView2Controller.AcceleratorKeyPressed 转发成 WPF 的
-    // PreviewKeyDown / KeyDown 重新抛出，因此即便焦点在网页里，这里也能收到。
-    // 前提是 BrowserTab 里已把 AreBrowserAcceleratorKeysEnabled 关掉，
-    // 否则 WebView2 会先把它当浏览器快捷键吃掉。
-    // --------------------------------------------------------------------- //
-
-    protected override void OnPreviewKeyDown(KeyEventArgs e)
-    {
-        if (TryHandleShortcut(e))
-        {
-            e.Handled = true;
-            return;
-        }
-
-        base.OnPreviewKeyDown(e);
-    }
-
-    private bool TryHandleShortcut(KeyEventArgs e)
-    {
-        // 地址栏下拉打开时，↑/↓/Enter/Esc 归它先用（Chrome 的行为）。
-        if (_suggestionPopup is { IsVisible: true } && IsAddressBarFocused() && HandleSuggestionKeys(e))
-        {
-            return true;
-        }
-
-        // Alt 组合键在 WPF 里表现为 Key.System，真实键值在 SystemKey 上。
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        var mods = Keyboard.Modifiers;
-
-        // 用「焦点是否在地址栏」判断是否该让路——比「编辑态」标记更准，
-        // 因为标记要靠用户敲键才置位，而快捷键可能在第一下敲击时就到达。
-        var isEditingText = IsAddressBarFocused();
-
-        switch (mods)
-        {
-            case ModifierKeys.Control:
-                switch (key)
-                {
-                    case Key.N:
-                        OpenNewWindow();
-                        return true;
-                    case Key.T:
-                        _viewModel.NewTabCommand.Execute(null);
-                        return true;
-                    case Key.W:
-                        _viewModel.CloseTabCommand.Execute(_viewModel.ActiveTab);
-                        return true;
-                    case Key.L when !isEditingText:
-                        FocusAddressBar();
-                        return true;
-                    case Key.R:
-                        _viewModel.ActiveTab?.Reload();
-                        return true;
-                    case Key.D:
-                        _viewModel.ToggleBookmarkCommand.Execute(null);
-                        return true;
-                    case Key.F:
-                        return ShowFindBar();
-                    case Key.P when !isEditingText:
-                        PrintActivePage();
-                        return true;
-                    case Key.S when !isEditingText:
-                        _ = SaveActivePageAsync();
-                        return true;
-                    case Key.U when !isEditingText:
-                        ViewSourceOfActivePage();
-                        return true;
-                    case Key.H when !isEditingText:
-                        _viewModel.OpenHistoryCommand.Execute(null);
-                        return true;
-                    case Key.J when !isEditingText:
-                        _viewModel.OpenDownloadsCommand.Execute(null);
-                        return true;
-                    case Key.Tab:
-                        _tabs.ActivateNext();
-                        return true;
-                    case >= Key.D1 and <= Key.D8 when !isEditingText:
-                        _tabs.ActivateByIndex(key - Key.D1);
-                        return true;
-                    case Key.D9 when !isEditingText:
-                        _tabs.ActivateLast();
-                        return true;
-                    case Key.OemPlus or Key.Add:
-                        AdjustZoom(+0.1);
-                        return true;
-                    case Key.OemMinus or Key.Subtract:
-                        AdjustZoom(-0.1);
-                        return true;
-                    case Key.D0 or Key.NumPad0:
-                        _viewModel.ActiveTab?.SetZoom(1.0);
-                        return true;
-                    default:
-                        return false;
-                }
-
-            case ModifierKeys.Control | ModifierKeys.Shift:
-                switch (key)
-                {
-                    case Key.N:
-                        OpenNewIncognitoWindow();
-                        return true;
-                    case Key.T:
-                        // 重开最近关闭的标签页（Chrome 语义）。
-                        _viewModel.ReopenClosedTabCommand.Execute(null);
-                        return true;
-                    case Key.R:
-                        _viewModel.ActiveTab?.ReloadIgnoringCache();
-                        return true;
-                    case Key.Tab:
-                        _tabs.ActivatePrevious();
-                        return true;
-                    default:
-                        return false;
-                }
-
-            case ModifierKeys.Shift:
-                switch (key)
-                {
-                    case Key.F3 when FindBar.Visibility == Visibility.Visible:
-                        // Shift+F3 = 上一个匹配（查找条打开时才有意义）。
-                        StepFind(forward: false);
-                        return true;
-                    default:
-                        return false;
-                }
-
-            case ModifierKeys.Alt:
-                switch (key)
-                {
-                    case Key.Left:
-                        _viewModel.BackCommand.Execute(null);
-                        return true;
-                    case Key.Right:
-                        _viewModel.ForwardCommand.Execute(null);
-                        return true;
-                    case Key.D when !isEditingText:
-                        FocusAddressBar();
-                        return true;
-                    default:
-                        return false;
-                }
-
-            case ModifierKeys.None:
-                switch (key)
-                {
-                    case Key.F3 when FindBar.Visibility == Visibility.Visible:
-                        StepFind(forward: true);
-                        return true;
-                    case Key.F5:
-                        _viewModel.ActiveTab?.Reload();
-                        return true;
-                    case Key.F12:
-                        // WebView2 已开启 DevTools，这里不拦截，交给默认处理。
-                        return false;
-                    case Key.F11:
-                        ToggleFullScreen();
-                        return true;
-                    case Key.Escape when _userFullScreen:
-                        SetUserFullScreen(false);
-                        return true;
-                    case Key.Escape when IsAddressBarFocused():
-                        RestoreAddressBar();
-                        return true;
-                    default:
-                        return false;
-                }
-
-            default:
-                return false;
-        }
-    }
-
-    private bool IsAddressBarFocused() => AddressBar.IsKeyboardFocusWithin;
-
-    private void FocusAddressBar()
-    {
-        // Ctrl+L / Alt+D 是「用户想改地址」的明确信号：解除启动期抑制，让它照样弹出下拉。
-        _suppressSuggestions = false;
-        AddressBar.Focus();
-        AddressBar.SelectAll();
-    }
-
-    /// <summary>放弃编辑，把地址栏恢复成当前页面的地址。</summary>
-    private void RestoreAddressBar()
-    {
-        _viewModel.IsAddressBarEditing = false;
-        _viewModel.AddressBarText = _viewModel.ActiveTab?.DisplayUrl ?? string.Empty;
-    }
-
-    private void PrintActivePage()
-    {
-        var tab = _viewModel.ActiveTab;
-        if (tab is null)
-        {
-            return;
-        }
-
-        if (!tab.Print())
-        {
-            MessageBox.Show(this, "当前 WebView2 运行时不支持打印。", "ScBrowser",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-    }
-
-    private async Task SaveActivePageAsync()
-    {
-        var tab = _viewModel.ActiveTab;
-        if (tab is null)
-        {
-            return;
-        }
-
-        if (!await tab.SavePageAsync().ConfigureAwait(true))
-        {
-            MessageBox.Show(
-                this,
-                "当前 WebView2 运行时太旧，不支持「另存为」。请更新 WebView2 运行时后重试。",
-                "ScBrowser",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }
-    }
-
-    private void ViewSourceOfActivePage()
-    {
-        var url = _viewModel.ActiveTab?.DisplayUrl;
-        if (string.IsNullOrWhiteSpace(url)
-            || InternalPageRegistry.IsInternalPage(url)
-            || !(url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-                 || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-
-        _ = _tabs.CreateAsync("view-source:" + url, activate: true);
-    }
-
-    private void AdjustZoom(double delta)
-    {
-        // 惰性标签也有 ZoomFactor（记在标签状态里），引擎创建后会补上，所以这里不要求引擎已就绪。
-        var tab = _viewModel.ActiveTab;
-        tab?.SetZoom(tab.ZoomFactor + delta);
-    }
-
-    // --------------------------------------------------------------------- //
-    // 页内查找（Ctrl+F）
-    //
-    // WebView2 自带的查找条被隐藏（见 BrowserTab.StartFindAsync），这里用外壳自绘：
-    // 颜色令牌随主题走，排版也与其它工具栏控件一致。
-    // 查找条是窗口级状态，切换标签时关闭；查找会话本身挂在对应的 BrowserTab 上。
-    // --------------------------------------------------------------------- //
-
-    /// <summary>输入防抖：打字停下才发起搜索，避免每个字符都排一次异步查询。</summary>
-    private readonly DispatcherTimer _findDebounce = new() { Interval = TimeSpan.FromMilliseconds(160) };
-
-    /// <summary>当前持有查找会话的标签；切换标签或关闭查找条时解除。</summary>
-    private BrowserTab? _findTab;
-
-    /// <summary>最近一次成功发起搜索的关键词；用于区分「重新搜索」与「下一个」。</summary>
-    private string? _startedFindTerm;
-
-    /// <summary>作废旧的在途搜索回调（防抖 + 异步完成顺序）。</summary>
-    private int _findRequestVersion;
-
-    /// <summary>打开查找条；已打开时只把焦点与选区交给输入框。</summary>
-    private bool ShowFindBar()
-    {
-        var tab = _viewModel.ActiveTab;
-        if (tab is null)
-        {
-            return false;
-        }
-
-        if (!ReferenceEquals(_findTab, tab))
-        {
-            DetachFindTab(stop: true);
-            AttachFindTab(tab);
-        }
-
-        FindBar.Visibility = Visibility.Visible;
-        FindBox.Focus();
-        FindBox.SelectAll();
-
-        // 复用上一次的关键词时，打开即重新搜索（Chrome 在同一标签内也是这个观感）。
-        if (!string.IsNullOrEmpty(FindBox.Text))
-        {
-            _findDebounce.Stop();
-            _ = RunFindAsync();
-        }
-
-        return true;
-    }
-
-    /// <summary>收起查找条并结束查找会话（清除页面高亮）。</summary>
-    private void CloseFindBar(bool focusContent = true)
-    {
-        if (FindBar.Visibility != Visibility.Visible && _findTab is null)
-        {
-            return;
-        }
-
-        _findDebounce.Stop();
-        _findRequestVersion++;
-        FindBar.Visibility = Visibility.Collapsed;
-        FindStatus.Text = string.Empty;
-        DetachFindTab(stop: true);
-
-        if (focusContent)
-        {
-            _viewModel.ActiveTab?.FocusContent();
-        }
-    }
-
-    private void AttachFindTab(BrowserTab tab)
-    {
-        _findTab = tab;
-        _startedFindTerm = null;
-        tab.FindStatusChanged += OnFindStatusChanged;
-        tab.NavigationFinished += OnFindTabNavigationFinished;
-    }
-
-    private void DetachFindTab(bool stop)
-    {
-        if (_findTab is not null)
-        {
-            _findTab.FindStatusChanged -= OnFindStatusChanged;
-            _findTab.NavigationFinished -= OnFindTabNavigationFinished;
-
-            if (stop)
-            {
-                _findTab.StopFind();
-            }
-        }
-
-        _findTab = null;
-        _startedFindTerm = null;
-    }
-
-    /// <summary>同一标签内导航到新文档后，旧的匹配区间已失效，按当前关键词重新搜索。</summary>
-    private void OnFindTabNavigationFinished(object? sender, EventArgs e)
-    {
-        if (!ReferenceEquals(sender, _findTab)
-            || FindBar.Visibility != Visibility.Visible
-            || string.IsNullOrEmpty(FindBox.Text))
-        {
-            return;
-        }
-
-        _startedFindTerm = null;
-        _ = RunFindAsync();
-    }
-
-    private void OnFindStatusChanged(object? sender, EventArgs e)
-    {
-        if (ReferenceEquals(sender, _findTab))
-        {
-            UpdateFindStatus();
-        }
-    }
-
-    private void FindBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        // 程序性切换（查找条未显示时）不该触发搜索。
-        if (FindBar.Visibility != Visibility.Visible)
-        {
-            return;
-        }
-
-        _findDebounce.Stop();
-
-        if (string.IsNullOrEmpty(FindBox.Text))
-        {
-            _findRequestVersion++;
-            _findTab?.StopFind();
-            _startedFindTerm = null;
-            FindStatus.Text = string.Empty;
-            return;
-        }
-
-        _findDebounce.Start();
-    }
-
-    /// <summary>Enter = 下一个，Shift+Enter = 上一个，Esc = 关闭（Chrome 语义）。</summary>
-    private void FindBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        switch (e.Key)
-        {
-            case Key.Enter:
-                StepFind(forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
-                e.Handled = true;
-                break;
-            case Key.Escape:
-                CloseFindBar();
-                e.Handled = true;
-                break;
-        }
-    }
-
-    private void FindNext_Click(object sender, RoutedEventArgs e) => StepFind(forward: true);
-
-    private void FindPrevious_Click(object sender, RoutedEventArgs e) => StepFind(forward: false);
-
-    private void FindClose_Click(object sender, RoutedEventArgs e) => CloseFindBar();
-
-    private void Menu_Find(object sender, RoutedEventArgs e) => ShowFindBar();
-
-    private async Task RunFindAsync()
-    {
-        var tab = _findTab;
-        var term = FindBox.Text;
-        if (tab is null || string.IsNullOrEmpty(term))
-        {
-            return;
-        }
-
-        // 防抖期间用户可能又敲了字符、或切走了标签：用版本号作废旧回调。
-        var version = ++_findRequestVersion;
-        FindStatus.Text = string.Empty;
-
-        var started = await tab.StartFindAsync(term);
-        if (version != _findRequestVersion || !ReferenceEquals(tab, _findTab))
-        {
-            return;
-        }
-
-        if (!started)
-        {
-            _startedFindTerm = null;
-            FindStatus.Text = tab.IsInitialized ? "查找不可用" : string.Empty;
-            return;
-        }
-
-        _startedFindTerm = term;
-        UpdateFindStatus();
-    }
-
-    /// <summary>
-    /// 下一个 / 上一个。若当前输入尚未真正搜索过（输入后立刻按了回车、防抖还没触发），
-    /// 先发起一次搜索，保证「回车总有反应」。
-    /// </summary>
-    private void StepFind(bool forward)
-    {
-        var tab = _findTab;
-        if (tab is null || string.IsNullOrEmpty(FindBox.Text))
-        {
-            return;
-        }
-
-        _findDebounce.Stop();
-
-        if (!string.Equals(FindBox.Text, _startedFindTerm, StringComparison.Ordinal))
-        {
-            _ = RunFindAsync();
-            return;
-        }
-
-        if (forward)
-        {
-            tab.FindNext();
-        }
-        else
-        {
-            tab.FindPrevious();
-        }
-    }
-
-    private void UpdateFindStatus()
-    {
-        var tab = _findTab;
-        if (tab is null || string.IsNullOrEmpty(FindBox.Text))
-        {
-            FindStatus.Text = string.Empty;
-            return;
-        }
-
-        var count = tab.FindMatchCount;
-        FindStatus.Text = count <= 0
-            ? "无结果"
-            : $"{tab.FindActiveMatchIndex}/{count}";
-    }
 
     // --------------------------------------------------------------------- //
     // 地址栏

@@ -10,6 +10,8 @@
     rememberSession: document.getElementById("remember-session"),
     downloadsFolder: document.getElementById("downloads-folder"),
     enableExtensions: document.getElementById("enable-extensions"),
+    savePasswords: document.getElementById("save-passwords"),
+    autofillForms: document.getElementById("autofill-forms"),
   };
 
   var current = null;
@@ -25,6 +27,8 @@
       els.rememberSession.checked = !!settings.rememberSessionOnExit;
       els.downloadsFolder.value = settings.downloadsFolder || "";
       els.enableExtensions.checked = !!settings.enableExtensions;
+      els.savePasswords.checked = settings.savePasswords !== false;
+      els.autofillForms.checked = settings.autofillForms !== false;
     });
   }
 
@@ -53,6 +57,8 @@
       downloadsFolder: els.downloadsFolder.value.trim(),
       askWhereToSaveDownloads: !!current.askWhereToSaveDownloads,
       enableExtensions: els.enableExtensions.checked,
+      savePasswords: els.savePasswords.checked,
+      autofillForms: els.autofillForms.checked,
     };
 
     sc.send("settings.update", payload)
@@ -77,7 +83,7 @@
     els[key].addEventListener("change", save);
   });
 
-  ["restoreSession", "rememberSession", "enableExtensions"].forEach(function (key) {
+  ["restoreSession", "rememberSession", "enableExtensions", "savePasswords", "autofillForms"].forEach(function (key) {
     els[key].addEventListener("change", save);
   });
 
@@ -87,9 +93,11 @@
       cache: document.getElementById("clear-cache").checked,
       cookies: document.getElementById("clear-cookies").checked,
       storage: document.getElementById("clear-storage").checked,
+      passwords: document.getElementById("clear-passwords").checked,
+      autofill: document.getElementById("clear-autofill").checked,
     };
 
-    if (!payload.cache && !payload.cookies && !payload.storage) {
+    if (!payload.cache && !payload.cookies && !payload.storage && !payload.passwords && !payload.autofill) {
       sc.toast("请先选择要清除的内容");
       return;
     }

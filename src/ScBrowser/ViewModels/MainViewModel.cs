@@ -20,19 +20,22 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly SettingsService _settings;
     private readonly HistoryRepository _history;
     private readonly DownloadManager? _downloads;
+    private readonly ExtensionService? _extensions;
 
     public MainViewModel(
         TabManager tabs,
         BookmarkRepository bookmarks,
         SettingsService settings,
         HistoryRepository history,
-        DownloadManager? downloads = null)
+        DownloadManager? downloads = null,
+        ExtensionService? extensions = null)
     {
         _tabs = tabs;
         _bookmarks = bookmarks;
         _settings = settings;
         _history = history;
         _downloads = downloads;
+        _extensions = extensions;
 
         _tabs.ActiveTabChanged += (_, tab) => HandleActiveTabChanged(tab);
 
@@ -40,6 +43,11 @@ public sealed partial class MainViewModel : ObservableObject
         {
             _downloads.Changed += (_, _) => RefreshDownloadIndicator();
             RefreshDownloadIndicator();
+        }
+
+        if (_extensions is not null)
+        {
+            _extensions.Changed += (_, _) => _ = RefreshExtensionsAsync();
         }
     }
 
@@ -55,6 +63,68 @@ public sealed partial class MainViewModel : ObservableObject
     {
         ActiveDownloadCount = _downloads?.ActiveCount ?? 0;
         HasActiveDownloads = ActiveDownloadCount > 0;
+    }
+
+    /// <summary>启用的扩展（工具栏按钮）。图标已解码成 WPF 可用的位图。</summary>
+    public ObservableCollection<ExtensionButton> ExtensionButtons { get; } = [];
+
+    /// <summary>是否有可显示的扩展按钮。</summary>
+    [ObservableProperty]
+    private bool _hasExtensions;
+
+    /// <summary>重新读取当前 profile 的扩展列表（启动后与扩展发生变化时调用）。</summary>
+    public async Task RefreshExtensionsAsync()
+    {
+        if (_extensions is null)
+        {
+            return;
+        }
+
+        var list = await _extensions.ListAsync(_tabs.Profile).ConfigureAwait(true);
+
+        ExtensionButtons.Clear();
+        foreach (var extension in list.Where(e => e.IsEnabled))
+        {
+            ExtensionButtons.Add(new ExtensionButton(
+                extension.Id,
+                extension.Name,
+                DecodeIcon(extension.IconDataUrl),
+                extension.PopupPath,
+                extension.OptionsPath));
+        }
+
+        HasExtensions = ExtensionButtons.Count > 0;
+    }
+
+    private static System.Windows.Media.ImageSource? DecodeIcon(string? dataUrl)
+    {
+        if (string.IsNullOrEmpty(dataUrl))
+        {
+            return null;
+        }
+
+        var comma = dataUrl.IndexOf(',');
+        if (comma < 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = Convert.FromBase64String(dataUrl[(comma + 1)..]);
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = new System.IO.MemoryStream(bytes);
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (Exception)
+        {
+            // 图标坏了不至于让工具栏渲染失败。
+            return null;
+        }
     }
 
     /// <summary>地址栏下拉的候选行。</summary>
@@ -102,6 +172,21 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>主页地址（取自设置）。</summary>
     public string HomePageUrl => _settings.Current.HomePage;
+
+    /// <summary>工具栏上的一个扩展按钮。</summary>
+    public sealed record ExtensionButton(
+        string Id,
+        string Name,
+        System.Windows.Media.ImageSource? Icon,
+        string? PopupPath,
+        string? OptionsPath)
+    {
+        /// <summary>弹窗地址（<c>chrome-extension://</c>）；没有弹窗时为 <c>null</c>。</summary>
+        public string? PopupUrl => string.IsNullOrEmpty(PopupPath) ? null : $"chrome-extension://{Id}/{PopupPath}";
+
+        /// <summary>选项页地址；没有选项页时为 <c>null</c>。</summary>
+        public string? OptionsUrl => string.IsNullOrEmpty(OptionsPath) ? null : $"chrome-extension://{Id}/{OptionsPath}";
+    }
 
     /// <summary>下拉候选的版本号：连续输入时旧的异步查询结果必须作废。</summary>
     private int _suggestionVersion;
@@ -421,7 +506,10 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>
     /// 启动时建立初始标签页。传入 <paramref name="urls"/> 则用于会话恢复。
     /// </summary>
-    public async Task StartAsync(IReadOnlyList<string>? urls = null, int activeIndex = 0)
+    public async Task StartAsync(
+        IReadOnlyList<string>? urls = null,
+        int activeIndex = 0,
+        IReadOnlyList<SessionTabGroup?>? groups = null)
     {
         if (urls is null || urls.Count == 0)
         {
@@ -437,6 +525,13 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var isActive = i == activeIndex;
             var tab = await _tabs.CreateAsync(urls[i], activate: false, deferLoad: !isActive);
+
+            if (groups is not null && i < groups.Count && groups[i] is { } group)
+            {
+                tab.GroupName = group.Name;
+                tab.GroupColor = group.Color;
+            }
+
             if (isActive)
             {
                 toActivate = tab;

@@ -28,6 +28,12 @@ public sealed class AppSettings
     /// <summary>下载前询问保存位置。</summary>
     public bool AskWhereToSaveDownloads { get; set; }
 
+    /// <summary>保存密码（由浏览器内核的密码管理器处理，保存在本机 profile 里）。</summary>
+    public bool SavePasswords { get; set; } = true;
+
+    /// <summary>自动填充表单（姓名、地址等）。</summary>
+    public bool AutofillForms { get; set; } = true;
+
     /// <summary>是否启用浏览器扩展。<b>改动需要重启应用才会生效</b>（环境创建时的选项）。</summary>
     public bool EnableExtensions { get; set; } = true;
 
@@ -65,6 +71,8 @@ public sealed class AppSettings
         RestoreSessionOnStartup = other.RestoreSessionOnStartup;
         DownloadsFolder = other.DownloadsFolder;
         AskWhereToSaveDownloads = other.AskWhereToSaveDownloads;
+        SavePasswords = other.SavePasswords;
+        AutofillForms = other.AutofillForms;
         EnableExtensions = other.EnableExtensions;
         RememberSessionOnExit = other.RememberSessionOnExit;
     }

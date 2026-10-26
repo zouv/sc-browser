@@ -131,6 +131,7 @@
                                             CommandParameter="{Binding}"
                                             ToolTip="{Binding Title}"
                                             MouseDown="TabButton_MouseDown"
+                                            ContextMenuOpening="TabMenu_Opening"
                                             PreviewMouseLeftButtonDown="TabButton_PreviewMouseLeftButtonDown"
                                             PreviewMouseMove="TabButton_PreviewMouseMove"
                                             PreviewMouseLeftButtonUp="TabButton_PreviewMouseLeftButtonUp">
@@ -180,6 +181,16 @@
                                                                    Style="{StaticResource BrowserMenuIconStyle}" />
                                                     </MenuItem.Icon>
                                                 </MenuItem>
+                                                <MenuItem Header="添加到新标签组" Click="TabMenu_AddToNewGroup">
+                                                    <MenuItem.Icon>
+                                                        <TextBlock Text="&#xE8EC;"
+                                                                   Style="{StaticResource BrowserMenuIconStyle}" />
+                                                    </MenuItem.Icon>
+                                                </MenuItem>
+                                                <!-- 子项在 TabMenu_Opening 里按当前窗口的组动态生成 -->
+                                                <MenuItem Header="加入标签组" Tag="add-to-group" />
+                                                <MenuItem Header="移出标签组" Click="TabMenu_RemoveFromGroup" />
+                                                <Separator />
                                                 <MenuItem Header="关闭其他标签页" Click="TabMenu_CloseOthers" />
                                                 <MenuItem Header="关闭右侧标签页" Click="TabMenu_CloseRight" />
                                             </ContextMenu>
@@ -204,11 +215,26 @@
                                                 <Image Source="{Binding Favicon}" Stretch="Uniform" />
                                             </Grid>
 
-                                            <TextBlock Grid.Column="1"
-                                                       Text="{Binding Title}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,6,0" />
+                                            <Grid Grid.Column="1" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <!-- 标签组色点：一眼看出这页属于哪个组 -->
+                                                <Border Width="8" Height="8"
+                                                        CornerRadius="4"
+                                                        Margin="0,0,6,0"
+                                                        VerticalAlignment="Center"
+                                                        Background="{Binding GroupColor}"
+                                                        ToolTip="{Binding GroupName}"
+                                                        Visibility="{Binding HasGroup,
+                                                                     Converter={StaticResource BoolToVisibility},
+                                                                     FallbackValue=Collapsed}" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding Title}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center" />
+                                            </Grid>
 
                                             <!-- 正在播放音频 / 已静音：点一下切换静音 -->
                                             <Button Grid.Column="2"
@@ -271,6 +297,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -359,8 +386,36 @@
                     </Grid>
                 </Border>
 
+                <!-- 扩展按钮：只显示已启用、且带图标或弹窗的扩展（顺序同扩展页） -->
+                <ItemsControl Grid.Column="5"
+                              ItemsSource="{Binding ExtensionButtons}"
+                              VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource ToolbarButtonStyle}"
+                                    ToolTip="{Binding Name}"
+                                    Click="ExtensionButton_Click">
+                                <Grid Width="18" Height="18">
+                                    <TextBlock Text="&#xE71D;"
+                                               FontFamily="{StaticResource IconFontFamily}"
+                                               FontSize="14"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource IconBrush}" />
+                                    <Image Source="{Binding Icon}" Stretch="Uniform" />
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <!-- 书签星标：未收藏为空心星，已收藏为实心星 + 强调色 -->
-                <Button Grid.Column="5" Style="{StaticResource ToolbarButtonStyle}"
+                <Button Grid.Column="6" Style="{StaticResource ToolbarButtonStyle}"
                         ToolTip="收藏此页 (Ctrl+D)"
                         Command="{Binding ToggleBookmarkCommand}">
                     <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15">
@@ -380,7 +435,7 @@
                 </Button>
 
                 <!-- 下载指示：只在有进行中的下载时出现，点击直达下载内容页 -->
-                <Button Grid.Column="6" Style="{StaticResource ToolbarButtonStyle}"
+                <Button Grid.Column="7" Style="{StaticResource ToolbarButtonStyle}"
                         ToolTip="下载内容 (Ctrl+J)"
                         Visibility="{Binding HasActiveDownloads,
                                      Converter={StaticResource BoolToVisibility},
@@ -392,7 +447,7 @@
                 </Button>
 
                 <!-- 主菜单 -->
-                <Button Grid.Column="7" x:Name="MenuButton"
+                <Button Grid.Column="8" x:Name="MenuButton"
                         Style="{StaticResource ToolbarButtonStyle}"
                         Content="&#xE712;" ToolTip="菜单"
                         Click="MenuButton_Click">
@@ -573,6 +628,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
