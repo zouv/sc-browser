@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
 using ScBrowser.Browser;
 
@@ -47,9 +48,8 @@ public partial class MainWindow
             AttachFindTab(tab);
         }
 
-        FindBar.Visibility = Visibility.Visible;
-        FindBox.Focus();
-        FindBox.SelectAll();
+        FindBar.IsOpen = true;
+        FocusFindBox();
 
         // 复用上一次的关键词时，打开即重新搜索（Chrome 在同一标签内也是这个观感）。
         if (!string.IsNullOrEmpty(FindBox.Text))
@@ -64,14 +64,14 @@ public partial class MainWindow
     /// <summary>收起查找条并结束查找会话（清除页面高亮）。</summary>
     private void CloseFindBar(bool focusContent = true)
     {
-        if (FindBar.Visibility != Visibility.Visible && _findTab is null)
+        if (!FindBar.IsOpen && _findTab is null)
         {
             return;
         }
 
         _findDebounce.Stop();
         _findRequestVersion++;
-        FindBar.Visibility = Visibility.Collapsed;
+        FindBar.IsOpen = false;
         FindStatus.Text = string.Empty;
         DetachFindTab(stop: true);
 
@@ -110,7 +110,7 @@ public partial class MainWindow
     private void OnFindTabNavigationFinished(object? sender, EventArgs e)
     {
         if (!ReferenceEquals(sender, _findTab)
-            || FindBar.Visibility != Visibility.Visible
+            || !FindBar.IsOpen
             || string.IsNullOrEmpty(FindBox.Text))
         {
             return;
@@ -131,7 +131,7 @@ public partial class MainWindow
     private void FindBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         // 程序性切换（查找条未显示时）不该触发搜索。
-        if (FindBar.Visibility != Visibility.Visible)
+        if (!FindBar.IsOpen)
         {
             return;
         }
@@ -150,12 +150,17 @@ public partial class MainWindow
         _findDebounce.Start();
     }
 
-    /// <summary>Enter = 下一个，Shift+Enter = 上一个，Esc = 关闭（Chrome 语义）。</summary>
+    /// <summary>Enter = 下一个，Shift+Enter = 上一个，F3 跳转，Esc = 关闭（Chrome 语义）。</summary>
     private void FindBox_KeyDown(object sender, KeyEventArgs e)
     {
         switch (e.Key)
         {
             case Key.Enter:
+                StepFind(forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
+                e.Handled = true;
+                break;
+            case Key.F3:
+                // 焦点在查找输入框里时 F3 不会回到主窗口，这里补一份。
                 StepFind(forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
                 e.Handled = true;
                 break;
@@ -233,6 +238,24 @@ public partial class MainWindow
             tab.FindPrevious();
         }
     }
+
+    /// <summary>Popup 打开后内容才加载，聚焦要排到输入优先级之后。</summary>
+    private void FocusFindBox()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            FindBox.Focus();
+            FindBox.SelectAll();
+        }, DispatcherPriority.Input);
+    }
+
+    /// <summary>查找条靠右停靠在内容区右上角（留 10px 边距）。</summary>
+    private static CustomPopupPlacement[] PlaceFindBar(Size popupSize, Size targetSize, Point offset) =>
+    [
+        new CustomPopupPlacement(
+            new Point(targetSize.Width - popupSize.Width - 10, 10),
+            PopupPrimaryAxis.Horizontal),
+    ];
 
     private void UpdateFindStatus()
     {

@@ -363,6 +363,13 @@ public sealed class WebMessageRouter
                 Broadcast("extensions.changed");
                 return null;
 
+            case "extensions.setPinned":
+                _extensions.SetPinned(
+                    GetString(payload, "id") ?? string.Empty,
+                    GetBool(payload, "pinned", true));
+                Broadcast("extensions.changed");
+                return null;
+
             case "extensions.setEnabled":
                 await _extensions
                     .SetEnabledAsync(

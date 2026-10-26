@@ -272,6 +272,30 @@ public class ExtensionTests : IDisposable
     }
 
     [Fact]
+    public void 应优先选尺寸最大的位图图标()
+    {
+        var folder = Path.Combine(_dir, "icon-ext");
+        Directory.CreateDirectory(Path.Combine(folder, "icons"));
+        File.WriteAllBytes(Path.Combine(folder, "icons", "16.png"), [0x89, 0x50]);
+        File.WriteAllBytes(Path.Combine(folder, "icons", "128.png"), [0x89, 0x50]);
+        File.WriteAllBytes(Path.Combine(folder, "icons", "logo.svg"), Encoding.UTF8.GetBytes("<svg/>"));
+        File.WriteAllText(Path.Combine(folder, "manifest.json"),
+            """
+            {
+              "manifest_version": 3,
+              "name": "Icons",
+              "version": "1.0",
+              "icons": { "16": "icons/16.png", "48": "icons/logo.svg", "128": "icons/128.png" }
+            }
+            """);
+
+        var metadata = ExtensionManifest.Read(folder);
+
+        Assert.NotNull(metadata);
+        Assert.EndsWith(Path.Combine("icons", "128.png"), metadata!.IconPath);
+    }
+
+    [Fact]
     public void 写入_key_后应能由_manifest_反推扩展_ID()
     {
         var folder = Path.Combine(_dir, "key-ext");

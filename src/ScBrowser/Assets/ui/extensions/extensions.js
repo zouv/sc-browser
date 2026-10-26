@@ -116,6 +116,21 @@
       label.appendChild(track);
       actions.appendChild(label);
 
+      // 固定 / 取消固定：固定的扩展出现在工具栏，未固定的收进「拼图」菜单。
+      if (entry.isEnabled) {
+        var pinBtn = document.createElement("button");
+        pinBtn.className = "btn";
+        pinBtn.textContent = entry.isPinned ? "取消固定" : "固定";
+        pinBtn.title = entry.isPinned ? "从工具栏移除" : "固定到工具栏";
+        pinBtn.addEventListener("click", function () {
+          sc.send("extensions.setPinned", { id: entry.id, pinned: !entry.isPinned })
+            .catch(function (err) {
+              sc.toast("操作失败：" + err.message);
+            });
+        });
+        actions.appendChild(pinBtn);
+      }
+
       if (entry.optionsPath) {
         var optionsBtn = document.createElement("button");
         optionsBtn.className = "btn";

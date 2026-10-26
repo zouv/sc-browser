@@ -18,7 +18,9 @@ public sealed record ExtensionInfo(
     string? IconDataUrl = null,
     string? PopupPath = null,
     string? OptionsPath = null,
-    bool HasUpdateUrl = false);
+    bool HasUpdateUrl = false,
+    bool IsPinned = false,
+    int PinOrder = -1);
 
 /// <summary>
 /// 扩展管理：列出 / 安装（目录、CRX、商店）/ 启用停用 / 卸载。
@@ -34,6 +36,16 @@ public sealed record ExtensionInfo(
 /// </summary>
 public sealed class ExtensionService
 {
+    /// <summary>
+    /// WebView2 运行时自带的组件扩展（剪贴板、PDF 查看器）：不是用户安装的扩展，
+    /// 也没有可解析的受管目录，因此在管理页与工具栏里都不展示——与 Chrome 隐藏组件扩展一致。
+    /// </summary>
+    private static readonly HashSet<string> SystemExtensionIds =
+    [
+        "dgiklkfkllikcanfonkcabmbdfmgleag", // Microsoft Clipboard Extension
+        "mhjfbmdgcfjbbpaeojofohoefgiehjai", // Microsoft Edge PDF Viewer
+    ];
+
     private readonly ILogger<ExtensionService> _logger;
 
     public ExtensionService(ILogger<ExtensionService> logger) => _logger = logger;
@@ -53,9 +65,12 @@ public sealed class ExtensionService
         var index = LoadIndex();
 
         return extensions
-            .Select(e => Describe(e, index))
-            .OrderByDescending(e => e.IsEnabled)
+            .Where(e => !SystemExtensionIds.Contains(e.Id))
+            .OrderByDescending(e => index.TryGetValue(e.Id, out var pinned) && pinned.Pinned)
+            .ThenBy(e => index.TryGetValue(e.Id, out var record) ? record.PinOrder : int.MaxValue)
+            .ThenByDescending(e => e.IsEnabled)
             .ThenBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(e => Describe(e, index))
             .ToList();
     }
 
@@ -213,6 +228,25 @@ public sealed class ExtensionService
         }
     }
 
+    /// <summary>固定 / 取消固定扩展（决定是否出现在工具栏）。状态存进安装索引。</summary>
+    public void SetPinned(string extensionId, bool pinned)
+    {
+        var index = LoadIndex();
+        if (!index.TryGetValue(extensionId, out var record))
+        {
+            // 只有受管目录里的用户扩展才有元数据与图标；内置/遗留扩展不参与固定。
+            return;
+        }
+
+        // PinOrder 用「当前最大值 + 1」保持固定的先后顺序；取消固定回到 -1。
+        var order = pinned
+            ? index.Values.Max(e => e.PinOrder) + 1
+            : -1;
+        index[extensionId] = record with { Pinned = pinned, PinOrder = order };
+        SaveIndex(index);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>启用 / 停用扩展。立即对当前所有已打开页面生效。</summary>
     public async Task SetEnabledAsync(CoreWebView2Profile? profile, string extensionId, bool enabled)
     {
@@ -278,7 +312,8 @@ public sealed class ExtensionService
         var metadata = ExtensionManifest.Read(record.Folder);
         if (metadata is null)
         {
-            return new ExtensionInfo(extension.Id, extension.Name, extension.IsEnabled);
+            return new ExtensionInfo(extension.Id, extension.Name, extension.IsEnabled,
+                IsPinned: record.Pinned, PinOrder: record.PinOrder);
         }
 
         return new ExtensionInfo(
@@ -292,7 +327,9 @@ public sealed class ExtensionService
             TryReadIconDataUrl(metadata.IconPath),
             metadata.PopupPath,
             metadata.OptionsPath,
-            !string.IsNullOrWhiteSpace(metadata.UpdateUrl));
+            !string.IsNullOrWhiteSpace(metadata.UpdateUrl),
+            record.Pinned,
+            record.PinOrder);
     }
 
     /// <summary>图标转 data URL：内部页面是 <c>browser://</c> 来源，加载不了 <c>file://</c>。</summary>
@@ -396,7 +433,12 @@ public sealed class ExtensionService
     // 安装索引：WebView2 的扩展 ID → 受管目录
     // ------------------------------------------------------------------ //
 
-    private sealed record IndexEntry(string Folder, string? Source, DateTimeOffset InstalledAt);
+    private sealed record IndexEntry(
+        string Folder,
+        string? Source,
+        DateTimeOffset InstalledAt,
+        bool Pinned = false,
+        int PinOrder = -1);
 
     private static string IndexFile => Path.Combine(AppPaths.ManagedExtensionsFolder, "index.json");
 

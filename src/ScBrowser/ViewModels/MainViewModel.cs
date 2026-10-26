@@ -65,12 +65,19 @@ public sealed partial class MainViewModel : ObservableObject
         HasActiveDownloads = ActiveDownloadCount > 0;
     }
 
-    /// <summary>启用的扩展（工具栏按钮）。图标已解码成 WPF 可用的位图。</summary>
+    /// <summary>已固定到工具栏的扩展按钮（顺序 = 固定顺序）。图标已解码成 WPF 可用的位图。</summary>
     public ObservableCollection<ExtensionButton> ExtensionButtons { get; } = [];
 
-    /// <summary>是否有可显示的扩展按钮。</summary>
+    /// <summary>已启用但未固定的扩展（放进工具栏右侧的「拼图」菜单）。</summary>
+    public ObservableCollection<ExtensionButton> UnpinnedExtensions { get; } = [];
+
+    /// <summary>是否有可显示的固定扩展按钮。</summary>
     [ObservableProperty]
     private bool _hasExtensions;
+
+    /// <summary>是否有未固定的启用扩展（决定「拼图」菜单按钮显隐）。</summary>
+    [ObservableProperty]
+    private bool _hasUnpinnedExtensions;
 
     /// <summary>重新读取当前 profile 的扩展列表（启动后与扩展发生变化时调用）。</summary>
     public async Task RefreshExtensionsAsync()
@@ -83,22 +90,39 @@ public sealed partial class MainViewModel : ObservableObject
         var list = await _extensions.ListAsync(_tabs.Profile).ConfigureAwait(true);
 
         ExtensionButtons.Clear();
+        UnpinnedExtensions.Clear();
         foreach (var extension in list.Where(e => e.IsEnabled))
         {
-            ExtensionButtons.Add(new ExtensionButton(
+            var button = new ExtensionButton(
                 extension.Id,
                 extension.Name,
                 DecodeIcon(extension.IconDataUrl),
                 extension.PopupPath,
-                extension.OptionsPath));
+                extension.OptionsPath);
+
+            if (extension.IsPinned)
+            {
+                ExtensionButtons.Add(button);
+            }
+            else
+            {
+                UnpinnedExtensions.Add(button);
+            }
         }
 
         HasExtensions = ExtensionButtons.Count > 0;
+        HasUnpinnedExtensions = UnpinnedExtensions.Count > 0;
     }
 
     private static System.Windows.Media.ImageSource? DecodeIcon(string? dataUrl)
     {
         if (string.IsNullOrEmpty(dataUrl))
+        {
+            return null;
+        }
+
+        // WPF 的 BitmapImage 解不了 SVG；这类图标在扩展页 <img> 里能显示，但工具栏退回通用字形。
+        if (dataUrl.StartsWith("data:image/svg", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }

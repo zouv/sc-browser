@@ -132,7 +132,7 @@ public partial class MainWindow
             case ModifierKeys.Shift:
                 switch (key)
                 {
-                    case Key.F3 when FindBar.Visibility == Visibility.Visible:
+                    case Key.F3 when FindBar.IsOpen:
                         // Shift+F3 = 上一个匹配（查找条打开时才有意义）。
                         StepFind(forward: false);
                         return true;
@@ -159,7 +159,7 @@ public partial class MainWindow
             case ModifierKeys.None:
                 switch (key)
                 {
-                    case Key.F3 when FindBar.Visibility == Visibility.Visible:
+                    case Key.F3 when FindBar.IsOpen:
                         StepFind(forward: true);
                         return true;
                     case Key.F5:

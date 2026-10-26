@@ -386,9 +386,20 @@
                     </Grid>
                 </Border>
 
-                <!-- 扩展按钮：只显示已启用、且带图标或弹窗的扩展（顺序同扩展页） -->
-                <ItemsControl Grid.Column="5"
-                              ItemsSource="{Binding ExtensionButtons}"
+                <!-- 扩展按钮：先「拼图」菜单（未固定的扩展），再已固定的扩展按钮 -->
+                <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="扩展程序（未固定）"
+                            Visibility="{Binding HasUnpinnedExtensions,
+                                         Converter={StaticResource BoolToVisibility},
+                                         FallbackValue=Collapsed}"
+                            Click="ExtensionPuzzle_Click">
+                        <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15"
+                                   Foreground="{DynamicResource IconBrush}"
+                                   Text="&#xE71D;" />
+                    </Button>
+
+                <ItemsControl ItemsSource="{Binding ExtensionButtons}"
                               VerticalAlignment="Center">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -413,6 +424,7 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                </StackPanel>
 
                 <!-- 书签星标：未收藏为空心星，已收藏为实心星 + 强调色 -->
                 <Button Grid.Column="6" Style="{StaticResource ToolbarButtonStyle}"
@@ -612,71 +624,79 @@
         </Border>
 
         <!-- ============ 页内查找条（Ctrl+F） ============ -->
-        <!-- 不做悬浮层：WebView2 是独立子 HWND，WPF 浮层盖不到网页上（airspace）。
-             这里作为外壳的一行停靠在内容区上方；打开时网页视口让出这一条的高度，
-             换来的是不需要第二个顶层窗口、键盘焦点也始终留在主窗口里。 -->
-        <Border x:Name="FindBar"
-                DockPanel.Dock="Top"
-                Background="{DynamicResource ToolbarBackgroundBrush}"
-                BorderBrush="{DynamicResource SeparatorBrush}"
-                BorderThickness="0,0,0,1"
-                Padding="10,5"
-                Visibility="Collapsed">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+        <!-- 浮动面板：Popup 是独立顶层 HWND，能盖在 WebView2 之上（airspace）；
+             靠右停靠在内容区右上角，观感与 Chrome 的查找条一致。 -->
+        <Popup x:Name="FindBar"
+               PlacementTarget="{Binding ElementName=ContentFrame}"
+               Placement="Custom"
+               AllowsTransparency="True"
+               StaysOpen="True"
+               PopupAnimation="Fade">
+            <Border Background="{DynamicResource ToolbarBackgroundBrush}"
+                    BorderBrush="{DynamicResource SeparatorBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="10,6"
+                    MinWidth="380">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.35" Color="Black" />
+                </Border.Effect>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0"
-                           Text="&#xE721;"
-                           FontFamily="{StaticResource IconFontFamily}"
-                           FontSize="14"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <TextBlock Grid.Column="0"
+                               Text="&#xE721;"
+                               FontFamily="{StaticResource IconFontFamily}"
+                               FontSize="14"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
 
-                <TextBox x:Name="FindBox"
-                         Grid.Column="1"
-                         Width="250"
-                         Margin="6,0,0,0"
-                         Style="{StaticResource AddressBarTextBoxStyle}"
-                         FontFamily="Segoe UI"
-                         TextChanged="FindBox_TextChanged"
-                         KeyDown="FindBox_KeyDown" />
+                    <TextBox x:Name="FindBox"
+                             Grid.Column="1"
+                             Width="220"
+                             Margin="6,0,0,0"
+                             Style="{StaticResource AddressBarTextBoxStyle}"
+                             FontFamily="Segoe UI"
+                             TextChanged="FindBox_TextChanged"
+                             KeyDown="FindBox_KeyDown" />
 
-                <TextBlock x:Name="FindStatus"
-                           Grid.Column="2"
-                           MinWidth="64"
-                           Margin="10,0,0,0"
-                           VerticalAlignment="Center"
-                           FontSize="12"
-                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <TextBlock x:Name="FindStatus"
+                               Grid.Column="2"
+                               MinWidth="64"
+                               Margin="10,0,0,0"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
 
-                <Button Grid.Column="4"
-                        Style="{StaticResource ToolbarButtonStyle}"
-                        Content="&#xE70E;"
-                        ToolTip="上一个匹配 (Shift+Enter)"
-                        Click="FindPrevious_Click" />
+                    <Button Grid.Column="4"
+                            Style="{StaticResource ToolbarButtonStyle}"
+                            Content="&#xE70E;"
+                            ToolTip="上一个匹配 (Shift+Enter)"
+                            Click="FindPrevious_Click" />
 
-                <Button Grid.Column="5"
-                        Style="{StaticResource ToolbarButtonStyle}"
-                        Content="&#xE70D;"
-                        ToolTip="下一个匹配 (Enter)"
-                        Click="FindNext_Click" />
+                    <Button Grid.Column="5"
+                            Style="{StaticResource ToolbarButtonStyle}"
+                            Content="&#xE70D;"
+                            ToolTip="下一个匹配 (Enter)"
+                            Click="FindNext_Click" />
 
-                <Button Grid.Column="6"
-                        Style="{StaticResource ToolbarButtonStyle}"
-                        Content="&#xE711;"
-                        ToolTip="关闭查找 (Esc)"
-                        Click="FindClose_Click" />
-            </Grid>
-        </Border>
+                    <Button Grid.Column="6"
+                            Style="{StaticResource ToolbarButtonStyle}"
+                            Content="&#xE711;"
+                            ToolTip="关闭查找 (Esc)"
+                            Click="FindClose_Click" />
+                </Grid>
+            </Border>
+        </Popup>
 
         <!-- ============ 导航错误提示条 ============ -->
         <Border x:Name="ErrorBar"

@@ -54,6 +54,7 @@ public partial class MainWindow : Window
 
         InitializeComponent();
         DataContext = viewModel;
+        FindBar.CustomPopupPlacementCallback = PlaceFindBar;
         RestoreWindowPlacement();
 
         // 最后一个标签关闭即退出（Chrome 语义）。外壳自己决定怎么响应，TabManager 不越权。
@@ -421,7 +422,7 @@ public partial class MainWindow : Window
 
         if (!visible)
         {
-            FindBar.Visibility = Visibility.Collapsed;
+            FindBar.IsOpen = false;
         }
 
         // 全屏时标签条不可见，若标题栏命中区还在，点网页顶部会变成拖窗口。
@@ -442,17 +443,53 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>点工具栏上的扩展按钮：有弹窗就开弹窗，否则打开选项页。</summary>
+    /// <summary>点工具栏上的固定扩展按钮：有弹窗就开弹窗，否则打开选项页。</summary>
     private void ExtensionButton_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is not MainViewModel.ExtensionButton item)
+        if ((sender as FrameworkElement)?.DataContext is MainViewModel.ExtensionButton item)
         {
-            Serilog.Log.Debug("扩展按钮点击：DataContext 不是扩展按钮");
+            Serilog.Log.Debug("扩展按钮点击：{Name} popup={Popup} options={Options}", item.Name, item.PopupUrl, item.OptionsUrl);
+            OpenExtension(item, (FrameworkElement)sender);
+        }
+    }
+
+    /// <summary>点工具栏右侧的「拼图」按钮：列出未固定的扩展，点开其一。</summary>
+    private void ExtensionPuzzle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement anchor || _viewModel.UnpinnedExtensions.Count == 0)
+        {
             return;
         }
 
-        Serilog.Log.Debug("扩展按钮点击：{Name} popup={Popup} options={Options}", item.Name, item.PopupUrl, item.OptionsUrl);
+        var menu = new ContextMenu();
+        if (FindResource("BrowserMenuStyle") is Style menuStyle)
+        {
+            menu.Style = menuStyle;
+        }
 
+        var itemStyle = FindResource("BrowserMenuItemStyle") as Style;
+
+        foreach (var extension in _viewModel.UnpinnedExtensions)
+        {
+            var item = new MenuItem { Header = extension.Name, ToolTip = "点击打开（在扩展页可固定到工具栏）" };
+            if (itemStyle is not null)
+            {
+                item.Style = itemStyle;
+            }
+
+            var target = extension;
+            item.Click += (_, _) => OpenExtension(target, anchor);
+            menu.Items.Add(item);
+        }
+
+        menu.PlacementTarget = anchor;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    /// <summary>打开扩展（弹窗优先，其次选项页）。</summary>
+    private void OpenExtension(MainViewModel.ExtensionButton item, FrameworkElement anchor)
+    {
         var tab = _viewModel.ActiveTab;
         if (tab?.Core is null)
         {
@@ -461,7 +498,7 @@ public partial class MainWindow : Window
 
         if (item.PopupUrl is { } popupUrl)
         {
-            OpenExtensionPopup(item, popupUrl, (FrameworkElement)sender);
+            OpenExtensionPopup(item, popupUrl, anchor);
             return;
         }
 

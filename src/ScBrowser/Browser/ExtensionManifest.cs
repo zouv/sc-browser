@@ -168,20 +168,31 @@ public static class ExtensionManifest
             : null;
     }
 
-    /// <summary>从 <c>icons</c> / <c>action.default_icon</c> 里挑尺寸最大的一张。</summary>
+    /// <summary>
+    /// 从 <c>icons</c> / <c>action.default_icon</c> 里挑一张图标。
+    /// 优先尺寸大的（键是像素尺寸）；尺寸相同再优先位图（SVG 在 WPF 工具栏里渲染不了）。
+    /// </summary>
     private static string? ResolveIcon(string folder, JsonObject root)
     {
-        var candidates = new List<string>();
+        var candidates = new List<(int Size, string Path, bool IsRaster)>();
+
+        void Collect(JsonObject map)
+        {
+            foreach (var (key, node) in map)
+            {
+                if (node?.GetValue<string>() is not { Length: > 0 } path)
+                {
+                    continue;
+                }
+
+                var size = int.TryParse(key, out var parsed) ? parsed : 0;
+                candidates.Add((size, path, IsRaster(path)));
+            }
+        }
 
         if (root["icons"] is JsonObject icons)
         {
-            foreach (var (_, node) in icons)
-            {
-                if (node?.GetValue<string>() is { Length: > 0 } path)
-                {
-                    candidates.Add(path);
-                }
-            }
+            Collect(icons);
         }
 
         foreach (var field in new[] { "action", "browser_action" })
@@ -193,24 +204,20 @@ public static class ExtensionManifest
 
             if (action["default_icon"] is JsonValue single && single.TryGetValue<string>(out var path))
             {
-                candidates.Add(path);
+                candidates.Add((0, path, IsRaster(path)));
             }
             else if (action["default_icon"] is JsonObject map)
             {
-                foreach (var (_, node) in map)
-                {
-                    if (node?.GetValue<string>() is { Length: > 0 } iconPath)
-                    {
-                        candidates.Add(iconPath);
-                    }
-                }
+                Collect(map);
             }
         }
 
         var rootPath = Path.GetFullPath(folder);
-        foreach (var candidate in candidates)
+        foreach (var (_, path, _) in candidates
+                     .OrderByDescending(c => c.IsRaster)
+                     .ThenByDescending(c => c.Size))
         {
-            var full = Path.GetFullPath(Path.Combine(rootPath, candidate.Replace('/', Path.DirectorySeparatorChar)));
+            var full = Path.GetFullPath(Path.Combine(rootPath, path.Replace('/', Path.DirectorySeparatorChar)));
             if (File.Exists(full)
                 && Infrastructure.PathSafety.IsUnderDirectory(full, rootPath))
             {
@@ -219,6 +226,15 @@ public static class ExtensionManifest
         }
 
         return null;
+    }
+
+    private static bool IsRaster(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return ext.Equals(".png", StringComparison.OrdinalIgnoreCase)
+               || ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+               || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+               || ext.Equals(".gif", StringComparison.OrdinalIgnoreCase);
     }
 
     // ------------------------------------------------------------------ //
