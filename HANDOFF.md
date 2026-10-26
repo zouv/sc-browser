@@ -18,21 +18,19 @@
 ## 状态快照
 
 - **最近更新**：2026-10-26
-- **整体状态**：✅ 无进行中的开发任务（**v0.3.0 已打包并发布**）
+- **整体状态**：✅ 无进行中的开发任务（S4 + E-1/E-2/E-3 + P2-2/P2-3/P2-4/P2-5(标签组) + 技术债已完成；改动**未提交**）
 - **当前分支（必填）**：`main`
 - **最后验证状态**：
-  · 2026-10-26：`sh manager.sh test` ✅（**150/150**）；`sh check-docs.sh` ✅。
-  · 隔离实例实跑 ✅：`F11` 全屏（1920×1080 覆盖任务栏、chrome 收起、`Esc` 退出后几何原样恢复）；
-    网页 `requestFullscreen` 进入/退出；链接悬停底部状态栏；标签音频图标出现、点击后变静音图标；
-    下载**暂停 → 继续 → 完成**、**取消**、工具栏下载指示器出现/消失、文件落到系统「下载」；
-    点锁形图标打开站点信息浮层（来源 / 安全状态 / 权限 / 清除与重置按钮）。
-  · **未实跑（代码路径完成，靠编译与单测兜底）**：内核退出后重建引擎、30 分钟后台休眠、
-    拖出标签成新窗口、打印 / 另存为 / 查看源代码、证书错误提示、设为默认浏览器（会写注册表，需用户确认后再试）。
-    原因：实跑到一半工作站锁屏，GUI 自动化无法继续。
-  · 期间修掉三个实现期缺陷：错误条/状态栏绑定被 `ClearValue` 清掉导致红条残留；
-    下载指示器不消失（先发通知后移除活跃项）；站点信息浮层重复 `Close()` 抛异常。
-- **已发布**：`v0.3.0`（2026-10-26，https://github.com/zouv/sc-browser/releases/tag/v0.3.0 ）——
-  上传 `ScBrowser_0.3.0_x64-setup.exe` 与 `ScBrowser_0.3.0_x64-unpack.zip`；安装器 `ProductVersion=0.3.0`、`CompanyName=zouv`。
+  · 2026-10-26：`sh manager.sh test` ✅（**183/183**）。
+  · 实跑通过：标签拖拽的三种行为（多标签拖出分窗、拖到别的窗口标签条合并、单标签拖动移窗）；
+    书签页文件夹树（新建 / 移动到 → 子项归入文件夹）；历史页按日期分组与范围筛选；
+    真实商店包（uBlock Origin Lite）下载 + **验签通过**且算出的扩展 ID 与请求 ID 一致
+    （用 `SCBROWSER_TEST_CRX` / `SCBROWSER_TEST_CRX_ID` 驱动的离线回归测试）。
+  · **未实跑（代码路径完成，靠编译与单测兜底）**：扩展工具栏按钮 / 弹窗 / `chrome.tabs` 兼容层、
+    扩展安装后的元数据与图标、密码保存与自动填充、标签组 UI 与会话恢复、
+    CRX3 公钥写回 manifest 后 WebView2 是否给出相同 ID、后台休眠、内核重建、打印/另存为、证书提示。
+    原因：实跑到一半工作站再次锁屏，GUI 自动化无法继续。
+- **已发布**：`v0.3.0`（2026-10-26，https://github.com/zouv/sc-browser/releases/tag/v0.3.0 ）。
 - **上一版**：`v0.2.2`（2026-10-22）。
 
 ---
@@ -61,10 +59,15 @@
 
 ## 下一步（Next Steps）
 
-1. 用户在场时补做未实跑项（顺序建议）：拖出标签成新窗口 → 内核重建（结束 msedgewebview2 的 browser 进程）→
-   `Ctrl+P/S/U` → 证书错误（可用自签名站）→ 「设为默认浏览器」（会写 HKCU）。
-2. 之后按 `ROADMAP` §🟡 推进：**E-*** 扩展兼容（安装链路 → 扩展界面 → API 缺口 PoC）→ **S4** 数据层加固
-   → P2-* 增强（书签文件夹、历史分组、标签组等）。
+1. 提交这批改动（建议按 `新增：` / `修复：` / `文档：` 拆分）。
+2. 用户在场时补做未实跑项，优先顺序：
+   - 扩展：从商店装一个真实扩展 → 工具栏图标出现 → 点开弹窗不白屏 → 弹窗里能读到当前标签；
+   - 标签组：右键建组 → 色点出现 → 退出重开看会话是否恢复分组；
+   - 密码保存 / 自动填充开关与「清除已保存密码」；
+   - 此前遗留：后台休眠、内核重建、打印/另存为、证书提示、默认浏览器注册（写 HKCU，需用户同意）。
+3. 发版：这批改动量较大，建议下一个版本 `v0.4.0`。
+4. 仍未做的规划（见 `ROADMAP`）：**P2-1**（CompositionController，重写承载层，需实机视觉验证）、
+   **垂直标签栏**、扩展自动更新、`chrome.action.onClicked`。
 
 ## 如何运行 / 测试（Quick Verify）
 
@@ -100,8 +103,6 @@
   因此无需反射取 controller。**前提**是关掉 `AreBrowserAcceleratorKeysEnabled`。已实测生效。
 - **存储选 SQLite 而非 JSON/IndexedDB**：需要按时间倒序分页、按关键字搜索、按访问次数取热门站点，
   这些用 SQL 是几行的事。
-- **扩展只能装「解包目录」**：WebView2 平台限制。为让用户能装网上下载的 `.crx`，
-  自实现 CRX 解包（v2/v3 头解析 + 目录穿越防护）。
 - **内部页面统一走 WebUI（HTML/JS）**：与 Chrome 的 `chrome://` 页面同构，
   复用项目「C#+JS」栈里的 JS 半边，改版快；代价是要额外维护一套消息协议。
 - **无痕不做第二套环境**：WebView2 的 InPrivate 是**控制器/profile 级**能力，
@@ -119,21 +120,15 @@
 - **标签状态与引擎分离**：`BrowserTab` 不再在构造函数里 `new WebView2()`，引擎由 `EnsureInitializedAsync`
   按需创建；`View`/`Core` 可能为 `null`，导航与缩放会记为待处理、初始化完成后补上。
   会话恢复只立即加载激活标签——这就是惰性恢复（实测 5 标签只起 1 个渲染进程）。
+- **扩展的信任模型**：没有商店审核，安装即信任其代码。因此 CRX 必须验签、安装前列权限；
+  受管目录按 `<id>/<版本>` 存放，公钥写回 manifest 的 `key` 才能保住 Chrome 同款扩展 ID。
+  平台不提供 `chrome.tabs`，只在**我们自己承载的弹窗**里注入兼容层（后台拿不到），不要夸大兼容性。
 - **页内查找优先原生、旧运行时走 JS 兜底**：`CoreWebView2.Find` 需要 `ICoreWebView2_28`，
   本机 WebView2 131 没有该接口（访问即抛 `NotImplementedException`）。`BrowserTab` 在原生不可用
   或启动失败时退回 `ExecuteScriptAsync` + `TreeWalker` + `CSS.highlights`；升级运行时后自动走原生。
   **不要为「只留一条实现」删掉兜底**，否则旧运行时会直接失去查找功能。
-- **打包统一到 `dist/`，脚本名为 `package`**：脚本与产物目录对齐，避免 `packages/`
-  在 .NET 里被误解为 NuGet 依赖目录。`dist/dev/ScBrowser_<版本>_x64-unpack-debug.zip`
-  （Debug + PDB + 日志 + build-info，zip 内带单一根目录）与
-  `dist/release/unpack/`（可直接运行）+
-  `ScBrowser_<版本>_x64-unpack.zip`（zip 根下直接是程序文件）+ `ScBrowser_<版本>_x64-setup.exe`。
-  zip 都由 Windows 自带的 `tar.exe` 生成（正斜杠条目）；
-  **不要换回 PowerShell 的 ZipFile**（Windows PowerShell 5.1 会写出反斜杠条目名）。
-  安装器工具链通过 NuGet `Tools.InnoSetup` 还原到本地缓存，`installer/ScBrowser.Installer.csproj`
-  只负责取 ISCC.exe 路径，**不要让打包机依赖系统预装的 Inno Setup**。
-  安装按用户落到 `%LOCALAPPDATA%\Programs\ScBrowser`（无 UAC），卸载器只删程序文件，
-  **绝不能**删除 `%LOCALAPPDATA%\sc-browser` 里的用户数据。
+- **打包统一到 `dist/`，脚本名为 `package`**：产物与安装器细节见 `ARCHITECTURE.md` §6 与 `docs/02-使用说明.md`；
+  安装器只删程序文件，**绝不删** `%LOCALAPPDATA%\sc-browser` 用户数据。
 
 ---
 

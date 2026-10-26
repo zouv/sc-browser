@@ -83,10 +83,10 @@
 
 | 我要改的东西 | 关键函数 / 锚点 | 备注 |
 |---|---|---|
-| 加表/加列 | `BrowserDatabase.Initialize` 的建表 SQL | 幂等 `IF NOT EXISTS` |
+| 加表/加列 | `BrowserDatabase.Migrate`（`PRAGMA user_version`） | 每版一段升级；不要再往 `CREATE TABLE IF NOT EXISTS` 里塞新列 |
 | 历史去重语义 | `HistoryRepository.RecordVisit` | 同 URL 累加 `visit_count` |
-| 历史查询/搜索 | `HistoryRepository.Query` / `QueryTopSites` | `search` 用 LIKE 匹配地址与标题 |
-| 书签增删/切换 | `BookmarkRepository.Add` / `Remove` / `Toggle` / `Exists` | |
+| 历史查询/搜索 | `HistoryRepository.Query` / `QueryTopSites` / `QueryVisits` | 有 `*Async` 版本；界面与消息路由只用 Async |
+| 书签增删/切换 | `BookmarkRepository.Add` / `Remove` / `Toggle` / `Exists` / `AddFolder` / `Rename` / `Move` / `RemoveById` | 树结构：parent_id / sort_order / kind |
 | 下载记录 | `DownloadRepository.Upsert` / `Find` / `MarkInProgressAsFailed` | 启动时把「下载中 / 已暂停」标为失败 |
 | 下载暂停 / 继续 / 取消 | `DownloadManager.Pause` / `Resume` / `Cancel`（按 id） | WebView2 对暂停与取消都报 `UserCanceled`，意图要自己记 |
 | 「下载前询问位置」 | `DownloadManager.PromptForSavePath` | 取消对话框 = `e.Cancel = true` |
@@ -95,10 +95,14 @@
 
 | 我要改的东西 | 关键函数 / 锚点 | 备注 |
 |---|---|---|
-| 列出扩展 | `ExtensionService.ListAsync` | 平台只给 id/name/isEnabled |
-| 从目录安装 | `ExtensionService.InstallFromFolderAsync` | 先校验 `manifest.json` |
-| 从 `.crx` 安装 | `ExtensionService.InstallFromCrxAsync` → `CrxPackage.ExtractTo` | 解到 `AppPaths.ManagedExtensionsFolder` |
-| 定位 ZIP 偏移 | `CrxPackage.FindZipOffset` | v2：16+key+sig；v3：12+header |
+| 列出扩展 | `ExtensionService.ListAsync` | 平台只给 id/name/isEnabled；其余来自 `ExtensionManifest` 与 `Extensions/index.json` |
+| 从目录安装 | `ExtensionService.InstallFromFolderAsync` | 先复制进受管目录 `<id>/<版本>`，再加载 |
+| 从 `.crx` 安装 | `ExtensionService.InstallFromCrxAsync` → `CrxPackage.Read`（验签）→ `ExtractTo` | 公钥写回 manifest `key`；失败不落盘 |
+| 定位 ZIP 偏移 | `CrxPackage.Read` / `FindZipOffset` | v2：16+key+sig；v3：12+header |
+| 扩展 ID / 验签 | `CrxPackage.ComputeExtensionId` / `VerifyCrx3Proof` / `VerifyCrx2Signature` | ID = SHA-256(公钥) 前 16 字节映射成 a–p |
+| 商店下载 | `ExtensionStoreClient.DownloadAsync` / `ExtractId` | 支持 Chrome / Edge 详情页链接与纯 ID |
+| 扩展图标 | `ExtensionService.TryReadIconDataUrl` | 转 data URL，内部页面加载不了 file:// |
+| 扩展弹窗 | `ExtensionPopupWindow.OpenAsync` + `ExtensionApiBridge.PolyfillScript` | `chrome.tabs` 兼容层只对弹窗生效 |
 | 解包 | `CrxPackage.ExtractTo` → `ValidateEntries`（先校验再删旧目录） | **ZIP 段要切独立流**，见 §7；上限 `MaxEntries` / `MaxExtractedBytes` |
 | 目录名规整 | `CrxPackage.DeriveFolderName` | 不得以 `_` 开头 |
 

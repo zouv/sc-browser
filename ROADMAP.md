@@ -35,6 +35,20 @@
 
 ## ✅ 已交付里程碑
 
+### M7 · 扩展兼容链路 + 数据层与远期增强（2026-10-26 完成，未发布）
+
+一句话结论：把 Chrome 扩展从「能加载解包目录」推进到「能装商店包、能点工具栏、弹窗能读当前标签」，
+同时补齐数据层、历史/书签界面、密码自动填充与标签组。细节见 `CHANGELOG [未发布]`。
+
+- S4：`user_version` 迁移（访问明细表 + 书签树列）；历史/书签/下载读写移出 UI 线程。
+- E-1：商店链接/ID 直装、CRX 验签、受管目录 `<id>/<版本>`、公钥写回 `key`、manifest 元数据、权限确认。
+- E-2：工具栏扩展按钮 + 弹窗宿主 + 选项页；地址栏放行 `chrome-extension://`。
+- E-3：`chrome.tabs/windows` 兼容层（仅弹窗）+ 兼容矩阵文档 `docs/03-扩展兼容性.md`。
+- P2-2 书签文件夹树、P2-3 历史按日期分组与筛选、P2-4 密码保存/自动填充、P2-5 标签组（不含垂直标签）。
+- 技术债：主窗口按区域拆成 partial 分册；新增存储/会话/扩展/CRX 单测（183 项）。
+
+---
+
 ### M6 · 标签引擎收尾 + 日常功能（v0.3.0，2026-10-26 发布）
 
 一句话结论：把 S3 留下的能力补齐（休眠 / 拖出成窗口 / 内核重建），并做完 F-1～F-7 的日常浏览功能。
@@ -145,7 +159,7 @@
 | ~~S2~~ ✅ | ~~稳定性（崩溃恢复 / 单实例 / 原子持久化）~~ | **已完成**（2026-10-25）：见 M5 |
 | ~~S3~~ ✅ | ~~标签状态与引擎拆分 + 惰性恢复~~ | **已完成**（2026-10-25） |
 | ~~S3b~~ ✅ | ~~后台休眠 / 拖出成窗口 / 内核重建~~ | **已完成**（2026-10-26）：见 M6 |
-| S4 | 数据层加固 | SQLite 调用移出 UI 线程；`PRAGMA user_version` 迁移；访问明细表（支撑 P2-3）；书签树结构（支撑 P2-2）；去掉 `Cache=Shared` |
+| ~~S4~~ ✅ | ~~数据层加固~~ | SQLite 调用移出 UI 线程；`PRAGMA user_version` 迁移；访问明细表（支撑 P2-3）；书签树结构（支撑 P2-2）；去掉 `Cache=Shared` |
 | ~~F-1~~ ✅ | 全屏 | F11 + 网页视频全屏（`ContainsFullScreenElementChanged` 时隐藏外壳） |
 | ~~F-2~~ ✅ | 打印 / 另存为 / 查看源代码 | Ctrl+P / Ctrl+S / Ctrl+U（`ShowPrintUI` / `ShowSaveAsUIAsync`） |
 | ~~F-3~~ ✅ | 链接悬停状态栏 | 订阅 `StatusBarTextChanged` 自绘（内置状态栏已关） |
@@ -153,9 +167,9 @@
 | ~~F-5~~ ✅ | 下载控制与外壳提示 | 暂停/继续/取消；工具栏下载指示；落实 `AskWhereToSaveDownloads`；下载目录用系统已知文件夹 |
 | ~~F-6~~ ✅ | 站点信息与证书错误 | 点锁看证书/权限（`GetNonDefaultPermissionSettingsAsync`）；`ServerCertificateErrorDetected` 错误页 |
 | ~~F-7~~ ✅ | 设为默认浏览器 | 注册 ProgID / URL 关联（单实例转发已就绪） |
-| E-1 | 扩展安装链路 | 商店链接/ID 下载 CRX；CRX3 公钥写入 manifest `key` 保住扩展 ID（需实测）；签名校验；受管目录 `<id>/<version>/`、目录安装也复制；自建 manifest 元数据（含 `_locales`、权限确认）；`update_url` 自动更新；MV2/MV3 提示。并入 P2-6 |
-| E-2 | 扩展界面 | 工具栏扩展按钮 + 弹窗（顶层窗口内的同 profile WebView2 打开 `chrome-extension://<id>/<popup>`）+ 选项页；地址栏放行 `chrome-extension://`；无痕中的扩展（需实测） |
-| E-3 | 扩展 API 缺口 PoC + 兼容矩阵 | 平台不提供 `chrome.tabs/windows`、action 弹窗、native messaging；在自承载的扩展页注入 polyfill 补子集；Top-N 扩展兼容性矩阵写进 docs |
+| ~~E-1~~ ✅ | ~~扩展安装链路~~ | 商店链接/ID 下载 CRX；CRX3 公钥写入 manifest `key` 保住扩展 ID（需实测）；签名校验；受管目录 `<id>/<version>/`、目录安装也复制；自建 manifest 元数据（含 `_locales`、权限确认）；`update_url` 自动更新；MV2/MV3 提示。并入 P2-6 |
+| ~~E-2~~ ✅ | ~~扩展界面~~ | 工具栏扩展按钮 + 弹窗（顶层窗口内的同 profile WebView2 打开 `chrome-extension://<id>/<popup>`）+ 选项页；地址栏放行 `chrome-extension://`；无痕中的扩展（需实测） |
+| ~~E-3~~ ✅ | ~~扩展 API 缺口 PoC + 兼容矩阵~~ | 平台不提供 `chrome.tabs/windows`、action 弹窗、native messaging；在自承载的扩展页注入 polyfill 补子集；Top-N 扩展兼容性矩阵写进 docs |
 | ~~P1-1~~ ✅ | ~~页内查找（Ctrl+F）~~ | **已完成**（2026-10-19）：查找条 + 输入即搜 + 匹配计数 + 上/下跳转；原生 Find API 不可用时自动走 JS 兜底 |
 | ~~P1-2~~ ✅ | ~~重开已关闭标签页（Ctrl+Shift+T）~~ | **已完成**（2026-10-16）：`ClosedTabHistory` 维护 25 条「最近关闭」栈 |
 | ~~P1-3~~ ✅ | ~~标签拖拽重排 + 中键关闭~~ | **已完成**（2026-10-16）：拖拽实时重排 + 中键关闭 + 标签右键菜单 |
@@ -166,10 +180,10 @@
 
 | # | 任务 | 说明 |
 |---|------|------|
-| P2-1 | 迁移到 `WebView2CompositionController` | 视觉承载可彻底解决 airspace，使浮层能直接盖在网页上；代价是要自实现 WPF 承载控件与输入处理 |
-| P2-2 | 书签文件夹与编辑 | 当前书签是平铺列表，无目录、无重命名 |
-| P2-3 | 历史按日期分组 + 更多筛选 | 目前是单列表 + 关键字过滤 |
-| P2-4 | 密码保存与表单自动填充 | 平台已支持（`Profile.IsPasswordAutosaveEnabled` / `IsGeneralAutofillEnabled`），需配 UI 与安全说明 |
-| P2-5 | 标签组 / 垂直标签 | 借鉴 Edge 的垂直标签栏 |
+| P2-1 | 迁移到 `WebView2CompositionController` | **未做**：视觉承载可彻底解决 airspace，但会重写整个内容区承载与输入处理，必须配合实机视觉验证，风险高，留待单独立项 |
+| ~~P2-2~~ ✅ | ~~书签文件夹与编辑~~ | 当前书签是平铺列表，无目录、无重命名 |
+| ~~P2-3~~ ✅ | ~~历史按日期分组 + 更多筛选~~ | 目前是单列表 + 关键字过滤 |
+| ~~P2-4~~ ✅ | ~~密码保存与表单自动填充~~ | 平台已支持（`Profile.IsPasswordAutosaveEnabled` / `IsGeneralAutofillEnabled`），需配 UI 与安全说明 |
+| P2-5 | 标签组 / 垂直标签 | 标签组**已完成**（色点 + 右键菜单 + 会话恢复）；**垂直标签栏未做**（布局级改动，需视觉验证） |
 | P2-6 | 扩展元数据展示 | 已并入 E-1（自建 manifest 元数据） |
 | ~~P2-7~~ ✅ | ~~多窗口~~ | **已完成**（2026-10-16）：随无痕一并落地——`BrowserWindowManager` 按窗口组装 TabManager/MainViewModel |

@@ -57,8 +57,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 改全屏 / 站点信息 / 证书提示 | `Views/MainWindow.xaml(.cs)`（`ToggleFullScreen` / `SecurityButton_Click` / `AskAboutCertificateError`）、`Views/SiteInfoPopup.xaml(.cs)`、`Interop/NativeMethods.cs`（`FillMonitor`）、`Browser/BrowserTab.cs`（`FullScreenChanged` / `CertificateErrorDetected`） | Storage/、Assets/ | §2.1、§7 |
 | 改页内查找（Ctrl+F） | `Views/MainWindow.xaml(.cs)`（查找条/快捷键）、`Browser/BrowserTab.cs`（Find 封装与 JS 兜底） | Storage/、Assets/ | §2.1、§2.2、§7 |
 | 加/改内部页面（WebUI） | `Assets/ui/<page>/*`、`Browser/WebMessageRouter.cs`、`Browser/InternalPageRegistry.cs`（含消息白名单） | Views/、Storage/（除非要新数据） | §2.3、§4、§7 |
-| 加/改数据存储（历史/书签/下载） | `Storage/*` | Views/、Assets/ | §2.4、§4 |
-| 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Assets/ui/extensions/*` | Views/、Storage/ | §2.5、arch/flows.md §3.2 |
+| 加/改数据存储（历史/书签/下载） | `Storage/*`（含 `BrowserDatabase` 的 `user_version` 迁移） | Views/、Assets/ | §2.4、§4 |
+| 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Browser/ExtensionManifest.cs`、`Browser/ExtensionStoreClient.cs`、`Browser/ExtensionApiBridge.cs`、`Views/ExtensionPopupWindow.xaml(.cs)`、`Assets/ui/extensions/*` | Views/（除弹窗）、Storage/ | §2.5、arch/flows.md §3.2、docs/03 |
 | 改主题/设置/会话（含「深色影响网页」） | `Services/SettingsService.cs`、`Services/ThemeService.cs`、`Services/SessionStore.cs`、`Browser/WebTheme.cs`、`Themes/*` | Storage/、Views/ | §2.6、arch/flows.md §3.4 |
 | 启动流程 / 单实例 / 命令行参数 | `App.xaml.cs`、`Services/SingleInstance.cs`、`Services/StartupCommandRunner.cs`、`Services/BrowserWindowManager.cs`（`HandleForwardedArgsAsync`） | Storage/、Assets/ | §2.6 |
 | 改启停/构建/发布（运维） | `manager.sh`、`*.bat`、`installer/*`、`.gitattributes`、`ScBrowser.csproj`、`docs/02-使用说明.md` | 所有业务代码 | §6 |
@@ -96,7 +96,10 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Browser/AddressBarResolver.cs` | 地址栏输入 → 地址/搜索词判定 | 改地址解析规则 |
 | `src/ScBrowser/Browser/SecurityState.cs` | 安全状态枚举（锁形图标语义） | 加安全状态 |
 | `src/ScBrowser/Browser/WebMessageRouter.cs` | **内部页面 ↔ 宿主消息路由**（协议唯一实现处，按来源鉴权） | 新增 WebUI 能调用的能力 |
-| `src/ScBrowser/Browser/ExtensionService.cs` | 扩展列出/安装/启停/卸载 | 改扩展能力 |
+| `src/ScBrowser/Browser/ExtensionService.cs` | 扩展列出/安装/启停/卸载；受管目录 `<id>/<版本>`、安装索引、元数据与图标 | 改扩展能力 |
+| `src/ScBrowser/Browser/ExtensionManifest.cs` | 解析 `manifest.json`（多语言名、权限、图标、弹窗、选项页、update_url）；写回 `key` | manifest 相关 |
+| `src/ScBrowser/Browser/ExtensionStoreClient.cs` | 商店链接/ID → 下载 `.crx`（Chrome / Edge） | 改商店来源 |
+| `src/ScBrowser/Browser/ExtensionApiBridge.cs` | 扩展弹窗里的 `chrome.tabs` / `windows` 兼容层脚本（PoC） | 补扩展 API |
 | `src/ScBrowser/Browser/CrxPackage.cs` | CRX 解包（v2/v3 头解析 + ZIP 提取 + 目录穿越防护） | 改解包逻辑 |
 | `src/ScBrowser/Storage/BrowserDatabase.cs` | SQLite 建表 / 连接工厂（WAL） | 改 schema |
 | `src/ScBrowser/Storage/Entries.cs` | 数据记录定义（HistoryEntry/BookmarkEntry/DownloadEntry + 状态枚举） | 加字段 |
@@ -118,6 +121,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的落点换算（指针落在哪个槽位，纯函数 + 单测） | 改拖拽落点规则 |
 | `src/ScBrowser/Views/AboutDialog.xaml(.cs)` | 「关于」对话框（图标 / 版本 / 用户数据目录） | 改关于页 |
 | `src/ScBrowser/Views/SiteInfoPopup.xaml(.cs)` | 站点信息浮层（来源 / 安全状态 / 站点权限 / 清除站点数据） | 改站点信息与权限管理 |
+| `src/ScBrowser/Views/ExtensionPopupWindow.xaml(.cs)` | 扩展工具栏弹窗（同 profile 的 WebView2 + `chrome.tabs` 兼容层） | 改扩展弹窗 |
+| `src/ScBrowser/Views/MainWindow.{Tabs,Shortcuts,Find}.cs` | 主窗口的 partial 分册（标签条交互 / 快捷键 / 页内查找） | 改对应区域 |
 | `src/ScBrowser/Assets/ui/**` | **WebUI 内部页面**（HTML/CSS/JS） | 改内部页面 |
 | `src/ScBrowser/Assets/ui/common/browser-api.js` | WebUI 侧消息桥（协议客户端） | 改协议 |
 
@@ -181,13 +186,16 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 各页 | `navigation.openInNewTab` | `url`, `active` | — |
 | history | `history.query` | `search`, `limit`, `offset` | `HistoryEntry[]` |
 | history | `history.remove` / `history.removeByUrl` / `history.clear` | `id` / `url` | — |
+| history | `history.visits` | `search`, `from`, `to`（ISO）, `limit` | `VisitEntry[]`（按时间倒序） |
 | newtab | `history.topSites` | `limit` | `HistoryEntry[]` |
-| bookmarks | `bookmarks.query` / `bookmarks.add` / `bookmarks.remove` / `bookmarks.toggle` / `bookmarks.exists` | `url`, `title`, `id` | 视消息而定 |
+| bookmarks | `bookmarks.query` / `bookmarks.add` / `bookmarks.remove` / `bookmarks.toggle` / `bookmarks.exists` | `url`, `title`, `id`, `parentId` | 视消息而定 |
+| bookmarks | `bookmarks.addFolder` / `bookmarks.rename` / `bookmarks.move` / `bookmarks.removeById` | `title`, `id`, `parentId` | 新 id / 是否成功 |
 | downloads | `downloads.query` / `downloads.clear` / `downloads.remove` | `id` | `DownloadEntry[]` |
 | downloads | `downloads.openFile` / `downloads.revealInFolder` | `id`（**不收路径**，宿主查库） | — |
 | downloads | `downloads.pause` / `downloads.resume` / `downloads.cancel` | `id` | — |
-| extensions | `extensions.list` | — | `ExtensionInfo[]` |
-| extensions | `extensions.installFromFolder` / `extensions.installFromCrx` | —（弹系统对话框） | `ExtensionInfo \| null` |
+| 扩展 | `extensions.list` | — | `ExtensionInfo[]`（含版本、描述、权限、图标 data URL、弹窗/选项路径、MV 版本） |
+| 扩展 | `extensions.installFromFolder` / `extensions.installFromCrx` | —（弹系统对话框） | `ExtensionInfo \| null`（用户在权限确认里取消时为空） |
+| 扩展 | `extensions.installFromStore` | `input`（商店链接或 32 位 ID） | `ExtensionInfo \| null` |
 | extensions | `extensions.remove` / `extensions.setEnabled` / `extensions.openManagedFolder` | `id`, `enabled` | — |
 | settings | `settings.get` | — | `AppSettings` |
 | settings | `settings.update` / `settings.setTheme` | 偏好字段（合并，见 `CopyPreferencesFrom`） / `theme` | — |
@@ -284,6 +292,13 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   全屏时还要把 `WindowChrome.CaptionHeight` 归零，否则点网页顶部会变成拖窗口。
 - **证书错误只该问「顶层导航」**：`ServerCertificateErrorDetected` 对每个子资源都会触发，
   逐个弹窗不可用。`BrowserTab` 用 `_pendingMainFrameUri`（NavigationStarting 记下、Completed 清空）过滤。
+- **CRX3 的头部有两把公钥**：商店包一般同时带 `sha256_with_rsa` 与 `sha256_with_ecdsa`，
+  `signed_header_data.crx_id` 只对应其中一把。必须先按 crx_id 筛出匹配的那份再验签，
+  否则会误报「头部 ID 与公钥不一致」（实现见 `CrxPackage.ReadV3`）。
+- **扩展图标只能是 data URL**：内部页面是 `browser://` 来源，加载不了扩展目录里的 `file://` 图片；
+  `ExtensionService` 把图标读成 base64 data URL 再交给页面。
+- **`chrome.tabs` 兼容层只覆盖我们自己承载的扩展页面**：`AddScriptToExecuteOnDocumentCreatedAsync`
+  注入的补丁在弹窗 WebView2 里生效，后台 service worker 拿不到——不要把它当成完整实现。
 - **无痕不能用「新环境」实现**：必须同一个 `CoreWebView2Environment` + InPrivate 的
   `CoreWebView2ControllerOptions`（见 §3.5）。
 - **主题令牌键必须成对存在**：`Theme.Light.xaml` 与 `Theme.Dark.xaml` 键名不一致时，换肤会缺键。
