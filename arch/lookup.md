@@ -34,7 +34,7 @@
 | 链接悬停状态栏 | XAML 的 `StatusBar`（绑定 `ActiveTab.StatusText`）+ `BrowserTab.WireEvents` 的 `StatusBarTextChanged` | WebView2 自带状态栏关闭（`IsStatusBarEnabled=false`） |
 | 站点信息 | `SecurityButton_Click` → `Views/SiteInfoPopup` | 独立顶层窗口（airspace） |
 | 证书错误 | `BrowserTab` 的 `ServerCertificateErrorDetected` → `TabManager.CertificateErrorDetected` → `AskAboutCertificateError` | 只对顶层导航询问，子资源走默认 |
-| 页内查找条（Ctrl+F） | XAML 的 `FindBar` / `FindBox`；代码的 `ShowFindBar` / `RunFindAsync` / `StepFind` / `FindBox_KeyDown` | 停靠在工具栏下方（airspace 决定不做悬浮层）；Enter/Shift+Enter/F3/Shift+F3 导航 |
+| 页内查找条（Ctrl+F） | XAML 的 `FindBar`（Popup）/ `FindBox`；代码的 `ShowFindBar` / `PlaceFindBar` / `RunFindAsync` / `StepFind` / `FindBox_KeyDown` | **浮动面板**：Popup 是独立顶层 HWND 能盖过 WebView2；靠右停在内容区右上角；Enter/Shift+Enter/F3/Shift+F3 导航 |
 | 主菜单项 | `MenuButton_Click` + XAML 里的 `Button.ContextMenu` | |
 | 窗口深色标题栏/圆角 | `NativeMethods.ApplyDarkMode` / `ApplyRoundedCorners`（由 `OnStateChanged` 在最大化时改直角） | |
 | 应用图标 | `ScBrowser.csproj` 的 `ApplicationIcon` + `Assets/sc-browser.ico`；窗口用 `Icon="/Assets/sc-browser.ico"` | 设计源在 `docs/icons/`（改设计后重新导出 `.ico` 并覆盖 Assets 里那份） |
