@@ -55,6 +55,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = viewModel;
         FindBar.CustomPopupPlacementCallback = PlaceFindBar;
+        FindBar.Opened += (_, _) => FocusFindBox();
         RestoreWindowPlacement();
 
         // 最后一个标签关闭即退出（Chrome 语义）。外壳自己决定怎么响应，TabManager 不越权。

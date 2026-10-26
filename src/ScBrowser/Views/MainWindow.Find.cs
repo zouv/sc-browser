@@ -48,8 +48,14 @@ public partial class MainWindow
             AttachFindTab(tab);
         }
 
+        var wasOpen = FindBar.IsOpen;
         FindBar.IsOpen = true;
-        FocusFindBox();
+
+        // 首次打开由 Opened 事件聚焦（那时 Popup 的 HWND 才就绪）；重复打开直接聚焦。
+        if (wasOpen)
+        {
+            FocusFindBox();
+        }
 
         // 复用上一次的关键词时，打开即重新搜索（Chrome 在同一标签内也是这个观感）。
         if (!string.IsNullOrEmpty(FindBox.Text))
@@ -74,6 +80,13 @@ public partial class MainWindow
         FindBar.IsOpen = false;
         FindStatus.Text = string.Empty;
         DetachFindTab(stop: true);
+
+        // focusContent=false 专指「切换标签触发的收起」：清掉关键词，
+        // 避免上一个页面的搜索词带进新页面——查找条只跟随当前页面。
+        if (!focusContent)
+        {
+            FindBox.Text = string.Empty;
+        }
 
         if (focusContent)
         {
@@ -239,14 +252,14 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>Popup 打开后内容才加载，聚焦要排到输入优先级之后。</summary>
+    /// <summary>聚焦查找输入框。由 <c>FindBar.Opened</c> 或「重复打开」调用——
+    /// 那时 Popup 的 HWND 已就绪，直接 Focus 即可；过早调用会静默失败导致打不进字。</summary>
     private void FocusFindBox()
     {
-        Dispatcher.BeginInvoke(() =>
-        {
-            FindBox.Focus();
-            FindBox.SelectAll();
-        }, DispatcherPriority.Input);
+        // Popup 的输入焦点要走 Keyboard.Focus，让键盘输入路由到 Popup 自己的 HWND；
+        // 仅用 FindBox.Focus() 有时只挪逻辑焦点，打字仍落到主窗口。
+        Keyboard.Focus(FindBox);
+        FindBox.SelectAll();
     }
 
     /// <summary>查找条靠右停靠在内容区右上角（留 10px 边距）。</summary>

@@ -171,6 +171,9 @@ public partial class MainWindow
                     case Key.F11:
                         ToggleFullScreen();
                         return true;
+                    case Key.Escape when FindBar.IsOpen:
+                        CloseFindBar();
+                        return true;
                     case Key.Escape when _userFullScreen:
                         SetUserFullScreen(false);
                         return true;

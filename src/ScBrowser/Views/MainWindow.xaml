@@ -629,18 +629,16 @@
         <Popup x:Name="FindBar"
                PlacementTarget="{Binding ElementName=ContentFrame}"
                Placement="Custom"
-               AllowsTransparency="True"
+               Focusable="True"
                StaysOpen="True"
                PopupAnimation="Fade">
+            <!-- 不用 AllowsTransparency：透明分层窗口收不到键盘焦点，输入框打不进字；
+                 因此这里退化为带描边的矩形浮动面板，靠右停靠的观感不变。 -->
             <Border Background="{DynamicResource ToolbarBackgroundBrush}"
                     BorderBrush="{DynamicResource SeparatorBrush}"
                     BorderThickness="1"
-                    CornerRadius="8"
                     Padding="10,6"
                     MinWidth="380">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.35" Color="Black" />
-                </Border.Effect>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
