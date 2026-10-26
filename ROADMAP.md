@@ -27,7 +27,7 @@
 产物从 `packages/` 迁到 `dist/`；release 额外保留可直接运行的 `unpack/` 目录，
 `ScBrowser_<版本>_x64-unpack.zip` 内不再套顶层目录；安装器发布者元数据清理为 `zouv`。见下方 M4。
 
-**v0.4.1（2026-10-26，待发布）**：扩展固定到工具栏、球体地球图标、页内查找条按 Chrome 行为重做
+**v0.4.1 已发布（2026-10-26）**：https://github.com/zouv/sc-browser/releases/tag/v0.4.1 ——：扩展固定到工具栏、球体地球图标、页内查找条按 Chrome 行为重做
 （独立窗口、可输入、按标签记忆、随窗口隐藏、地址栏内放大镜）。细节见 `CHANGELOG [0.4.1]`。
 
 **v0.4.0 已发布（2026-10-26）**：https://github.com/zouv/sc-browser/releases/tag/v0.4.0 ——：扩展商店直装与工具栏弹窗、`chrome.tabs` 兼容层、数据层加固、
