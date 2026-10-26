@@ -484,10 +484,17 @@ public sealed class TabManager
     }
 
     /// <summary>接收从别的窗口迁移来的标签（引擎与页面状态都保留）。</summary>
-    public void Adopt(BrowserTab tab)
+    /// <param name="tab">要接收的标签。</param>
+    /// <param name="insertAt">插入位置；<c>null</c> 表示追加到末尾。</param>
+    public void Adopt(BrowserTab tab, int? insertAt = null)
     {
         tab.Owner = this;
         Tabs.Add(tab);
+
+        if (insertAt is { } index && index >= 0 && index < Tabs.Count - 1)
+        {
+            Tabs.Move(Tabs.Count - 1, index);
+        }
 
         if (tab.View is { } view)
         {

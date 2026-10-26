@@ -138,6 +138,28 @@ public sealed class BrowserWindowManager
     public MainWindow? WindowOf(TabManager tabs) =>
         _windows.FirstOrDefault(w => ReferenceEquals(w.Tabs, tabs));
 
+    /// <summary>指针（屏幕 DIP）落在哪个窗口的标签条上；用于把标签拖进另一个窗口。</summary>
+    public MainWindow? FindWindowAtTabStrip(System.Windows.Point screenPoint, MainWindow? exclude = null) =>
+        _windows.FirstOrDefault(w => !ReferenceEquals(w, exclude) && w.ContainsTabStripPoint(screenPoint));
+
+    /// <summary>把标签从一个窗口迁到另一个已有窗口（拖到它的标签条上松手）。</summary>
+    /// <param name="tab">要迁移的标签。</param>
+    /// <param name="target">目标窗口。</param>
+    /// <param name="insertAt">在目标窗口标签条里的插入位置。</param>
+    public void MoveTabToWindow(BrowserTab tab, MainWindow target, int? insertAt = null)
+    {
+        var source = _tabManagers.FirstOrDefault(m => m.Tabs.Contains(tab));
+        if (source is null || ReferenceEquals(source, target.Tabs) || source.IsIncognito != target.Tabs.IsIncognito)
+        {
+            return;
+        }
+
+        source.ReleaseTab(tab);
+        target.Tabs.Adopt(tab, insertAt);
+        SaveSession(target.Tabs);
+        target.BringToFront();
+    }
+
     /// <summary>
     /// 把标签从当前窗口移到新窗口（标签条拖出）。引擎与页面状态都保留：
     /// 只是控件从旧内容区摘下、挂到新窗口。无痕窗口里的标签只会拖进无痕窗口，

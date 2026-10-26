@@ -71,6 +71,12 @@ public partial class MainWindow : Window
         Deactivated += (_, _) => HideSuggestionPopup();
         Activated += (_, _) => HideSuggestionPopup();
 
+        // 标签拖拽的候选状态从「按下标签」开始，但鼠标一旦移出按钮，按钮就收不到 MouseMove 了——
+        // 于是「按下后往下拖出标签条」永远起不了拖拽。窗口级再挂一份（handledEventsToo），
+        // 保证离开按钮后的移动、以及窗口外的松开都能收到。
+        AddHandler(Mouse.MouseMoveEvent, new MouseEventHandler(OnWindowMouseMove), handledEventsToo: true);
+        AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler(OnWindowMouseUp), handledEventsToo: true);
+
         // 输入即搜：打字期间只重启防抖计时器，停下来才真正发起一次查找。
         _findDebounce.Tick += (_, _) =>
         {
@@ -346,6 +352,23 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 只有一个标签：拖它等于拖窗口（Chrome 行为）。标签条本身是标题栏命中区，
+        // 但按钮标了 IsHitTestVisibleInChrome，系统不会自动把它当标题栏，所以这里手动 DragMove。
+        if (_tabs.Tabs.Count == 1)
+        {
+            e.Handled = true;
+            try
+            {
+                DragMove();
+            }
+            catch (InvalidOperationException)
+            {
+                // 鼠标已经松开等边界情况：忽略。
+            }
+
+            return;
+        }
+
         // 先只记录，不捕获鼠标——否则普通点击也会走拖拽路径、标签激活不了。
         _dragTab = tab;
         _dragElement = element;
@@ -361,7 +384,12 @@ public partial class MainWindow : Window
         _isDragging = false;
     }
 
-    private void TabButton_PreviewMouseMove(object sender, MouseEventArgs e)
+    private void TabButton_PreviewMouseMove(object sender, MouseEventArgs e) => ContinueDrag(e);
+
+    private void OnWindowMouseMove(object sender, MouseEventArgs e) => ContinueDrag(e);
+
+    /// <summary>拖拽候选 → 正式拖拽 → 跟随鼠标。</summary>
+    private void ContinueDrag(MouseEventArgs e)
     {
         if (_dragTab is null || _dragElement is null || ResolveTabStripPanel() is not { } panel
             || e.LeftButton != MouseButtonState.Pressed)
@@ -373,7 +401,9 @@ public partial class MainWindow : Window
 
         if (!_isDragging)
         {
-            if (Math.Abs(now.X - _dragStartPoint.X) < DragThreshold)
+            // 横竖都要看：只判断横向的话，往下拖（拖出去合并/分窗）永远起不了拖拽。
+            if (Math.Abs(now.X - _dragStartPoint.X) < DragThreshold
+                && Math.Abs(now.Y - _dragStartPoint.Y) < DragThreshold)
             {
                 return;
             }
@@ -388,7 +418,17 @@ public partial class MainWindow : Window
     /// 结束拖拽。拖拽过程中必须吞掉这次鼠标抬起，否则按钮会把它当成一次点击、
     /// 顺手把标签激活——那样「拖完就跳走」会很突兀。
     /// </summary>
-    private void TabButton_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private void TabButton_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => FinishDrag(e);
+
+    private void OnWindowMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_isDragging)
+        {
+            FinishDrag(e);
+        }
+    }
+
+    private void FinishDrag(MouseButtonEventArgs e)
     {
         if (!_isDragging)
         {
@@ -398,20 +438,80 @@ public partial class MainWindow : Window
         }
 
         var dragged = _dragTab;
-        var screenPoint = PointToScreen(e.GetPosition(this));
         var stillInStrip = IsInTabStrip(e.GetPosition(TabItems));
+
+        // 屏幕坐标用「窗口 Left/Top + 窗口内偏移」算：拖到窗口外时偏移可以是负数，
+        // 仍然得到正确的屏幕 DIP，且不必处理 PointToScreen 的物理像素/DPI 换算。
+        var local = e.GetPosition(this);
+        var screenPoint = new Point(Left + local.X, Top + local.Y);
 
         EndDrag();
         e.Handled = true;
 
-        // 拖到标签条以外：在鼠标位置开一个新窗口，把标签（连同页面状态）迁过去。
-        if (dragged is not null && !stillInStrip)
+        if (dragged is null)
         {
-            var dpi = VisualTreeHelper.GetDpi(this);
-            _windows.MoveTabToNewWindow(
-                dragged,
-                new Point(screenPoint.X / dpi.DpiScaleX, screenPoint.Y / dpi.DpiScaleY));
+            return;
         }
+
+        // 1) 松手时落在别的窗口的标签条上 → 合并进去（插到指针所在的槽位）。
+        var target = _windows.FindWindowAtTabStrip(screenPoint, this);
+        Serilog.Log.Debug(
+            "拖拽结束：标签 {TabId}，落点 ({X},{Y})，本窗口标签条内={InStrip}，目标窗口={Target}",
+            dragged.Id, screenPoint.X, screenPoint.Y, stillInStrip, target?.Title ?? "（无）");
+
+        if (target is not null && target.IsIncognito == IsIncognito)
+        {
+            _windows.MoveTabToWindow(dragged, target, target.TabIndexAtWindowX(screenPoint.X - target.Left));
+            return;
+        }
+
+        // 2) 否则只要离开了本窗口的标签条，就在指针位置开新窗口把标签迁过去。
+        //    （无痕与普通窗口之间不合并，所以上面不匹配时也走这条。）
+        if (!stillInStrip)
+        {
+            _windows.MoveTabToNewWindow(dragged, screenPoint);
+        }
+    }
+
+    /// <summary>本窗口是否无痕（拖拽合并时用来拒绝跨隐私会话迁移）。</summary>
+    public bool IsIncognito => _viewModel.IsIncognito;
+
+    /// <summary>
+    /// 屏幕点（DIP）是否落在本窗口的标签条上——跨窗口合并的判定区。
+    /// 用窗口几何而不是 HitTest：拖动时鼠标被原窗口捕获，命中测试拿不到别的窗口。
+    /// </summary>
+    public bool ContainsTabStripPoint(Point screenPoint)
+    {
+        const double tolerance = 8;
+        return IsVisible
+               && screenPoint.X >= Left - tolerance
+               && screenPoint.X <= Left + Width + tolerance
+               && screenPoint.Y >= Top - tolerance
+               && screenPoint.Y <= Top + TabStrip.ActualHeight + tolerance;
+    }
+
+    /// <summary>指针（相对本窗口的 X）落在标签条的哪个插入位置。</summary>
+    public int TabIndexAtWindowX(double windowX)
+    {
+        var panel = ResolveTabStripPanel();
+        if (panel is null)
+        {
+            return _tabs.Tabs.Count;
+        }
+
+        var origin = panel.TransformToAncestor(this).Transform(new Point(0, 0));
+        var x = windowX - origin.X;
+        var slots = EnumerateTabSlots();
+
+        for (var i = 0; i < slots.Count; i++)
+        {
+            if (x < (slots[i].Left + slots[i].Right) / 2)
+            {
+                return i;
+            }
+        }
+
+        return slots.Count;
     }
 
     /// <summary>指针是否仍算「在标签条里」（上下留 8px 容差，避免手抖就拖出窗口）。</summary>
