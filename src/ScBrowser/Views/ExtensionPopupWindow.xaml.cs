@@ -87,6 +87,9 @@ public partial class ExtensionPopupWindow : Window
             core.Navigate(e.Uri);
         };
 
+        core.NavigationCompleted += (_, e) =>
+            Serilog.Log.Debug("扩展弹窗加载完成：{Url} 成功={Ok} 错误={Error}", core.Source, e.IsSuccess, e.WebErrorStatus);
+
         core.Navigate(url);
     }
 

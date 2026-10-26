@@ -447,8 +447,11 @@ public partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.DataContext is not MainViewModel.ExtensionButton item)
         {
+            Serilog.Log.Debug("扩展按钮点击：DataContext 不是扩展按钮");
             return;
         }
+
+        Serilog.Log.Debug("扩展按钮点击：{Name} popup={Popup} options={Options}", item.Name, item.PopupUrl, item.OptionsUrl);
 
         var tab = _viewModel.ActiveTab;
         if (tab?.Core is null)

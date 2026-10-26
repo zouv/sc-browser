@@ -132,12 +132,26 @@ public sealed class ExtensionService
         var package = CrxPackage.Read(crxPath);
         _logger.LogInformation("CRX 校验通过：ID {Id}（格式 v{Format}）", package.ExtensionId, package.FormatVersion);
 
+        // 先解到 _incoming，再从 manifest 里读版本号决定最终目录名。
+        // （不要用「定位 ZIP 偏移后直接交给 ZipArchive」的写法：ZipArchive 要求流的 0 位置就是归档起点，
+        //   从非零偏移读会报 End Of Central Directory 对不上——见 ARCHITECTURE §7。）
+        var targetRoot = Path.Combine(
+            AppPaths.ManagedExtensionsFolder,
+            SanitizeFolderName(package.ExtensionId));
+        var incoming = Path.Combine(targetRoot, "_incoming");
+
         var target = await Task.Run(() =>
         {
-            var manifest = ReadManifestVersionFromCrx(crxPath, package);
-            var folder = BuildVersionedFolder(package.ExtensionId, manifest);
-            CrxPackage.ExtractTo(crxPath, folder, package);
-            return folder;
+            CrxPackage.ExtractTo(crxPath, incoming, package);
+
+            var version = ExtensionManifest.Read(incoming)?.Version
+                          ?? throw new InvalidDataException("扩展包内缺少可解析的 manifest.json。");
+
+            var finalFolder = Path.Combine(targetRoot, SanitizeFolderName(version));
+            TryDeleteDirectory(finalFolder);
+            Directory.CreateDirectory(targetRoot);
+            Directory.Move(incoming, finalFolder);
+            return finalFolder;
         }).ConfigureAwait(true);
 
         ExtensionManifest.EnsureKey(target, Convert.ToBase64String(package.PublicKey));
@@ -363,23 +377,6 @@ public sealed class ExtensionService
         {
             // 文件被占用时留给用户手动清理，不应让安装流程失败。
         }
-    }
-
-    private static string ReadManifestVersionFromCrx(string crxPath, CrxPackageInfo package)
-    {
-        // 只读 zip 里的 manifest.json 取版本号，避免为了命名目录而整包解两遍。
-        using var stream = File.OpenRead(crxPath);
-        stream.Position = package.ZipOffset;
-        using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
-        var entry = archive.GetEntry("manifest.json")
-                    ?? throw new InvalidDataException("扩展包内缺少 manifest.json。");
-
-        using var reader = new StreamReader(entry.Open());
-        using var document = JsonDocument.Parse(reader.ReadToEnd());
-        return document.RootElement.TryGetProperty("version", out var version)
-               && version.ValueKind == JsonValueKind.String
-            ? version.GetString() ?? "0"
-            : "0";
     }
 
     private static async Task<CoreWebView2BrowserExtension?> FindAsync(
