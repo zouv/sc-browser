@@ -65,11 +65,19 @@
             <StackPanel Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         Margin="0,14,0,0">
-                <Button Content="清除此站点数据" Padding="10,4" Margin="0,0,8,0"
+                <Button Content="清除此站点数据"
+                        Style="{StaticResource DialogButtonStyle}"
+                        Foreground="{DynamicResource DangerBrush}"
+                        Margin="0,0,8,0"
                         Click="ClearData_Click" />
-                <Button Content="重置权限" Padding="10,4" Margin="0,0,8,0"
+                <Button Content="重置权限"
+                        Style="{StaticResource DialogButtonStyle}"
+                        Margin="0,0,8,0"
                         Click="ResetPermissions_Click" />
-                <Button Content="关闭" Padding="14,4" Click="Close_Click" />
+                <Button Content="关闭"
+                        Style="{StaticResource DialogPrimaryButtonStyle}"
+                        IsDefault="True"
+                        Click="Close_Click" />
             </StackPanel>
         </StackPanel>
     </Border>

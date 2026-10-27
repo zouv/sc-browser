@@ -63,12 +63,12 @@
 
             <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
                 <Button x:Name="OpenDataFolderButton"
+                        Style="{StaticResource DialogButtonStyle}"
                         Content="打开数据目录"
-                        Padding="12,6"
                         Click="OpenDataFolder_Click" />
-                <Button Content="关闭"
-                        Padding="16,6"
-                        Margin="8,0,0,0"
+                <Button Style="{StaticResource DialogPrimaryButtonStyle}"
+                        Content="关闭"
+                        Margin="10,0,0,0"
                         IsDefault="True"
                         IsCancel="True"
                         Click="Close_Click" />

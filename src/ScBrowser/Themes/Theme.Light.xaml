@@ -19,6 +19,9 @@
     <SolidColorBrush x:Key="AddressBarBorderBrush" Color="#00000000" />
     <SolidColorBrush x:Key="AddressBarFocusBorderBrush" Color="#1A73E8" />
     <SolidColorBrush x:Key="AccentBrush" Color="#1A73E8" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#1765CC" />
+    <SolidColorBrush x:Key="AccentPressedBrush" Color="#1257B0" />
+    <SolidColorBrush x:Key="AccentForegroundBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="IconBrush" Color="#5F6368" />
     <SolidColorBrush x:Key="IconDisabledBrush" Color="#BDC1C6" />
     <SolidColorBrush x:Key="DangerBrush" Color="#D93025" />
