@@ -250,6 +250,26 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
 
+    // ---- 鼠标位置 ----
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out NativePoint point);
+
+    /// <summary>
+    /// 当前鼠标位置（物理屏幕像素）。
+    /// 拖拽接管到新窗口后，用它而不是 <c>MouseEventArgs.GetPosition</c> 来算窗口跟随：
+    /// 同一个物理移动可能被预览/冒泡各处理一次，而这里每次都按窗口当前位置重新换算，天然幂等。
+    /// </summary>
+    public static System.Windows.Point GetCursorPosition() =>
+        GetCursorPos(out var point) ? new System.Windows.Point(point.X, point.Y) : default;
+
     /// <summary>
     /// 允许任意进程（实际就是已在运行的那个实例）把自己的窗口切到前台。
     /// Windows 只允许「当前前台进程」抢前台；二次启动的进程此刻正是前台进程，

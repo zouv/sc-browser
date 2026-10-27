@@ -3,21 +3,31 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using ScBrowser.Browser;
+using ScBrowser.Interop;
 
 namespace ScBrowser.Views;
 
 /// <summary>
-/// 主窗口外壳（分册）：标签条交互：中键关闭 / 拖拽重排（含跨窗口合并）/ 右键菜单 / 标签组。
+/// 主窗口外壳（分册）：标签条交互：中键关闭 / 拖拽重排 / 拖出分窗 / 跨窗口合并 / 右键菜单 / 标签组。
 /// <para>纯 partial 拆分，字段与构造函数仍在 <c>MainWindow.xaml.cs</c>。</para>
 /// </summary>
 public partial class MainWindow
 {
     // --------------------------------------------------------------------- //
-    // 标签条交互：中键关闭 / 左键拖拽重排 / 右键菜单
+    // 标签条交互：中键关闭 / 左键拖拽 / 右键菜单
     //
     // 拖拽没有用 WPF 的 DragDrop（它接管鼠标、显示系统拖拽影像、只在落点才换位），
-    // 而是自己捕获鼠标：被拖标签跟着鼠标**横向**移动，其他标签实时让位——即 Chrome 的手感。
-    // 位置补偿是关键：把渲染偏移设成「视觉左边缘 − 布局左边缘」，这样挪位后标签不会跳。
+    // 而是自己捕获鼠标。拖拽是**实时状态机**，鼠标不松手也能连续分窗 / 合并：
+    //
+    //   InStrip  —— 指针在标签条内：被拖标签跟着鼠标横移，其他标签实时让位（Chrome 手感）。
+    //   Detached —— 指针离开标签条：立刻开一个新窗口，标签落进去，窗口跟着鼠标走；
+    //               再进入别的窗口标签条就立即合并，合并后回到 InStrip，可以继续拖出。
+    //
+    // 接管（hand-off）是这套逻辑的关键：标签迁到另一个窗口后，控件会被重新生成，
+    // 必须等新窗口布局完成、标签按钮出现，才能在新元素上重新 CaptureMouse，
+    // 否则后续 MouseMove / MouseUp 会丢。见 TakeOverStripDrag / TakeOverDetachedDrag。
+    //
+    // 位置补偿：渲染偏移 = 「视觉左边缘 − 落点槽位左边缘」，换位瞬间视觉位置才不会跳。
     // --------------------------------------------------------------------- //
 
     /// <summary>超过这个位移（逻辑像素）才算拖拽，否则「点击」会被误判成拖拽。</summary>
@@ -25,6 +35,19 @@ public partial class MainWindow
 
     /// <summary>拖拽中的标签抬到最上层，避免被相邻标签盖住。</summary>
     private const int DraggingZIndex = 100;
+
+    /// <summary>分窗时让指针落在新窗口标签条顶部的距离（标签条高 38）。</summary>
+    private const double DetachedStripAnchorY = 20;
+
+    /// <summary>拖拽处于哪个阶段。</summary>
+    private enum DragPhase
+    {
+        /// <summary>标签还在某个窗口的标签条里（可能正在重排）。</summary>
+        InStrip,
+
+        /// <summary>标签已经分到独立窗口；窗口跟着鼠标走，等它再进入别的标签条。</summary>
+        Detached,
+    }
 
     /// <summary>标签条容器（ItemsControl 的 ItemsPanel 实例）；延迟解析，因为模板要等首帧才应用。</summary>
     private Panel? _tabStripPanel;
@@ -35,6 +58,16 @@ public partial class MainWindow
     private Point _dragStartPoint;
     private double _dragGrabOffset;
     private bool _isDragging;
+    private DragPhase _dragPhase = DragPhase.InStrip;
+
+    /// <summary>
+    /// 已经发起「交接」（分窗 / 合并）。交接后标签已不属于本窗口，必须拦住后续重复的
+    /// MouseMove（预览 + 冒泡各一次）再次分窗——否则一次拖出会建出两个窗口。
+    /// </summary>
+    private bool _handOffPending;
+
+    /// <summary>Detached 阶段：指针在窗口内的锚点；窗口按它跟随鼠标，指针始终停在标签条上。</summary>
+    private Point _detachedAnchor;
 
     /// <summary>鼠标中键点击标签 → 关闭（与 Chrome 一致：中键永远是「关掉它」）。</summary>
     private void TabButton_MouseDown(object sender, MouseButtonEventArgs e)
@@ -53,27 +86,15 @@ public partial class MainWindow
             return;
         }
 
-        // 只有一个标签：拖它等于拖窗口（Chrome 行为）。标签条本身是标题栏命中区，
-        // 但按钮标了 IsHitTestVisibleInChrome，系统不会自动把它当标题栏，所以这里手动 DragMove。
-        if (_tabs.Tabs.Count == 1)
-        {
-            e.Handled = true;
-            try
-            {
-                DragMove();
-            }
-            catch (InvalidOperationException)
-            {
-                // 鼠标已经松开等边界情况：忽略。
-            }
-
-            return;
-        }
+        // 单标签窗口也走同一套拖拽：按住唯一的标签拖出去要能分出 / 合并到新窗口。
+        // 移动窗口仍可按住标签条空白处（WindowChrome 的标题栏区域）——那里不是标签按钮。
 
         // 先只记录，不捕获鼠标——否则普通点击也会走拖拽路径、标签激活不了。
         _dragTab = tab;
         _dragElement = element;
         _dragStartPoint = e.GetPosition(panel);
+        _dragPhase = DragPhase.InStrip;
+        _handOffPending = false;
 
         // 抓取偏移 = 指针相对「标签当前槽位左边缘」的距离。必须用槽位几何：
         // 元素本身在 DataTemplate 里，对它调 VisualTreeHelper.GetOffset 得到的是
@@ -89,19 +110,31 @@ public partial class MainWindow
 
     private void OnWindowMouseMove(object sender, MouseEventArgs e) => ContinueDrag(e);
 
-    /// <summary>拖拽候选 → 正式拖拽 → 跟随鼠标。</summary>
+    /// <summary>拖拽候选 → 正式拖拽 → 实时分窗 / 合并 / 跟随鼠标。</summary>
     private void ContinueDrag(MouseEventArgs e)
     {
-        if (_dragTab is null || _dragElement is null || ResolveTabStripPanel() is not { } panel
-            || e.LeftButton != MouseButtonState.Pressed)
+        if (_handOffPending || _dragTab is null || _dragElement is null || e.LeftButton != MouseButtonState.Pressed)
         {
             return;
         }
 
-        var now = e.GetPosition(panel);
+        // Detached：标签已在独立窗口里，窗口跟着鼠标走；指针进入别的标签条就立刻合并。
+        if (_dragPhase == DragPhase.Detached)
+        {
+            FollowDetachedWindow(e);
+            MergeFromDetachedIfNeeded(e);
+            return;
+        }
+
+        if (ResolveTabStripPanel() is not { } panel)
+        {
+            return;
+        }
 
         if (!_isDragging)
         {
+            var now = e.GetPosition(panel);
+
             // 横竖都要看：只判断横向的话，往下拖（拖出去合并/分窗）永远起不了拖拽。
             if (Math.Abs(now.X - _dragStartPoint.X) < DragThreshold
                 && Math.Abs(now.Y - _dragStartPoint.Y) < DragThreshold)
@@ -112,7 +145,90 @@ public partial class MainWindow
             BeginDrag();
         }
 
-        UpdateDragPosition(now);
+        ProcessStripDrag(e, panel);
+    }
+
+    /// <summary>
+    /// 还在标签条里的一个移动步：没离开就重排；离开了就看落点是不是别的窗口的标签条
+    /// （是 → 立即合并，否 → 立即分窗）。
+    /// </summary>
+    private void ProcessStripDrag(MouseEventArgs e, Panel panel)
+    {
+        var pointerInWindow = e.GetPosition(this);
+
+        if (IsInTabStrip(e.GetPosition(TabStrip)))
+        {
+            UpdateDragPosition(e.GetPosition(panel));
+            return;
+        }
+
+        // 跨窗口命中测试用**物理屏幕坐标**：PointToScreen / PointFromScreen 会按各窗口
+        // 自己的 DPI 换算；直接拿 DIP 相加，在 125%/150% 缩放或多屏不同 DPI 下会偏。
+        var pointerScreen = PointToScreen(pointerInWindow);
+        var target = _windows.FindWindowAtTabStrip(pointerScreen, this);
+        if (target is not null && target.IsIncognito == IsIncognito
+            && target.TabIndexAtScreenPoint(pointerScreen) is { } insertAt)
+        {
+            HandOffToWindow(target, insertAt, pointerScreen);
+            return;
+        }
+
+        DetachToNewWindow(pointerInWindow);
+    }
+
+    /// <summary>标签拖进另一个窗口的标签条：立即合并，并把拖拽状态交接给目标窗口。</summary>
+    private void HandOffToWindow(MainWindow target, int insertAt, Point pointerScreen)
+    {
+        if (_handOffPending || _dragTab is not { } tab)
+        {
+            return;
+        }
+
+        _handOffPending = true;
+        var grabOffset = _dragGrabOffset;
+        Serilog.Log.Debug(
+            "拖拽合并：窗口 #{Source} 标签 {TabId} → 窗口 #{Target}「{Title}」，位置 {Index}",
+            GetHashCode(), tab.Id, target.GetHashCode(), target.Title, insertAt);
+
+        EndDrag();
+        _windows.MoveTabToWindow(
+            tab,
+            target,
+            insertAt,
+            window => window.TakeOverStripDrag(tab, grabOffset, pointerScreen));
+    }
+
+    /// <summary>标签拖出标签条：立即分窗，新窗口落在指针处并继续跟随鼠标。</summary>
+    private void DetachToNewWindow(Point pointerInWindow)
+    {
+        if (_handOffPending || _dragTab is not { } tab)
+        {
+            return;
+        }
+
+        _handOffPending = true;
+        var grabOffset = _dragGrabOffset;
+        var location = NewWindowLocationAround(pointerInWindow, grabOffset);
+        Serilog.Log.Debug(
+            "拖拽分窗：窗口 #{Source} 标签 {TabId}，phase={Phase} → 新窗口 ({X},{Y})",
+            GetHashCode(), tab.Id, _dragPhase, location.X, location.Y);
+
+        EndDrag();
+        _windows.MoveTabToNewWindow(
+            tab,
+            location,
+            window => window.TakeOverDetachedDrag(tab, grabOffset));
+    }
+
+    /// <summary>
+    /// 让新窗口的标签条正好出现在指针下方：指针到标签左边缘的距离保持为抓取偏移，
+    /// 这样分窗瞬间标签不会从鼠标下跳开（Show 之后 TakeOverDetachedDrag 还会按实际布局再校正一次）。
+    /// </summary>
+    private Point NewWindowLocationAround(Point pointerInWindow, double grabOffset)
+    {
+        return new Point(
+            Math.Max(SystemParameters.VirtualScreenLeft, Left + pointerInWindow.X - grabOffset - TabLeftInWindow()),
+            Math.Max(SystemParameters.VirtualScreenTop, Top + pointerInWindow.Y - DetachedStripAnchorY));
     }
 
     /// <summary>
@@ -138,13 +254,12 @@ public partial class MainWindow
             return;
         }
 
+        var phase = _dragPhase;
         var dragged = _dragTab;
-        var stillInStrip = IsInTabStrip(e.GetPosition(TabItems));
-
-        // 屏幕坐标用「窗口 Left/Top + 窗口内偏移」算：拖到窗口外时偏移可以是负数，
-        // 仍然得到正确的屏幕 DIP，且不必处理 PointToScreen 的物理像素/DPI 换算。
-        var local = e.GetPosition(this);
-        var screenPoint = new Point(Left + local.X, Top + local.Y);
+        var grabOffset = _dragGrabOffset;
+        var stillInStrip = IsInTabStrip(e.GetPosition(TabStrip));
+        var pointerInWindow = e.GetPosition(this);
+        var pointerScreen = PointToScreen(pointerInWindow);
 
         EndDrag();
         e.Handled = true;
@@ -154,23 +269,188 @@ public partial class MainWindow
             return;
         }
 
-        // 1) 松手时落在别的窗口的标签条上 → 合并进去（插到指针所在的槽位）。
-        var target = _windows.FindWindowAtTabStrip(screenPoint, this);
-        Serilog.Log.Debug(
-            "拖拽结束：标签 {TabId}，落点 ({X},{Y})，本窗口标签条内={InStrip}，目标窗口={Target}",
-            dragged.Id, screenPoint.X, screenPoint.Y, stillInStrip, target?.Title ?? "（无）");
-
-        if (target is not null && target.IsIncognito == IsIncognito)
+        // 松手兜底：移动过程中已经实时处理过分窗 / 合并；只有「刚越过边界就松手」
+        // （还没产生下一次 MouseMove）才需要在这里补一次。
+        // 注意：还在本窗口标签条里松手时不要找别的窗口——窗口重叠时会误判成合并。
+        if (phase == DragPhase.Detached || !stillInStrip)
         {
-            _windows.MoveTabToWindow(dragged, target, target.TabIndexAtWindowX(screenPoint.X - target.Left));
+            var target = _windows.FindWindowAtTabStrip(pointerScreen, this);
+            if (target is not null && target.IsIncognito == IsIncognito
+                && target.TabIndexAtScreenPoint(pointerScreen) is { } insertAt)
+            {
+                _windows.MoveTabToWindow(dragged, target, insertAt);
+                return;
+            }
+        }
+
+        if (phase == DragPhase.InStrip && !stillInStrip)
+        {
+            _windows.MoveTabToNewWindow(dragged, NewWindowLocationAround(pointerInWindow, grabOffset));
+        }
+    }
+
+    /// <summary>
+    /// 从别的窗口接管「标签条内」的拖拽（标签已经 Adopt 到本窗口）。
+    /// <paramref name="screenPoint"/> 是物理屏幕点，用于把标签立即贴回指针位置。
+    /// </summary>
+    public void TakeOverStripDrag(BrowserTab tab, double grabOffset, Point screenPoint)
+    {
+        if (!BeginTransferredDrag(tab, grabOffset))
+        {
             return;
         }
 
-        // 2) 否则只要离开了本窗口的标签条，就在指针位置开新窗口把标签迁过去。
-        //    （无痕与普通窗口之间不合并，所以上面不匹配时也走这条。）
-        if (!stillInStrip)
+        _dragPhase = DragPhase.InStrip;
+        _dragTransform = new TranslateTransform();
+        _dragElement!.RenderTransform = _dragTransform;
+        Panel.SetZIndex(_dragElement, DraggingZIndex);
+        _dragElement.Opacity = 0.9;
+
+        if (!_dragElement.CaptureMouse())
         {
-            _windows.MoveTabToNewWindow(dragged, screenPoint);
+            Serilog.Log.Debug("接管拖拽(标签条)失败：鼠标捕获被拒绝，窗口 #{Window} 标签 {TabId}", GetHashCode(), tab.Id);
+            EndDrag();
+            return;
+        }
+
+        Serilog.Log.Debug("接管拖拽(标签条)：窗口 #{Window} 标签 {TabId}", GetHashCode(), tab.Id);
+
+        if (ResolveTabStripPanel() is { } panel)
+        {
+            UpdateDragPosition(panel.PointFromScreen(screenPoint));
+        }
+    }
+
+    /// <summary>
+    /// 从游标接管「已分窗」的拖拽：先把窗口摆到「标签条正好在指针下方」，
+    /// 之后窗口跟着鼠标走，直到再进入某个标签条。
+    /// </summary>
+    public void TakeOverDetachedDrag(BrowserTab tab, double grabOffset)
+    {
+        if (!BeginTransferredDrag(tab, grabOffset))
+        {
+            return;
+        }
+
+        _dragPhase = DragPhase.Detached;
+
+        if (!_dragElement!.CaptureMouse())
+        {
+            Serilog.Log.Debug("接管拖拽(分窗)失败：鼠标捕获被拒绝，窗口 #{Window} 标签 {TabId}", GetHashCode(), tab.Id);
+            EndDrag();
+            return;
+        }
+
+        // 窗口刚 Show 时左右位置可能还没最终生效；用「标签按钮在窗口里的实际左边缘」
+        // 反向校正一次，保证指针落在标签的同一抓取点上，而不是贴到窗口边上。
+        var cursor = NativeMethods.GetCursorPosition();
+        var desired = new Point(grabOffset + TabLeftInWindow(), DetachedStripAnchorY);
+        var current = PointFromScreen(cursor);
+        Left += current.X - desired.X;
+        Top += current.Y - desired.Y;
+
+        _detachedAnchor = PointFromScreen(cursor);
+        Serilog.Log.Debug(
+            $"接管拖拽(分窗)：窗口 #{GetHashCode()} 标签 {tab.Id}，"
+            + $"光标=({cursor.X},{cursor.Y})，窗口=({Left},{Top})，锚点=({_detachedAnchor.X},{_detachedAnchor.Y})");
+    }
+
+    /// <summary>标签条里第一个标签在窗口坐标系中的左边缘。</summary>
+    private double TabLeftInWindow()
+    {
+        var panel = ResolveTabStripPanel();
+        if (panel is null)
+        {
+            return 0;
+        }
+
+        var origin = panel.TransformToAncestor(this).Transform(new Point(0, 0));
+        var slots = EnumerateTabSlots();
+        return origin.X + (slots.Count > 0 ? slots[0].Left : 0);
+    }
+
+    /// <summary>Adopt 之后标签按钮要等一次布局才存在；接管前必须先把它找出来。</summary>
+    private bool BeginTransferredDrag(BrowserTab tab, double grabOffset)
+    {
+        // 交接要等新窗口 Loaded（约 100ms）。若这期间用户已经松手，就不要再进入拖拽状态，
+        // 否则标签会永远停在半透明的「拖动中」外观，因为再也没有 MouseUp 来收尾。
+        if (Mouse.LeftButton != MouseButtonState.Pressed)
+        {
+            Serilog.Log.Debug("跳过拖拽接管：鼠标已松开，标签 {TabId}", tab.Id);
+            return false;
+        }
+
+        UpdateLayout();
+        var element = FindTabElement(tab);
+        if (element is null)
+        {
+            Serilog.Log.Warning("拖拽接管失败：找不到标签 {TabId} 的按钮", tab.Id);
+            return false;
+        }
+
+        _dragTab = tab;
+        _dragElement = element;
+        _dragGrabOffset = grabOffset;
+        _dragStartPoint = default;
+        _isDragging = true;
+        _handOffPending = false;
+        return true;
+    }
+
+    private FrameworkElement? FindTabElement(BrowserTab tab)
+    {
+        var panel = ResolveTabStripPanel();
+        if (panel is null)
+        {
+            return null;
+        }
+
+        foreach (var child in panel.Children.OfType<FrameworkElement>())
+        {
+            if (ReferenceEquals(child.DataContext, tab))
+            {
+                return FindDescendant<Button>(child) ?? child;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Detached：把窗口按鼠标位移挪动，让指针始终停在标签条上的锚点。</summary>
+    private void FollowDetachedWindow(MouseEventArgs e)
+    {
+        // 用物理光标位置重新换算，而不是 e.GetPosition(this)：
+        // 同一次移动会被「标签按钮的 Preview」和「窗口冒泡」各处理一次，
+        // 后者拿到的偏移会让窗口位移叠加两次，越拖越偏。
+        var local = PointFromScreen(NativeMethods.GetCursorPosition());
+        var dx = local.X - _detachedAnchor.X;
+        var dy = local.Y - _detachedAnchor.Y;
+
+        if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5)
+        {
+            return;
+        }
+
+        Left += dx;
+        Top += dy;
+    }
+
+    /// <summary>Detached：指针进入别的窗口标签条 → 立即合并，拖拽回到目标窗口。</summary>
+    private void MergeFromDetachedIfNeeded(MouseEventArgs e)
+    {
+        var pointerScreen = NativeMethods.GetCursorPosition();
+        var target = _windows.FindWindowAtTabStrip(pointerScreen, this);
+        if (target is null || target.IsIncognito != IsIncognito)
+        {
+            return;
+        }
+
+        if (target.TabIndexAtScreenPoint(pointerScreen) is { } insertAt)
+        {
+            Serilog.Log.Debug(
+                "Detached 命中标签条：窗口 #{Source} → #{Target}「{Title}」",
+                GetHashCode(), target.GetHashCode(), target.Title);
+            HandOffToWindow(target, insertAt, pointerScreen);
         }
     }
 
@@ -178,17 +458,50 @@ public partial class MainWindow
     public bool IsIncognito => _viewModel.IsIncognito;
 
     /// <summary>
-    /// 屏幕点（DIP）是否落在本窗口的标签条上——跨窗口合并的判定区。
+    /// 屏幕点（物理像素）是否落在本窗口的标签条上——跨窗口合并的判定区。
     /// 用窗口几何而不是 HitTest：拖动时鼠标被原窗口捕获，命中测试拿不到别的窗口。
+    /// <para>
+    /// 输入必须是 <c>PointToScreen</c> 的物理像素；这里用 <c>PointFromScreen</c>
+    /// 让每个窗口按自己的 DPI 换算，多屏不同缩放时也不会错位。
+    /// </para>
     /// </summary>
     public bool ContainsTabStripPoint(Point screenPoint)
     {
-        const double tolerance = 8;
-        return IsVisible
-               && screenPoint.X >= Left - tolerance
-               && screenPoint.X <= Left + Width + tolerance
-               && screenPoint.Y >= Top - tolerance
-               && screenPoint.Y <= Top + TabStrip.ActualHeight + tolerance;
+        if (!IsVisible || WindowState == WindowState.Minimized)
+        {
+            return false;
+        }
+
+        Point local;
+        try
+        {
+            local = PointFromScreen(screenPoint);
+        }
+        catch (InvalidOperationException)
+        {
+            // 窗口还没挂到 PresentationSource（刚创建 / 正在关闭）：不算命中。
+            return false;
+        }
+
+        if (double.IsNaN(local.X) || double.IsNaN(local.Y))
+        {
+            return false;
+        }
+
+        return TabReorder.IsInStrip(local.X, local.Y, ActualWidth, TabStrip.ActualHeight);
+    }
+
+    /// <summary>物理屏幕点换算成本窗口 DIP 后，落在标签条的哪个插入位置；不可用时返回 <c>null</c>。</summary>
+    public int? TabIndexAtScreenPoint(Point screenPoint)
+    {
+        try
+        {
+            return TabIndexAtWindowX(PointFromScreen(screenPoint).X);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     /// <summary>指针（相对本窗口的 X）落在标签条的哪个插入位置。</summary>
@@ -215,10 +528,11 @@ public partial class MainWindow
         return slots.Count;
     }
 
-    /// <summary>指针是否仍算「在标签条里」（上下留 8px 容差，避免手抖就拖出窗口）。</summary>
-    private static bool IsInTabStrip(Point point, double height) =>
-        point.Y >= -8 && point.Y <= height + 8;
-
+    /// <summary>
+    /// 指针是否仍算「在标签条里」。宽高各留 8px 容差（避免手抖就拖出窗口）；
+    /// 但水平方向一旦离开窗口，就算离开标签条——否则把标签拖到窗口外侧时，
+    /// 因为 Y 还在标签条高度内，会被当成「原地放下」而什么都不发生。
+    /// </summary>
     private bool IsInTabStrip(Point point) =>
-        IsInTabStrip(point, TabItems.ActualHeight);
+        TabReorder.IsInStrip(point.X, point.Y, TabStrip.ActualWidth, TabStrip.ActualHeight);
 }

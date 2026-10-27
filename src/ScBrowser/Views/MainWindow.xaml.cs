@@ -583,6 +583,7 @@ public partial class MainWindow : Window
     private void BeginDrag()
     {
         _isDragging = true;
+        _dragPhase = DragPhase.InStrip;
         _dragTransform = new TranslateTransform();
         _dragElement!.RenderTransform = _dragTransform;
         Panel.SetZIndex(_dragElement, DraggingZIndex);
@@ -604,6 +605,7 @@ public partial class MainWindow : Window
         _dragElement = null;
         _dragTransform = null;
         _isDragging = false;
+        _dragPhase = DragPhase.InStrip;
     }
 
     /// <summary>让被拖标签贴着鼠标横移，并在越过他人中线时实时换位。</summary>

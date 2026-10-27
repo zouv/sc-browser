@@ -115,4 +115,35 @@ public class TabReorderTests
 
         Assert.Equal(0, from);
     }
+
+    [Fact]
+    public void 标签条内的点应算在标签条里()
+    {
+        Assert.True(TabReorder.IsInStrip(50, 20, width: 500, height: 38));
+        Assert.True(TabReorder.IsInStrip(0, 0, width: 500, height: 38));
+        Assert.True(TabReorder.IsInStrip(500, 38, width: 500, height: 38));
+    }
+
+    [Fact]
+    public void 标签条边缘的容差内仍算在标签条里()
+    {
+        Assert.True(TabReorder.IsInStrip(-8, -8, width: 500, height: 38));
+        Assert.True(TabReorder.IsInStrip(508, 46, width: 500, height: 38));
+    }
+
+    [Fact]
+    public void 拖出标签条上下边界应算离开()
+    {
+        Assert.False(TabReorder.IsInStrip(50, 47, width: 500, height: 38));
+        Assert.False(TabReorder.IsInStrip(50, -9, width: 500, height: 38));
+    }
+
+    [Fact]
+    public void 水平拖出窗口也应算离开标签条()
+    {
+        // 回归：以前只看 Y。把标签横着拖出窗口、高度仍与标签条齐平时，
+        // 会被误判成「还在标签条里」，松手后既不分窗也不合并。
+        Assert.False(TabReorder.IsInStrip(509, 20, width: 500, height: 38));
+        Assert.False(TabReorder.IsInStrip(-9, 20, width: 500, height: 38));
+    }
 }

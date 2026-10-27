@@ -20,10 +20,10 @@
 | 工具栏按钮外观 | `Themes/Controls.xaml` 的 `ToolbarButtonStyle` | 用 `DynamicResource` 引颜色令牌 |
 | 标签条项的样式 | `Controls.xaml` 的 `BrowserTabButtonStyle` / `TabCloseButtonStyle` | `IsActive` 触发激活态背景 |
 | 窗口按钮（最小化/最大化/关闭） | `Controls.xaml` 的 `CaptionButtonStyle` / `CloseCaptionButtonStyle` + `MinimizeButton_Click` / `MaximizeRestoreButton_Click` / `CloseButton_Click` | **位于标题栏命中区内，必须 `IsHitTestVisibleInChrome`**，见 §7 |
-| 标签条交互（中键关 / 拖拽重排 / 右键菜单） | `MainWindow.xaml.cs` 的 `TabButton_*` / `TabMenu_*`；菜单命令在 `MainViewModel`（`NewTabToRightCommand` / `DuplicateTabCommand` 等） | 拖拽是**自己捕获鼠标**（不用 `DragDrop`）：`BeginDrag` / `UpdateDragPosition` / `EndDrag`，落点 = 指针所在槽位（`TabReorder.ResolveTargetIndex`） |
+| 标签条交互（中键关 / 拖拽重排 / 拖出分窗 / 跨窗口合并 / 右键菜单） | `MainWindow.xaml.cs` 的 `TabButton_*` / `TabMenu_*`；菜单命令在 `MainViewModel`（`NewTabToRightCommand` / `DuplicateTabCommand` 等） | 拖拽是**自己捕获鼠标**的实时状态机（不用 `DragDrop`）：`ContinueDrag` / `ProcessStripDrag` / `HandOffToWindow` / `DetachToNewWindow` + `DragPhase`。**离开标签条立刻分窗、进入别的标签条立刻合并**，合并/分窗后由 `TakeOverStripDrag` / `TakeOverDetachedDrag` 在新窗口重新捕获鼠标；`_handOffPending` 防止预览+冒泡重复交接。落点 = `TabReorder.ResolveTargetIndex`，是否离开标签条 = `TabReorder.IsInStrip` |
 | 窗口记忆（尺寸/位置） | `RestoreWindowPlacement` / `SaveWindowPlacement` + `Services/WindowPlacement.cs` | 只对主窗口生效；最大化存 `RestoreBounds` |
 | 边框带（可视边框 + 缩放区） | `ApplyWindowedFrame`（`OnStateChanged` / `OnLoaded` 里调用） | **最大化时归零**，把视口还给页面，见 §7 |
-| 「关于」对话框 | `Menu_About` → `Views/AboutDialog` | 版本取自程序集，路径取自 `AppPaths` |
+| 「关于」对话框 | `Menu_About` → `Views/AboutDialog` | 版本取自程序集，路径取自 `AppPaths`；按钮用 `DialogButtonStyle` / `DialogPrimaryButtonStyle`（`Controls.xaml`） |
 | 多窗口入口 | `OpenNewWindow` / `OpenNewIncognitoWindow` → `BrowserWindowManager.CreateWindow` | 见 §3.5 |
 | 主菜单 | `MenuButton_Click` + XAML 里 `MenuButton.ContextMenu`（分组见注释）+ `Menu_*` 处理器 | 样式：`BrowserMenuStyle` / `BrowserMenuItemStyle` |
 | 自绘窗口边框（无系统标题栏） | XAML 的 `WindowChrome.WindowChrome`（`CaptionHeight=38`）+ `NativeMethods.ClampMaximizedToWorkArea` | 见 §7 的两个坑 |
@@ -32,7 +32,7 @@
 | 键盘快捷键 | `MainWindow.TryHandleShortcut` | 单一 switch，按修饰键分组 |
 | 全屏（F11 / 网页视频） | `ToggleFullScreen` / `SetUserFullScreen` / `OnTabFullScreenChanged` / `UpdateFullScreenState` / `EnterFullScreen` / `ExitFullScreen` / `SetChromeVisible` + `NativeMethods.FillMonitor` | 两个来源（用户 F11 / 网页 requestFullscreen）合流到 `_fullScreenApplied` |
 | 链接悬停状态栏 | XAML 的 `StatusBar`（绑定 `ActiveTab.StatusText`）+ `BrowserTab.WireEvents` 的 `StatusBarTextChanged` | WebView2 自带状态栏关闭（`IsStatusBarEnabled=false`） |
-| 站点信息 | `SecurityButton_Click` → `Views/SiteInfoPopup` | 独立顶层窗口（airspace） |
+| 站点信息 | `SecurityButton_Click` → `Views/SiteInfoPopup` | 独立顶层窗口（airspace）；按钮同样用 `DialogButtonStyle` / `DialogPrimaryButtonStyle` |
 | 证书错误 | `BrowserTab` 的 `ServerCertificateErrorDetected` → `TabManager.CertificateErrorDetected` → `AskAboutCertificateError` | 只对顶层导航询问，子资源走默认 |
 | 页内查找条（Ctrl+F） | `Views/FindBarWindow.xaml(.cs)`；`MainWindow.Find.cs` 的 `ShowFindBar` / `CloseFindBar` / `OnActiveTabChanged` / `ShowFindWindow` / `HideFindBarForBackground` / `RunFindAsync` / `StepFind`；工具栏放大镜 `FindButton_Click` | **独立顶层窗口**（Popup 拿不到键盘焦点）；`ShowFindWindow` 里先 `BringToForeground` 再延后聚焦；查找状态按 `tab.Id` 存于 `_findStates`；切后台/最小化隐藏，回前台按当前标签状态恢复 |
 | 主菜单项 | `MenuButton_Click` + XAML 里的 `Button.ContextMenu` | |

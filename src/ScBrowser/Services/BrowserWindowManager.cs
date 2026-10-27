@@ -151,15 +151,29 @@ public sealed class BrowserWindowManager
     public MainWindow? WindowOf(TabManager tabs) =>
         _windows.FirstOrDefault(w => ReferenceEquals(w.Tabs, tabs));
 
-    /// <summary>指针（屏幕 DIP）落在哪个窗口的标签条上；用于把标签拖进另一个窗口。</summary>
-    public MainWindow? FindWindowAtTabStrip(System.Windows.Point screenPoint, MainWindow? exclude = null) =>
-        _windows.FirstOrDefault(w => !ReferenceEquals(w, exclude) && w.ContainsTabStripPoint(screenPoint));
+    /// <summary>指针（屏幕物理像素，来自 <c>PointToScreen</c>）落在哪个窗口的标签条上；用于把标签拖进另一个窗口。</summary>
+    public MainWindow? FindWindowAtTabStrip(System.Windows.Point screenPoint, MainWindow? exclude = null)
+    {
+        var candidates = _windows
+            .Where(w => !ReferenceEquals(w, exclude) && w.ContainsTabStripPoint(screenPoint))
+            .ToList();
+
+        // 窗口重叠时优先给当前激活的那个；否则取最后创建的（通常在最上层）。
+        return candidates.FirstOrDefault(w => w.IsActive) ?? candidates.LastOrDefault();
+    }
 
     /// <summary>把标签从一个窗口迁到另一个已有窗口（拖到它的标签条上松手）。</summary>
     /// <param name="tab">要迁移的标签。</param>
     /// <param name="target">目标窗口。</param>
     /// <param name="insertAt">在目标窗口标签条里的插入位置。</param>
-    public void MoveTabToWindow(BrowserTab tab, MainWindow target, int? insertAt = null)
+    /// <param name="afterAdoption">
+    /// 标签已进入目标窗口并完成一次布局后调用——拖拽要「接管」到新窗口时，必须等标签按钮生成出来才能重新捕获鼠标。
+    /// </param>
+    public void MoveTabToWindow(
+        BrowserTab tab,
+        MainWindow target,
+        int? insertAt = null,
+        Action<MainWindow>? afterAdoption = null)
     {
         var source = _tabManagers.FirstOrDefault(m => m.Tabs.Contains(tab));
         if (source is null || ReferenceEquals(source, target.Tabs) || source.IsIncognito != target.Tabs.IsIncognito)
@@ -171,6 +185,13 @@ public sealed class BrowserWindowManager
         target.Tabs.Adopt(tab, insertAt);
         SaveSession(target.Tabs);
         target.BringToFront();
+
+        if (afterAdoption is not null)
+        {
+            // Adopt 只改集合；标签按钮要等一次布局才会生成。
+            target.UpdateLayout();
+            afterAdoption(target);
+        }
     }
 
     /// <summary>
@@ -180,7 +201,13 @@ public sealed class BrowserWindowManager
     /// </summary>
     /// <param name="tab">要迁移的标签。</param>
     /// <param name="location">新窗口左上角（屏幕 DIP）；<c>null</c> 表示居中。</param>
-    public MainWindow? MoveTabToNewWindow(BrowserTab tab, System.Windows.Point? location = null)
+    /// <param name="afterAdoption">
+    /// 标签已迁入并完成一次布局后调用；标签拖拽据此把鼠标捕获交接到新窗口，实现「拖出即分窗」。
+    /// </param>
+    public MainWindow? MoveTabToNewWindow(
+        BrowserTab tab,
+        System.Windows.Point? location = null,
+        Action<MainWindow>? afterAdoption = null)
     {
         var source = _tabManagers.FirstOrDefault(m => m.Tabs.Contains(tab));
         if (source is null)
@@ -193,23 +220,29 @@ public sealed class BrowserWindowManager
             Urls: [],                 // 空列表 = 不建初始标签，等迁移过来的标签
             IsPrimary: false));
 
+        // 先定位再显示：拖出分窗是连续手势，窗口若先出现在屏幕中央再跳过来会闪一下。
+        if (location is { } point)
+        {
+            window.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
+            window.Left = Math.Max(System.Windows.SystemParameters.VirtualScreenLeft, point.X);
+            window.Top = Math.Max(System.Windows.SystemParameters.VirtualScreenTop, point.Y);
+        }
+
         // 窗口的 Host 在 Loaded 里才注入，所以迁移动作要等它加载完。
         window.Loaded += (_, _) =>
         {
-            if (location is { } point)
-            {
-                // 让新窗口大致出现在鼠标位置（标题栏在指针下方一点）。
-                window.WindowStartupLocation = System.Windows.WindowStartupLocation.Manual;
-                window.Left = Math.Max(0, point.X - 120);
-                window.Top = Math.Max(0, point.Y - 20);
-            }
-
             source.ReleaseTab(tab);
             window.Tabs.Adopt(tab);
 
             // 源窗口若因此关闭，退出流程可能已经把会话写成「空」——立刻按新窗口的状态补存一次。
             SaveSession(window.Tabs);
             window.BringToFront();
+
+            if (afterAdoption is not null)
+            {
+                window.UpdateLayout();
+                afterAdoption(window);
+            }
         };
 
         window.Show();

@@ -62,4 +62,23 @@ public static class TabReorder
 
         return slots.Count - 1;
     }
+
+    /// <summary>
+    /// 松手点是否仍算在标签条上。<paramref name="x"/>/<paramref name="y"/> 是相对标签条左上角的 DIP；
+    /// 宽高各留一点容差，避免手抖一两像素就被判成「拖出窗口」。
+    /// <para>
+    /// 水平方向超出标签条同样算离开：只判断纵向的话，把标签拖到窗口外侧、
+    /// 但高度仍与标签条齐平时，会被误判成「放回原处」而不分窗。
+    /// </para>
+    /// </summary>
+    public static bool IsInStrip(
+        double x,
+        double y,
+        double width,
+        double height,
+        double tolerance = 8) =>
+        x >= -tolerance
+        && x <= width + tolerance
+        && y >= -tolerance
+        && y <= height + tolerance;
 }

@@ -81,7 +81,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Infrastructure/KnownFolders.cs` | 系统已知文件夹（目前只有「下载」）；不要自己拼 `%USERPROFILE%\Downloads` | 需要系统标准目录时 |
 | `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作：深色标题栏、圆角窗口 | 新增窗口级原生外观 |
 | `src/ScBrowser/Themes/Theme.{Light,Dark}.xaml` | 颜色令牌（键名必须成对一致） | 调色 / 加令牌 |
-| `src/ScBrowser/Themes/Controls.xaml` | 控件样式（工具栏按钮/标签/窗口按钮/地址栏） | 改控件外观 |
+| `src/ScBrowser/Themes/Controls.xaml` | 控件样式（工具栏按钮/标签/窗口按钮/地址栏/对话框按钮） | 改控件外观 |
 | `src/ScBrowser/Common/Converters.cs` | 值转换器（安全图标、可空、显隐） | 加绑定转换 |
 | `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作（DWM 深色/圆角、最大化钉工作区） | 加系统级外观/窗口行为 |
 | `src/ScBrowser/Assets/sc-browser.ico` + `docs/icons/` | 应用图标（exe 内嵌 + 窗口 `Icon`）；`docs/icons/` 是设计源（SVG 为源，附各尺寸导出） | 换图标 |
@@ -118,7 +118,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Views/MainWindow.xaml(.cs)` | 外壳布局（含自绘窗口边框 + 浮动查找条）+ 窗口外观 + **键盘快捷键** | 改外壳结构/快捷键/查找条 |
 | `src/ScBrowser/Views/Controls/BrowserContentHost.cs` | 内容区宿主实现（WebView2 挂载与显示切换） | 改内容区挂载方式 |
 | `src/ScBrowser/Views/AddressBarPopup.xaml(.cs)` | 地址栏下拉浮层（独立顶层窗口，规避 airspace） | 改下拉外观/交互 |
-| `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的落点换算（指针落在哪个槽位，纯函数 + 单测） | 改拖拽落点规则 |
+| `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的落点换算（指针落在哪个槽位）与标签条命中判定，纯函数 + 单测 | 改拖拽落点 / 分窗判定规则 |
 | `src/ScBrowser/Views/AboutDialog.xaml(.cs)` | 「关于」对话框（图标 / 版本 / 用户数据目录） | 改关于页 |
 | `src/ScBrowser/Views/SiteInfoPopup.xaml(.cs)` | 站点信息浮层（来源 / 安全状态 / 站点权限 / 清除站点数据） | 改站点信息与权限管理 |
 | `src/ScBrowser/Views/FindBarWindow.xaml(.cs)` | **浮动查找条**（独立顶层窗口，输入框/计数/上一下一/关闭）；搜索逻辑在 `MainWindow.Find.cs` | 改查找条外观与交互 |
@@ -321,6 +321,23 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 - **WebView2 的默认底色也要跟着主题走**：`WebView2.DefaultBackgroundColor` 默认是**白色**，
   深色主题下新建标签/新窗口会在页面画出来之前先闪一下白底。见
   `WebTheme.DefaultBackground` + `TabManager.ApplyWebTheme`（与颜色方案一起设）。
+- **标签拖拽是实时状态机，不是「松手结算」**：`MainWindow.Tabs.cs` 的 `DragPhase` 只有两态——
+  `InStrip`（在标签条内重排）与 `Detached`（已分窗、窗口跟着鼠标走）。
+  指针**离开标签条立即分窗**、**进入另一个窗口的标签条立即合并**；合并后回到 `InStrip`，
+  因此不松手也能连续「分窗 → 合并 → 再分窗」。要点：
+  1. **单标签窗口不能把拖标签写成 `DragMove()`**——那等于拖窗口，永远走不到分窗 / 合并。
+     移动窗口用标签条空白处（WindowChrome 的标题栏命中区）。
+  2. **交接（hand-off）要重新捕获鼠标**：标签迁到另一个窗口后，标签按钮会被重新生成；
+     `MoveTabToWindow` / `MoveTabToNewWindow` 在 Adopt 后 `UpdateLayout()`，再由
+     `TakeOverStripDrag` / `TakeOverDetachedDrag` 找到新按钮并 `CaptureMouse`，否则后续
+     MouseMove / MouseUp 全丢。**交接前必须置 `_handOffPending`**：同一次移动会被
+     「按钮 Preview」和「窗口冒泡」各处理一次，不拦住会一次拖出建出两个窗口。
+  3. **跨窗口命中测试不要拿 WPF DIP 直接相加**：统一 `PointToScreen` 得物理屏幕点，
+     目标窗口再用 `PointFromScreen` 换回自己的 DIP（`ContainsTabStripPoint` / `TabIndexAtScreenPoint`）。
+     「是否离开标签条」必须**宽高都判断**（`TabReorder.IsInStrip`）。
+  4. **Detached 跟随窗口要用 `GetCursorPos` 重新换算**，不能拿 `e.GetPosition(this)` 的差值：
+     同一移动被预览/冒泡处理两次时，后者会把窗口位移叠加两次，越拖越偏。
+     分窗摆放再用「标签按钮在窗口里的实际左边缘」反向校正一次，保证指针落在同一抓取点。
 - **拖拽补偿量要用「槽位几何」而不是元素偏移**：标签条是 `ItemsControl + DataTemplate`，
   对被拖的 Button 调 `VisualTreeHelper.GetOffset` 拿到的是它**相对自己 ContentPresenter** 的偏移
   （恒为 0），不是标签条坐标——用它算补偿，每次换位标签都会瞬移。正解见
