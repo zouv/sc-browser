@@ -182,14 +182,18 @@ public sealed class BrowserWindowManager
         }
 
         source.ReleaseTab(tab);
+        // Adopt 前先快照目标窗口标签条的位置：原位标签给新来的让位时平滑滑开（Chrome attach 同款）。
+        target.BeginTabSlideCapture();
         target.Tabs.Adopt(tab, insertAt);
         SaveSession(target.Tabs);
         target.BringToFront();
 
+        // Adopt 只改集合；标签按钮要等一次布局才会生成。布局落地后结算让位动画。
+        target.UpdateLayout();
+        target.CompleteTabSlide();
+
         if (afterAdoption is not null)
         {
-            // Adopt 只改集合；标签按钮要等一次布局才会生成。
-            target.UpdateLayout();
             afterAdoption(target);
         }
     }

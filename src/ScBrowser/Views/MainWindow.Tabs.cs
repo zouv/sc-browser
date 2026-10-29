@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ScBrowser.Browser;
 using ScBrowser.Interop;
 
@@ -27,11 +28,19 @@ public partial class MainWindow
     // 必须等新窗口布局完成、标签按钮出现，才能在新元素上重新 CaptureMouse，
     // 否则后续 MouseMove / MouseUp 会丢。见 TakeOverStripDrag / TakeOverDetachedDrag。
     //
-    // 位置补偿：渲染偏移 = 「视觉左边缘 − 落点槽位左边缘」，换位瞬间视觉位置才不会跳。
+    // 渲染位置（对齐 Chromium 的 TabDragController）：
+    // - 被拖标签的偏移**只从「UpdateLayout 落地后的真实左边缘 + 指针位置」算**，绝不读
+    //   「预换位」的槽位几何——标签宽度不等时读预换位几何，每次换位都会跳一下（飘闪根因）。
+    // - 其他标签的让位由 TabStripSlideAnimator 补偿变换做平滑滑动；换位带 16px 水平滞后
+    //   （Chrome kHorizontalMoveThreshold），防指针停在槽位边界上时来回抖动。
+    // - 标签溢出时，被拖标签视觉边缘越过滚动视口即自动滚动（Chrome TabDragScrollHandler 同款判据）。
     // --------------------------------------------------------------------- //
 
     /// <summary>超过这个位移（逻辑像素）才算拖拽，否则「点击」会被误判成拖拽。</summary>
     private const double DragThreshold = 4;
+
+    /// <summary>两次换位之间的最小水平位移（对齐 Chrome <c>kHorizontalMoveThreshold = 16</c> DIP）。</summary>
+    private const double ReorderHysteresis = 16;
 
     /// <summary>拖拽中的标签抬到最上层，避免被相邻标签盖住。</summary>
     private const int DraggingZIndex = 100;
@@ -52,6 +61,15 @@ public partial class MainWindow
     /// <summary>标签条容器（ItemsControl 的 ItemsPanel 实例）；延迟解析，因为模板要等首帧才应用。</summary>
     private Panel? _tabStripPanel;
 
+    /// <summary>让位动画（其他标签滑向新槽位 / 松手落回）的视图层实现。</summary>
+    private readonly TabStripSlideAnimator _slide = new();
+
+    /// <summary>拖拽边缘自动滚动的定时器：被拖标签视觉边缘越过视口时持续滚动（16ms 步进）。</summary>
+    private readonly DispatcherTimer _dragScrollTimer = new(DispatcherPriority.Background)
+    {
+        Interval = TimeSpan.FromMilliseconds(16),
+    };
+
     private BrowserTab? _dragTab;
     private FrameworkElement? _dragElement;
     private TranslateTransform? _dragTransform;
@@ -59,6 +77,9 @@ public partial class MainWindow
     private double _dragGrabOffset;
     private bool _isDragging;
     private DragPhase _dragPhase = DragPhase.InStrip;
+
+    /// <summary>上次换位时的指针 X（panel 坐标）；滞后判定用，见 <see cref="ReorderHysteresis"/>。</summary>
+    private double? _lastReorderX;
 
     /// <summary>
     /// 已经发起「交接」（分窗 / 合并）。交接后标签已不属于本窗口，必须拦住后续重复的
@@ -96,9 +117,9 @@ public partial class MainWindow
         _dragPhase = DragPhase.InStrip;
         _handOffPending = false;
 
-        // 抓取偏移 = 指针相对「标签当前槽位左边缘」的距离。必须用槽位几何：
-        // 元素本身在 DataTemplate 里，对它调 VisualTreeHelper.GetOffset 得到的是
-        // 「相对 ContentPresenter」的偏移（恒为 0），不是标签条坐标——用它算补偿会跳位。
+        // 抓取偏移 = 指针相对「标签当前槽位左边缘」的距离。必须用槽位几何（panel 子元素
+        // 的偏移）：元素本身是 DataTemplate 里的 Button，对它调 VisualTreeHelper.GetOffset
+        // 得到的是相对 ContentPresenter 的偏移（恒约 0），不是标签条坐标——用它算会飞。
         var index = _tabs.Tabs.IndexOf(tab);
         var slots = EnumerateTabSlots();
         _dragGrabOffset = _dragStartPoint.X - (index >= 0 && index < slots.Count ? slots[index].Left : 0);
@@ -158,7 +179,17 @@ public partial class MainWindow
 
         if (IsInTabStrip(e.GetPosition(TabStrip)))
         {
-            UpdateDragPosition(e.GetPosition(panel));
+            // 先做边缘自动滚动：滚动会改变 panel 坐标系的映射（内容在指针下滑动），
+            // 所以滚完按滚动增量修正指针在 panel 里的位置，再交给重排换算——被拖标签的
+            // 偏移会随滚动自洽（panel 坐标 + 偏移 − 滚动量 = 窗口坐标，恒贴鼠标）。
+            var scrolled = ScrollStripTowardsElement();
+            var pointerInPanel = e.GetPosition(panel);
+            if (Math.Abs(scrolled) > 0.01)
+            {
+                pointerInPanel.X += scrolled;
+            }
+
+            UpdateDragPosition(pointerInPanel);
             return;
         }
 
@@ -257,6 +288,8 @@ public partial class MainWindow
         var phase = _dragPhase;
         var dragged = _dragTab;
         var grabOffset = _dragGrabOffset;
+        var element = _dragElement;
+        var dropOffset = _dragTransform?.X ?? 0;
         var stillInStrip = IsInTabStrip(e.GetPosition(TabStrip));
         var pointerInWindow = e.GetPosition(this);
         var pointerScreen = PointToScreen(pointerInWindow);
@@ -286,6 +319,14 @@ public partial class MainWindow
         if (phase == DragPhase.InStrip && !stillInStrip)
         {
             _windows.MoveTabToNewWindow(dragged, NewWindowLocationAround(pointerInWindow, grabOffset));
+            return;
+        }
+
+        // 条内松手：Chrome 式落回——把拖拽结束时的偏移当补偿衰减到 0，标签从鼠标下滑回槽位。
+        // （EndDrag 已摘掉变换，这里用保存的偏移重新挂一个，衰减完 animator 会自己摘掉。）
+        if (element is not null)
+        {
+            _slide.BeginGlide(element, dropOffset);
         }
     }
 
@@ -301,10 +342,13 @@ public partial class MainWindow
         }
 
         _dragPhase = DragPhase.InStrip;
+        // 目标窗口可能还有落回动画在跑（例如刚放下一个标签又立刻接管新的）：先还权再接管。
+        _slide.CancelGlide(_dragElement!);
         _dragTransform = new TranslateTransform();
         _dragElement!.RenderTransform = _dragTransform;
         Panel.SetZIndex(_dragElement, DraggingZIndex);
         _dragElement.Opacity = 0.9;
+        _dragScrollTimer.Start();
 
         if (!_dragElement.CaptureMouse())
         {
@@ -394,6 +438,7 @@ public partial class MainWindow
         _dragStartPoint = default;
         _isDragging = true;
         _handOffPending = false;
+        _lastReorderX = null;
         return true;
     }
 
@@ -456,6 +501,82 @@ public partial class MainWindow
 
     /// <summary>本窗口是否无痕（拖拽合并时用来拒绝跨隐私会话迁移）。</summary>
     public bool IsIncognito => _viewModel.IsIncognito;
+
+    /// <summary>拖拽自动滚动：被拖标签的视觉边缘越过滚动视口时持续滚动（定时器驱动，见 <see cref="ScrollStripTowardsElement"/>）。</summary>
+    private void OnDragScrollTick(object? sender, EventArgs e)
+    {
+        if (_isDragging && _dragPhase == DragPhase.InStrip)
+        {
+            ScrollStripTowardsElement();
+        }
+    }
+
+    /// <summary>
+    /// 标签多到溢出时，拖到标签条两端会自动滚动。判据对齐 Chrome 的 <c>TabDragScrollHandler</c>：
+    /// 被拖标签的**视觉边缘**越过滚动视口边缘就滚，越得深滚得越快。
+    /// 返回实际滚动量（DIP）——滚动会改变 panel 坐标系的映射，调用方要用它修正指针的 panel 坐标。
+    /// </summary>
+    private double ScrollStripTowardsElement()
+    {
+        if (_dragElement is null || _dragTransform is null || _dragTab is null || _tabStripPanel is null
+            || TabScroller is not { } scroller)
+        {
+            return 0;
+        }
+
+        // 视觉左边缘 = 被拖标签所在槽位的左边缘 + 拖拽偏移 − 当前滚动量（换算到视口坐标）。
+        // 槽位几何在每次换位后都已 UpdateLayout 落地，定时器 tick 之间没有未落地的布局。
+        var index = _tabs.Tabs.IndexOf(_dragTab);
+        var slots = EnumerateTabSlots();
+        if (index < 0 || index >= slots.Count)
+        {
+            return 0;
+        }
+
+        var offset = scroller.HorizontalOffset;
+        var visualLeft = slots[index].Left + _dragTransform.X - offset;
+        var visualRight = visualLeft + _dragElement.ActualWidth;
+
+        double step = 0;
+        if (visualLeft < 0)
+        {
+            step = -Math.Clamp(-visualLeft * 0.5, 4, 24);
+        }
+        else if (visualRight > scroller.ActualWidth)
+        {
+            step = Math.Clamp((visualRight - scroller.ActualWidth) * 0.5, 4, 24);
+        }
+
+        if (step == 0)
+        {
+            return 0;
+        }
+
+        var before = scroller.HorizontalOffset;
+        scroller.ScrollToHorizontalOffset(before + step);
+        return scroller.HorizontalOffset - before;
+    }
+
+    /// <summary>
+    /// 跨窗口合并前快照标签条位置（与 <see cref="CompleteTabSlide"/> 配对：
+    /// 原位标签给新来的标签让位时平滑滑开，Chrome attach 同款）。
+    /// </summary>
+    public void BeginTabSlideCapture()
+    {
+        if (ResolveTabStripPanel() is { } panel)
+        {
+            _slide.CapturePositions(panel);
+        }
+    }
+
+    /// <summary>跨窗口合并后结算让位动画（此时布局已落地）。</summary>
+    public void CompleteTabSlide()
+    {
+        if (ResolveTabStripPanel() is { } panel)
+        {
+            _slide.ApplyCompensations(panel, excluded: null);
+        }
+    }
 
     /// <summary>
     /// 屏幕点（物理像素）是否落在本窗口的标签条上——跨窗口合并的判定区。

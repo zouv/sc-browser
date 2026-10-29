@@ -3,7 +3,7 @@ using ScBrowser.Views;
 namespace ScBrowser.Tests;
 
 /// <summary>
-/// 标签拖拽的落点换算：判据是「指针落在哪个槽位」，断言最终顺序而不是下标数字。
+/// 标签拖拽的换算：落点判定、不等宽槽位的「贴鼠标」回归、换位滞后、让位补偿、离开判定。
 /// </summary>
 public class TabReorderTests
 {
@@ -12,14 +12,49 @@ public class TabReorderTests
             .Select(i => new TabReorder.Slot(i * (width + gap), i * (width + gap) + width))
             .ToList();
 
-    /// <summary>模拟一次拖拽：按当前布局算落点并换位。</summary>
-    private static List<string> DragTo(List<string> tabs, int from, double pointerX)
+    /// <summary>按各标签的实际宽度（标签宽度随标题变化，不等宽才是真实场景）生成槽位。</summary>
+    private static List<TabReorder.Slot> SlotsOf(IReadOnlyList<double> widths, double gap = 2)
     {
-        var to = TabReorder.ResolveTargetIndex(Slots(tabs.Count), pointerX);
-        var moved = tabs[from];
-        tabs.RemoveAt(from);
-        tabs.Insert(to, moved);
-        return tabs;
+        var left = 0.0;
+        var result = new List<TabReorder.Slot>();
+        foreach (var width in widths)
+        {
+            result.Add(new TabReorder.Slot(left, left + width));
+            left += width + gap;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 模拟 <c>UpdateDragPosition</c> 的完整一步：按「移动前快照」判落点 → 换位（含 16px 滞后）→
+    /// 模型重排 → 槽位按新顺序重算（对应 UpdateLayout 落地）→ 偏移只用落地后几何验证。
+    /// </summary>
+    private static void StepDrag(
+        List<double> widths,
+        ref int from,
+        ref double? lastReorderX,
+        double pointerX,
+        double grabOffset)
+    {
+        var slots = SlotsOf(widths);
+        var target = TabReorder.ResolveTargetIndex(slots, pointerX);
+        var pastHysteresis = lastReorderX is not { } last || Math.Abs(pointerX - last) > 16;
+        if (target != from && pastHysteresis)
+        {
+            var width = widths[from];
+            widths.RemoveAt(from);
+            widths.Insert(target, width);
+            from = target;
+            lastReorderX = pointerX;
+        }
+
+        // 布局落地后：被拖标签位于新顺序里的槽位，偏移只从这里算。
+        var landed = SlotsOf(widths);
+        var offset = pointerX - grabOffset - landed[from].Left;
+
+        // 「贴鼠标」不变量：落地槽位左边缘 + 渲染偏移 必须等于 指针 − 抓取偏移。
+        Assert.Equal(pointerX - grabOffset, landed[from].Left + offset, 6);
     }
 
     [Fact]
@@ -74,46 +109,92 @@ public class TabReorderTests
         Assert.Equal(0, TabReorder.ResolveTargetIndex([], 100));
     }
 
-    [Fact]
-    public void 拖拽全程应贴着鼠标且换位瞬间不跳()
+    /// <summary>模拟一次拖拽：按当前布局算落点并换位（等宽场景的快速版本）。</summary>
+    private static List<string> DragTo(List<string> tabs, int from, double pointerX)
     {
-        // 这就是用户报告过的 bug：走到换位判定点时标签会「跳一下」。
-        // 判据：任一指针位置下，「落点槽位左边缘 + 渲染偏移」都必须等于指针位置减抓取偏移，
-        // 也就是被拖标签的视觉左边缘始终贴着鼠标。
-        var slots = Slots(4);
-        const double grabOffset = 30;
-        var from = 0;
-
-        for (var pointer = grabOffset; pointer <= 520; pointer += 2)
-        {
-            var step = TabReorder.Step(slots, from, grabOffset, pointer);
-            var visualLeft = pointer - grabOffset;
-
-            Assert.Equal(visualLeft, slots[step.TargetIndex].Left + step.RenderOffset, 6);
-            from = step.TargetIndex;
-        }
-
-        // 一路拖到底应落在末位
-        Assert.Equal(3, from);
+        var to = TabReorder.ResolveTargetIndex(Slots(tabs.Count), pointerX);
+        var moved = tabs[from];
+        tabs.RemoveAt(from);
+        tabs.Insert(to, moved);
+        return tabs;
     }
 
     [Fact]
-    public void 往左拖也应贴着鼠标()
+    public void 不等宽标签全程拖拽应贴鼠标且最终顺序正确()
     {
-        var slots = Slots(4);
-        const double grabOffset = 20;
-        var from = 3;
+        // 回归（飘闪）：旧实现用「预换位」槽位几何算偏移，标签宽度不等时每次换位都错出宽度差、
+        // 跳一下再跳回。这里用不等宽（模拟真实标题长度）全程扫一遍，断言贴鼠标不变量与最终顺序。
+        var widths = new List<double> { 220, 72, 160, 100, 90 };
+        const double grabOffset = 30;
+        var from = 0;
+        double? lastReorderX = null;
 
-        for (var pointer = 360.0; pointer >= 0; pointer -= 2)
+        for (var pointer = grabOffset; pointer <= 700; pointer += 2)
         {
-            var step = TabReorder.Step(slots, from, grabOffset, pointer);
-            var visualLeft = pointer - grabOffset;
+            StepDrag(widths, ref from, ref lastReorderX, pointer, grabOffset);
+        }
 
-            Assert.Equal(visualLeft, slots[step.TargetIndex].Left + step.RenderOffset, 6);
-            from = step.TargetIndex;
+        Assert.Equal(widths.Count - 1, from);
+        Assert.Equal([72, 160, 100, 90, 220], widths);
+    }
+
+    [Fact]
+    public void 不等宽标签往左拖同样贴鼠标且落到首位()
+    {
+        var widths = new List<double> { 220, 72, 160, 100, 90 };
+        const double grabOffset = 20;
+        var from = 4;
+        double? lastReorderX = null;
+
+        for (var pointer = 500.0; pointer >= 0; pointer -= 2)
+        {
+            StepDrag(widths, ref from, ref lastReorderX, pointer, grabOffset);
         }
 
         Assert.Equal(0, from);
+        Assert.Equal([90, 220, 72, 160, 100], widths);
+    }
+
+    [Fact]
+    public void 指针在槽位边界附近小幅度抖动不应来回换位()
+    {
+        // Chrome kHorizontalMoveThreshold：两次换位之间要有 16px 水平位移，
+        // 否则指针停在两个槽位边界上时，轻微手抖会让模型来回换位（肉眼可见的抖动）。
+        var widths = new List<double> { 100, 100, 100 };
+        var from = 0;
+        double? lastReorderX = null;
+
+        // 拖进 B 的槽位 → 换位
+        StepDrag(widths, ref from, ref lastReorderX, 160, 20);
+        Assert.Equal(1, from);
+
+        // 在 B 槽位内小幅回退（未过 16px 滞后）→ 顺序不再动
+        StepDrag(widths, ref from, ref lastReorderX, 144, 20);
+        Assert.Equal(1, from);
+        Assert.Equal([100, 100, 100], widths);
+
+        // 真正退回 A 的槽位且越过滞后 → 才换回来
+        StepDrag(widths, ref from, ref lastReorderX, 80, 20);
+        Assert.Equal(0, from);
+    }
+
+    [Fact]
+    public void 换位补偿应保证视觉位置连续()
+    {
+        // 连续性不变量：oldPos + currentComp == newPos + 新补偿
+        var comp = TabReorder.SlideCompensation(oldPos: 100, newPos: 240, currentComp: 0);
+        Assert.Equal(-140, comp, 6);
+        Assert.Equal(100, 240 + comp, 6);
+    }
+
+    [Fact]
+    public void 动画中途再换位应叠加残余补偿()
+    {
+        // 第一次换位后补偿 −140，衰减到 −100 时又来一次换位（新槽位 40）：
+        // 视觉位置 = 240 + (−100) = 140，新槽位 40 → 新补偿 = 100，连续性依然成立。
+        var comp = TabReorder.SlideCompensation(oldPos: 240, newPos: 40, currentComp: -100);
+        Assert.Equal(100, comp, 6);
+        Assert.Equal(240 - 100, 40 + comp, 6);
     }
 
     [Fact]
@@ -127,15 +208,17 @@ public class TabReorderTests
     [Fact]
     public void 标签条边缘的容差内仍算在标签条里()
     {
+        // 水平 ±8、垂直 ±15（Chrome kVerticalDetachMagnetism）内都算还在标签条里。
         Assert.True(TabReorder.IsInStrip(-8, -8, width: 500, height: 38));
         Assert.True(TabReorder.IsInStrip(508, 46, width: 500, height: 38));
+        Assert.True(TabReorder.IsInStrip(508, 53, width: 500, height: 38));
     }
 
     [Fact]
-    public void 拖出标签条上下边界应算离开()
+    public void 拖出标签条上下边界超过磁性距离应算离开()
     {
-        Assert.False(TabReorder.IsInStrip(50, 47, width: 500, height: 38));
-        Assert.False(TabReorder.IsInStrip(50, -9, width: 500, height: 38));
+        Assert.False(TabReorder.IsInStrip(50, 54, width: 500, height: 38));
+        Assert.False(TabReorder.IsInStrip(50, -16, width: 500, height: 38));
     }
 
     [Fact]
