@@ -77,8 +77,15 @@ public partial class MainWindow
         set => SetValue(IsFindBarVisibleProperty, value);
     }
 
-    /// <summary>打开（或聚焦）当前标签的查找面板。</summary>
-    private bool ShowFindBar()
+    /// <summary>
+    /// 打开（或聚焦）当前标签的查找面板。
+    /// <para>
+    /// 对齐 Chrome：会话已打开时只聚焦并全选旧词；**首次打开**时把页面选中的文本
+    /// 预填进搜索框（上限 <see cref="SelectionFillLimit"/> 字符）并立即搜索。
+    /// 选区是异步取的，面板先显示、取回后再填；期间用户已输入或已切走则不填。
+    /// </para>
+    /// </summary>
+    private async Task<bool> ShowFindBarAsync()
     {
         var tab = _viewModel.ActiveTab;
         if (tab is null)
@@ -87,6 +94,7 @@ public partial class MainWindow
         }
 
         var state = StateOf(tab);
+        var isFreshOpen = !state.IsOpen;
         state.IsOpen = true;
 
         if (!ReferenceEquals(_findTab, tab))
@@ -106,6 +114,24 @@ public partial class MainWindow
             _findDebounce.Stop();
             _ = RunFindAsync();
         }
+        else if (isFreshOpen)
+        {
+            _findWindow!.Status = string.Empty;
+            var term = TruncateSelection(await tab.GetSelectedTextAsync().ConfigureAwait(true));
+
+            // 取选区期间用户可能已经输入或切走了标签：都不该再覆盖。
+            if (term.Length > 0
+                && ReferenceEquals(_viewModel.ActiveTab, tab)
+                && StateOf(tab).IsOpen
+                && _findWindow is { } window
+                && window.Text.Length == 0)
+            {
+                state.Term = term;
+                SetFindText(term);
+                _findDebounce.Stop();
+                _ = RunFindAsync();
+            }
+        }
         else
         {
             _findWindow!.Status = string.Empty;
@@ -113,6 +139,12 @@ public partial class MainWindow
 
         return true;
     }
+
+    /// <summary>选区超过 150 字符就不预填（Chrome 同款上限；再长通常是误选了大段内容）。</summary>
+    private const int SelectionFillLimit = 150;
+
+    private static string TruncateSelection(string selection) =>
+        selection.Length > SelectionFillLimit ? selection[..SelectionFillLimit] : selection;
 
     /// <summary>关闭查找面板（Esc / 关闭按钮）：结束该标签的查找会话并清空关键词。</summary>
     private void CloseFindBar()
@@ -382,10 +414,10 @@ public partial class MainWindow
         _findDebounce.Start();
     }
 
-    private void Menu_Find(object sender, RoutedEventArgs e) => ShowFindBar();
+    private void Menu_Find(object sender, RoutedEventArgs e) => _ = ShowFindBarAsync();
 
     /// <summary>工具栏放大镜：查找面板已打开时聚焦它，否则打开。</summary>
-    private void FindButton_Click(object sender, RoutedEventArgs e) => ShowFindBar();
+    private void FindButton_Click(object sender, RoutedEventArgs e) => _ = ShowFindBarAsync();
 
     private async Task RunFindAsync()
     {

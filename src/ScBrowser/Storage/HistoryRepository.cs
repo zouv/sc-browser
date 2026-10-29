@@ -184,6 +184,28 @@ public sealed class HistoryRepository
 
     public Task RemoveAsync(long id) => Task.Run(() => Remove(id));
 
+    /// <summary>批量删除（历史页的多选删除；一条 SQL 干掉全部 id）。</summary>
+    public void RemoveMany(IReadOnlyList<long> ids)
+    {
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        var placeholders = string.Join(",", ids.Select((_, i) => "$id" + i));
+        command.CommandText = $"DELETE FROM history WHERE id IN ({placeholders});";
+        for (var i = 0; i < ids.Count; i++)
+        {
+            command.Parameters.AddWithValue("$id" + i, ids[i]);
+        }
+
+        command.ExecuteNonQuery();
+    }
+
+    public Task RemoveManyAsync(IReadOnlyList<long> ids) => Task.Run(() => RemoveMany(ids));
+
     /// <summary>按 URL 删除（用于「删除该站点全部记录」，连同访问流水）。</summary>
     public void RemoveByUrl(string url)
     {
@@ -228,6 +250,44 @@ public sealed class HistoryRepository
     }
 
     public Task ClearAsync() => Task.Run(Clear);
+
+    /// <summary>
+    /// 按时间范围清除（清除浏览数据对话框的「过去 1 小时/24 小时…」）：
+    /// 删掉范围内的访问流水，再删掉「流水已被删光、且最近访问也在范围内」的聚合行——
+    /// 迁移前没有流水的旧行（last_visit 更早）不会被误删。
+    /// </summary>
+    public void ClearSince(DateTimeOffset since)
+    {
+        var sinceUtc = since.ToUniversalTime().ToString("O");
+
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "DELETE FROM visits WHERE visited_utc >= $since;";
+            command.Parameters.AddWithValue("$since", sinceUtc);
+            command.ExecuteNonQuery();
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                DELETE FROM history
+                WHERE last_visit_utc >= $since
+                  AND url NOT IN (SELECT DISTINCT url FROM visits);
+                """;
+            command.Parameters.AddWithValue("$since", sinceUtc);
+            command.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public Task ClearSinceAsync(DateTimeOffset since) => Task.Run(() => ClearSince(since));
 
     public int Count()
     {

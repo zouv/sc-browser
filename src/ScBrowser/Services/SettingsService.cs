@@ -40,6 +40,15 @@ public sealed class AppSettings
     /// <summary>关闭窗口时保留会话（下次可恢复）。</summary>
     public bool RememberSessionOnExit { get; set; } = true;
 
+    /// <summary>
+    /// 书签栏是否「始终显示」（Ctrl+Shift+B 切换，与 Chrome 同义）。
+    /// 为 <c>false</c> 时书签栏仍会在新标签页显示（Chrome 默认行为）。
+    /// </summary>
+    public bool ShowBookmarksBar { get; set; }
+
+    /// <summary>工具栏是否显示主页按钮（Chrome 自定义工具栏里的开关）。</summary>
+    public bool ShowHomeButton { get; set; } = true;
+
     // ---- 窗口几何（记忆上次的尺寸与位置）----
     // 用可空 double 而不是 NaN 表示「未保存」：System.Text.Json 默认拒绝写出 NaN。
 
@@ -75,6 +84,8 @@ public sealed class AppSettings
         AutofillForms = other.AutofillForms;
         EnableExtensions = other.EnableExtensions;
         RememberSessionOnExit = other.RememberSessionOnExit;
+        ShowBookmarksBar = other.ShowBookmarksBar;
+        ShowHomeButton = other.ShowHomeButton;
     }
 }
 

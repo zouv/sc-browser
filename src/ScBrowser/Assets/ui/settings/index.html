@@ -12,123 +12,182 @@
   <div class="page">
     <header class="page-header">
       <div>
-        <h1 class="page-title">设置</h1>
-        <p class="page-subtitle">改动即时生效并自动保存</p>
+        <h1 class="page-title" id="page-title">设置</h1>
+        <p class="page-subtitle" id="page-subtitle">选择一个分类</p>
       </div>
     </header>
 
-    <!-- 外观 -->
-    <section class="card">
-      <h2 class="card-title">外观</h2>
-      <div class="field">
-        <label for="theme">主题</label>
-        <select class="input" id="theme">
-          <option value="System">跟随系统</option>
-          <option value="Light">浅色</option>
-          <option value="Dark">深色</option>
-        </select>
-      </div>
-    </section>
+    <!-- Chrome 式布局：左侧分类导航 + 右侧内容。
+         每个分类是一个独立页面（hash 路由，如 browser://settings#downloads），
+         无 hash 时显示「设置」首页（分类卡片列表）。 -->
+    <div class="settings-layout">
+      <nav class="settings-nav" id="nav">
+        <a href="#appearance" class="nav-item">外观</a>
+        <a href="#search-startup" class="nav-item">搜索与启动</a>
+        <a href="#downloads" class="nav-item">下载</a>
+        <a href="#extensions" class="nav-item">扩展程序</a>
+        <a href="#passwords" class="nav-item">密码与自动填充</a>
+        <a href="#privacy" class="nav-item">隐私与数据</a>
+        <a href="#about" class="nav-item">关于 ScBrowser</a>
+      </nav>
 
-    <!-- 搜索与启动 -->
-    <section class="card">
-      <h2 class="card-title">搜索与启动</h2>
-      <div class="field">
-        <label for="search-template">搜索引擎地址模板</label>
-        <input class="input" id="search-template" type="text" spellcheck="false"
-               placeholder="https://www.bing.com/search?q={0}" />
-        <p class="hint"><code>{0}</code> 会被替换为 URL 编码后的查询词。</p>
-      </div>
-      <div class="field">
-        <label for="home-page">主页</label>
-        <input class="input" id="home-page" type="text" spellcheck="false" />
-        <p class="hint">点击工具栏主页按钮时打开；填 <code>browser://newtab</code> 表示新标签页。</p>
-      </div>
-      <div class="field row">
-        <label for="restore-session">启动时恢复上次的标签页</label>
-        <label class="switch">
-          <input type="checkbox" id="restore-session" />
-          <span class="switch-track"></span>
-        </label>
-      </div>
-      <div class="field row">
-        <label for="remember-session">退出时保存会话</label>
-        <label class="switch">
-          <input type="checkbox" id="remember-session" />
-          <span class="switch-track"></span>
-        </label>
-      </div>
-    </section>
+      <main class="settings-content" id="content">
+        <!-- 设置首页（无 hash 时显示）：分类卡片列表，点击进入对应分类页 -->
+        <section class="settings-section" id="home" data-title="设置" data-subtitle="选择一个分类">
+          <div class="home-cards">
+            <a class="home-card" href="#appearance"><span class="home-card-title">外观</span><span>主题、书签栏</span></a>
+            <a class="home-card" href="#search-startup"><span class="home-card-title">搜索与启动</span><span>搜索引擎、主页、会话</span></a>
+            <a class="home-card" href="#downloads"><span class="home-card-title">下载</span><span>下载目录、保存前询问</span></a>
+            <a class="home-card" href="#extensions"><span class="home-card-title">扩展程序</span><span>启用 / 禁用浏览器扩展</span></a>
+            <a class="home-card" href="#passwords"><span class="home-card-title">密码与自动填充</span><span>保存密码、自动填充表单</span></a>
+            <a class="home-card" href="#privacy"><span class="home-card-title">隐私与数据</span><span>清除浏览数据</span></a>
+            <a class="home-card" href="#about"><span class="home-card-title">关于 ScBrowser</span><span>版本、版权、检查更新</span></a>
+          </div>
+        </section>
 
-    <!-- 下载 -->
-    <section class="card">
-      <h2 class="card-title">下载</h2>
-      <div class="field">
-        <label for="downloads-folder">下载目录</label>
-        <input class="input" id="downloads-folder" type="text" spellcheck="false"
-               placeholder="留空则使用系统「下载」文件夹" />
-      </div>
-    </section>
+        <!-- 外观 -->
+        <section class="settings-section card" id="appearance" data-title="外观" data-subtitle="改动即时生效并自动保存">
+          <h2 class="card-title">外观</h2>
+          <div class="field">
+            <label for="theme">主题</label>
+            <select class="input" id="theme">
+              <option value="System">跟随系统</option>
+              <option value="Light">浅色</option>
+              <option value="Dark">深色</option>
+            </select>
+          </div>
+          <div class="field row">
+            <label for="show-bookmarks-bar">始终显示书签栏（快捷键 Ctrl+Shift+B）</label>
+            <label class="switch">
+              <input type="checkbox" id="show-bookmarks-bar" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="field row">
+            <label for="show-home-button">工具栏显示主页按钮</label>
+            <label class="switch">
+              <input type="checkbox" id="show-home-button" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </section>
 
-    <!-- 扩展 -->
-    <section class="card">
-      <h2 class="card-title">扩展程序</h2>
-      <div class="field row">
-        <label for="enable-extensions">启用浏览器扩展</label>
-        <label class="switch">
-          <input type="checkbox" id="enable-extensions" />
-          <span class="switch-track"></span>
-        </label>
-      </div>
-      <p class="hint warn">该开关在 WebView2 环境创建时生效，<strong>改动需要重启应用</strong>。</p>
-    </section>
+        <!-- 搜索与启动 -->
+        <section class="settings-section card" id="search-startup" data-title="搜索与启动" data-subtitle="改动即时生效并自动保存">
+          <h2 class="card-title">搜索与启动</h2>
+          <div class="field">
+            <label for="search-template">搜索引擎地址模板</label>
+            <input class="input" id="search-template" type="text" spellcheck="false"
+                   placeholder="https://www.bing.com/search?q={0}" />
+            <p class="hint"><code>{0}</code> 会被替换为 URL 编码后的查询词。</p>
+          </div>
+          <div class="field">
+            <label for="home-page">主页</label>
+            <input class="input" id="home-page" type="text" spellcheck="false" />
+            <p class="hint">点击工具栏主页按钮时打开；填 <code>browser://newtab</code> 表示新标签页。</p>
+          </div>
+          <div class="field row">
+            <label for="restore-session">启动时恢复上次的标签页</label>
+            <label class="switch">
+              <input type="checkbox" id="restore-session" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="field row">
+            <label for="remember-session">退出时保存会话</label>
+            <label class="switch">
+              <input type="checkbox" id="remember-session" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </section>
 
-    <!-- 密码与自动填充 -->
-    <section class="card">
-      <h2 class="card-title">密码与自动填充</h2>
-      <div class="field row">
-        <label for="save-passwords">保存密码</label>
-        <label class="switch">
-          <input type="checkbox" id="save-passwords" />
-          <span class="switch-track"></span>
-        </label>
-      </div>
-      <div class="field row">
-        <label for="autofill-forms">自动填充表单</label>
-        <label class="switch">
-          <input type="checkbox" id="autofill-forms" />
-          <span class="switch-track"></span>
-        </label>
-      </div>
-      <p class="hint">密码由浏览器内核保存在本机用户数据目录，不会上传。关闭后新密码不再保存；
-        已保存的密码可在下方「清除浏览数据」里删除。</p>
-    </section>
+        <!-- 下载 -->
+        <section class="settings-section card" id="downloads" data-title="下载" data-subtitle="改动即时生效并自动保存">
+          <h2 class="card-title">下载</h2>
+          <div class="field">
+            <label for="downloads-folder">下载目录</label>
+            <input class="input" id="downloads-folder" type="text" spellcheck="false"
+                   placeholder="留空则使用系统「下载」文件夹" />
+          </div>
+          <div class="field row">
+            <label for="ask-where">下载前询问保存位置</label>
+            <label class="switch">
+              <input type="checkbox" id="ask-where" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </section>
 
-    <!-- 隐私 -->
-    <section class="card">
-      <h2 class="card-title">隐私与数据</h2>
-      <p class="hint">选择要清除的内容，然后点击清除。此操作不可撤销。</p>
-      <div class="checkbox-list">
-        <label><input type="checkbox" id="clear-cache" /> 缓存的图片与文件</label>
-        <label><input type="checkbox" id="clear-cookies" /> Cookie 及网站登录状态</label>
-        <label><input type="checkbox" id="clear-storage" /> 网站存储数据（LocalStorage / IndexedDB）</label>
-        <label><input type="checkbox" id="clear-passwords" /> 已保存的密码</label>
-        <label><input type="checkbox" id="clear-autofill" /> 表单自动填充数据</label>
-      </div>
-      <button class="btn btn-danger" id="clear-now">清除所选数据</button>
-    </section>
+        <!-- 扩展 -->
+        <section class="settings-section card" id="extensions" data-title="扩展程序" data-subtitle="改动即时生效并自动保存">
+          <h2 class="card-title">扩展程序</h2>
+          <div class="field row">
+            <label for="enable-extensions">启用浏览器扩展</label>
+            <label class="switch">
+              <input type="checkbox" id="enable-extensions" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <p class="hint warn">该开关在 WebView2 环境创建时生效，<strong>改动需要重启应用</strong>。</p>
+        </section>
 
-    <!-- 关于 -->
-    <section class="card">
-      <h2 class="card-title">关于</h2>
-      <dl class="info" id="app-info">
-        <dt>版本</dt><dd id="info-version">—</dd>
-        <dt>用户数据目录</dt><dd id="info-userdata" class="mono">—</dd>
-        <dt>扩展目录</dt><dd id="info-extensions" class="mono">—</dd>
-        <dt>书签与历史数据库</dt><dd id="info-db" class="mono">—</dd>
-        <dt>日志目录</dt><dd id="info-logs" class="mono">—</dd>
-      </dl>
-    </section>
+        <!-- 密码与自动填充 -->
+        <section class="settings-section card" id="passwords" data-title="密码与自动填充" data-subtitle="改动即时生效并自动保存">
+          <h2 class="card-title">密码与自动填充</h2>
+          <div class="field row">
+            <label for="save-passwords">保存密码</label>
+            <label class="switch">
+              <input type="checkbox" id="save-passwords" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="field row">
+            <label for="autofill-forms">自动填充表单</label>
+            <label class="switch">
+              <input type="checkbox" id="autofill-forms" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <p class="hint">密码由浏览器内核保存在本机用户数据目录，不会上传。关闭后新密码不再保存；
+            已保存的密码可在「隐私与数据」里删除。</p>
+        </section>
+
+        <!-- 隐私与数据 -->
+        <section class="settings-section card" id="privacy" data-title="隐私与数据" data-subtitle="改动即时生效并自动保存">
+          <h2 class="card-title">隐私与数据</h2>
+          <p class="hint">选择要清除的内容，然后点击清除。此操作不可撤销。</p>
+          <div class="checkbox-list">
+            <label><input type="checkbox" id="clear-cache" /> 缓存的图片与文件</label>
+            <label><input type="checkbox" id="clear-cookies" /> Cookie 及网站登录状态</label>
+            <label><input type="checkbox" id="clear-storage" /> 网站存储数据（LocalStorage / IndexedDB）</label>
+            <label><input type="checkbox" id="clear-passwords" /> 已保存的密码</label>
+            <label><input type="checkbox" id="clear-autofill" /> 表单自动填充数据</label>
+          </div>
+          <button class="btn btn-danger" id="clear-now">清除所选数据</button>
+        </section>
+
+        <!-- 关于 ScBrowser（原「关于」弹窗的内容并入此处，Chrome 的 chrome://settings/help 同款） -->
+        <section class="settings-section card" id="about" data-title="关于 ScBrowser" data-subtitle="版本与用户数据">
+          <h2 class="card-title">关于 ScBrowser</h2>
+          <div class="about-brand">
+            <p class="about-name">ScBrowser</p>
+            <p class="about-version" id="about-version">—</p>
+            <p class="about-copyright" id="about-copyright">—</p>
+            <div class="about-actions">
+              <button class="btn" id="check-update">检查更新</button>
+              <button class="btn" id="open-extensions">打开扩展程序</button>
+            </div>
+          </div>
+          <dl class="info" id="app-info">
+            <dt>用户数据目录</dt><dd id="info-userdata" class="mono">—</dd>
+            <dt>扩展目录</dt><dd id="info-extensions" class="mono">—</dd>
+            <dt>书签与历史数据库</dt><dd id="info-db" class="mono">—</dd>
+            <dt>日志目录</dt><dd id="info-logs" class="mono">—</dd>
+          </dl>
+        </section>
+      </main>
+    </div>
   </div>
 
   <script src="../common/browser-api.js"></script>

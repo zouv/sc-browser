@@ -17,6 +17,8 @@
             <common:NonEmptyStringToVisibilityConverter x:Key="NonEmptyToVisibility" />
             <common:TextAndChromeVisibilityConverter x:Key="TextAndChromeVisibility" />
             <common:SecurityStateToTipConverter x:Key="SecurityStateTip" />
+            <common:ProgressToDashConverter x:Key="ProgressToDash" />
+            <common:BooleansAndToVisibilityConverter x:Key="BooleansAndToVisibility" />
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         </ResourceDictionary>
     </Application.Resources>

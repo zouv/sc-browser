@@ -61,3 +61,100 @@
 .bookmark-children:empty {
   display: none;
 }
+
+/* 关键：下面的弹层/菜单都写了 display:flex，会覆盖 hidden 属性的 UA 样式（display:none），
+   导致「打开页面就常显、点取消关不掉」——用 !important 把 hidden 的优先级抢回来。 */
+[hidden] {
+  display: none !important;
+}
+
+/* 拖拽落点提示 */
+.drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+/* 编辑对话框（模态） */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-title {
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+
+.modal-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* 右键菜单 */
+.context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-item {
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.context-menu-item:hover {
+  background: var(--hover);
+}
+
+.context-menu-item.danger {
+  color: var(--danger);
+}
+
+/* 搜索框（与历史页同款） */
+.search-input {
+  width: 220px;
+  height: 36px;
+  padding: 0 14px;
+}
+
+.header-actions .btn {
+  white-space: nowrap;
+}

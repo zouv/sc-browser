@@ -18,23 +18,24 @@
 | 我要改的东西 | 关键函数 / 锚点 | 备注 |
 |---|---|---|
 | 工具栏按钮外观 | `Themes/Controls.xaml` 的 `ToolbarButtonStyle` | 用 `DynamicResource` 引颜色令牌 |
+| 自定义工具栏（拼图/右键/固定） | `MainWindow.Toolbar.cs` 的 `ExtensionPuzzle_Click` / `Toolbar_RightClick` / `BuildCustomizeMenu`；`MainViewModel` 的 `ToggleExtensionPinned` / `ToggleHomeButton` | 拼图行内图钉用 `PreviewMouseLeftButtonDown` 拦点击防触发行点击；主页按钮显隐走 `ShowHomeButton` 设置（`IsHomeButtonVisible` 绑定） |
 | 标签条项的样式 | `Controls.xaml` 的 `BrowserTabButtonStyle` / `TabCloseButtonStyle` | `IsActive` 触发激活态背景 |
 | 窗口按钮（最小化/最大化/关闭） | `Controls.xaml` 的 `CaptionButtonStyle` / `CloseCaptionButtonStyle` + `MinimizeButton_Click` / `MaximizeRestoreButton_Click` / `CloseButton_Click` | **位于标题栏命中区内，必须 `IsHitTestVisibleInChrome`**，见 §7 |
-| 标签条交互（中键关 / 拖拽重排 / 拖出分窗 / 跨窗口合并 / 右键菜单） | `MainWindow.xaml.cs` 的 `TabButton_*` / `TabMenu_*`；菜单命令在 `MainViewModel`（`NewTabToRightCommand` / `DuplicateTabCommand` 等） | 拖拽是**自己捕获鼠标**的实时状态机（不用 `DragDrop`）：`ContinueDrag` / `ProcessStripDrag` / `HandOffToWindow` / `DetachToNewWindow` + `DragPhase`。**离开标签条立刻分窗、进入别的标签条立刻合并**，合并/分窗后由 `TakeOverStripDrag` / `TakeOverDetachedDrag` 在新窗口重新捕获鼠标；`_handOffPending` 防止预览+冒泡重复交接。落点 = `TabReorder.ResolveTargetIndex`，是否离开标签条 = `TabReorder.IsInStrip` |
+| 标签条交互（中键关 / 拖拽重排 / 拖出分窗 / 跨窗口合并 / 右键菜单） | `MainWindow.xaml.cs` 的 `TabButton_*` / `TabMenu_*` / `UpdateDragPosition`；`MainWindow.Tabs.cs` 的 `ContinueDrag` / `ProcessStripDrag` / `HandOffToWindow` / `DetachToNewWindow` / `TakeOver*Drag` / `ScrollStripTowardsElement`；菜单命令在 `MainViewModel` | 拖拽是**自己捕获鼠标**的实时状态机（不用 `DragDrop`），两态 `DragPhase`。**离开标签条立刻分窗、进入别的标签条立刻合并**；`_handOffPending` 防止预览+冒泡重复交接。落点 = `TabReorder.ResolveTargetIndex`（16px 水平滞后防抖动），是否离开标签条 = `TabReorder.IsInStrip`（垂直容差 15）。换位 = `Move → UpdateLayout() → 再读槽位`（不落地就是飘闪），让位/落回动画 = `TabStripSlideAnimator`，边缘自动滚动 = `ScrollStripTowardsElement`。详见 §7 |
 | 窗口记忆（尺寸/位置） | `RestoreWindowPlacement` / `SaveWindowPlacement` + `Services/WindowPlacement.cs` | 只对主窗口生效；最大化存 `RestoreBounds` |
 | 边框带（可视边框 + 缩放区） | `ApplyWindowedFrame`（`OnStateChanged` / `OnLoaded` 里调用） | **最大化时归零**，把视口还给页面，见 §7 |
-| 「关于」对话框 | `Menu_About` → `Views/AboutDialog` | 版本取自程序集，路径取自 `AppPaths`；按钮用 `DialogButtonStyle` / `DialogPrimaryButtonStyle`（`Controls.xaml`） |
+| 「关于 ScBrowser」 | `Menu_About`（`MainWindow.xaml.cs`）→ 打开/复用设置页并导航到 `browser://settings#about`（锚点经 `ToNavigableUri` 保留） | 关于内容在设置页「关于 ScBrowser」卡片（`Assets/ui/settings/*`），不再弹窗 |
 | 多窗口入口 | `OpenNewWindow` / `OpenNewIncognitoWindow` → `BrowserWindowManager.CreateWindow` | 见 §3.5 |
 | 主菜单 | `MenuButton_Click` + XAML 里 `MenuButton.ContextMenu`（分组见注释）+ `Menu_*` 处理器 | 样式：`BrowserMenuStyle` / `BrowserMenuItemStyle` |
 | 自绘窗口边框（无系统标题栏） | XAML 的 `WindowChrome.WindowChrome`（`CaptionHeight=38`）+ `NativeMethods.ClampMaximizedToWorkArea` | 见 §7 的两个坑 |
 | 地址栏回车/失焦行为 | `AddressBar_KeyDown` / `AddressBar_LostKeyboardFocus` | 失焦会恢复显示当前页地址 |
 | 「编辑态」判定 | `AddressBar_PreviewKeyDown` + `IsTextProducingKey` | **不能**用「获得焦点」判定，见 §7 |
-| 键盘快捷键 | `MainWindow.TryHandleShortcut` | 单一 switch，按修饰键分组 |
+| 键盘快捷键 | `MainWindow.TryHandleShortcut` | 单一 switch，按修饰键分组；含 Ctrl+Shift+B（书签栏）/ O（书签管理器）/ Delete（清除浏览数据） |
 | 全屏（F11 / 网页视频） | `ToggleFullScreen` / `SetUserFullScreen` / `OnTabFullScreenChanged` / `UpdateFullScreenState` / `EnterFullScreen` / `ExitFullScreen` / `SetChromeVisible` + `NativeMethods.FillMonitor` | 两个来源（用户 F11 / 网页 requestFullscreen）合流到 `_fullScreenApplied` |
 | 链接悬停状态栏 | XAML 的 `StatusBar`（绑定 `ActiveTab.StatusText`）+ `BrowserTab.WireEvents` 的 `StatusBarTextChanged` | WebView2 自带状态栏关闭（`IsStatusBarEnabled=false`） |
 | 站点信息 | `SecurityButton_Click` → `Views/SiteInfoPopup` | 独立顶层窗口（airspace）；按钮同样用 `DialogButtonStyle` / `DialogPrimaryButtonStyle` |
 | 证书错误 | `BrowserTab` 的 `ServerCertificateErrorDetected` → `TabManager.CertificateErrorDetected` → `AskAboutCertificateError` | 只对顶层导航询问，子资源走默认 |
-| 页内查找条（Ctrl+F） | `Views/FindBarWindow.xaml(.cs)`；`MainWindow.Find.cs` 的 `ShowFindBar` / `CloseFindBar` / `OnActiveTabChanged` / `ShowFindWindow` / `HideFindBarForBackground` / `RunFindAsync` / `StepFind`；工具栏放大镜 `FindButton_Click` | **独立顶层窗口**（Popup 拿不到键盘焦点）；`ShowFindWindow` 里先 `BringToForeground` 再延后聚焦；查找状态按 `tab.Id` 存于 `_findStates`；切后台/最小化隐藏，回前台按当前标签状态恢复 |
+| 页内查找条（Ctrl+F） | `Views/FindBarWindow.xaml(.cs)`；`MainWindow.Find.cs` 的 `ShowFindBarAsync` / `CloseFindBar` / `OnActiveTabChanged` / `ShowFindWindow` / `HideFindBarForBackground` / `RunFindAsync` / `StepFind`；工具栏放大镜 `FindButton_Click` | **独立顶层窗口**（Popup 拿不到键盘焦点）；`ShowFindWindow` 里先 `BringToForeground` 再延后聚焦；查找状态按 `tab.Id` 存于 `_findStates`；切后台/最小化隐藏，回前台按当前标签状态恢复；**首次打开预填页面选区**（`GetSelectedTextAsync`，上限 150 字符） |
 | 主菜单项 | `MenuButton_Click` + XAML 里的 `Button.ContextMenu` | |
 | 窗口深色标题栏/圆角 | `NativeMethods.ApplyDarkMode` / `ApplyRoundedCorners`（由 `OnStateChanged` 在最大化时改直角） | |
 | 应用图标 | `ScBrowser.csproj` 的 `ApplicationIcon` + `Assets/sc-browser.ico`；窗口用 `Icon="/Assets/sc-browser.ico"` | 设计源在 `docs/icons/`（改设计后重新导出 `.ico` 并覆盖 Assets 里那份） |
@@ -61,7 +62,10 @@
 | 历史入库时机 | `TabManager.RecordHistory`（订阅 `BrowserTab.NavigationFinished`） | 跳过 `browser://`/`about:`/`file://` |
 | 新窗口请求转新标签 | `TabManager.WireTabEvents` 的 `NewWindowRequested` | |
 | WebView2 设置项 | `BrowserTab.ConfigureSettings` | 注意 `AreBrowserAcceleratorKeysEnabled=false` |
-| 页内查找（引擎） | `BrowserTab.StartFindAsync` / `FindNext` / `FindPrevious` / `StopFind` | 优先 `CoreWebView2.Find`；旧运行时自动退回 JS，见 §7 |
+| 页内查找（引擎） | `BrowserTab.StartFindAsync` / `FindNext` / `FindPrevious` / `StopFind` / `GetSelectedTextAsync` | 优先 `CoreWebView2.Find`；旧运行时自动退回 JS（含滚动条刻度条），见 §7 |
+| 新开标签聚焦地址栏 | `MainViewModel.NewTabOpened` 事件（`NewTabAsync` 完成后触发）→ `MainWindow` 订阅调 `FocusAddressBar` | 只覆盖用户主动开标签（Ctrl+T / 菜单 / + 按钮）；target=_blank、中间点击等非主动创建不抢焦点 |
+| 书签栏 | `MainWindow.Bookmarks.cs`（点击/右键菜单/文件夹下拉）+ `MainViewModel.BarBookmarks`/`IsBookmarksBarVisible` | 数据 = 根目录书签与文件夹；可见性 = `ShowBookmarksBar` ∨ 新标签页 ∧ `ChromeVisible`（MultiBinding）；`BookmarkRepository.Changed` 驱动刷新 |
+| 星标菜单 | `Views/BookmarkMenuWindow` + `MainWindow.Bookmarks.cs` 的 `OpenBookmarkMenu` | Ctrl+D 与点星标都弹菜单（新建=添加，已有=编辑/移动/移除）；内部页面星标置灰 |
 | 音频指示 / 静音 | `BrowserTab.IsPlayingAudio` / `IsMuted` / `ShowAudioIcon` / `ToggleMute` | 标签条上的扬声器按钮与右键菜单都走 `ToggleMuteCommand` |
 | 后台标签休眠 | `TabManager.SuspendIdleTabs`（每分钟检查）/ `BrowserTab.SuspendAsync` / `Resume` | 30 分钟阈值；播放音频的不挂起；激活时自动唤醒 |
 | 引擎退出后重建 | `BrowserTab.LoseEngine` → `EngineDetached`；`TabManager.ReloadTab` / `TryEnsureEngineAsync` | 状态保留、只重建 WebView2 |

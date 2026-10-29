@@ -58,3 +58,27 @@
   color: var(--danger);
   border-color: var(--danger);
 }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-actions .btn {
+  white-space: nowrap;
+}
+
+.search-input {
+  width: 240px;
+  height: 36px;
+  padding: 0 14px;
+}
+
+/* 来源 URL 行 */
+.download-url {
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  margin-top: 1px;
+}

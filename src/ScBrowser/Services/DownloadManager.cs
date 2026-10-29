@@ -80,6 +80,34 @@ public sealed class DownloadManager
     /// <summary>当前正在进行的下载数（工具栏指示器用）。</summary>
     public int ActiveCount => _active.Count;
 
+    /// <summary>
+    /// 进行中下载的综合进度（0-100，工具栏进度环用）。
+    /// 各条目的「已收/总量」百分比取平均；总量未知的条目不计入（环按剩余条目显示）。
+    /// </summary>
+    public double ActiveProgress
+    {
+        get
+        {
+            if (_active.Count == 0)
+            {
+                return 0;
+            }
+
+            double sum = 0;
+            var known = 0;
+            foreach (var track in _active.Values)
+            {
+                if (track.Entry.TotalBytes > 0)
+                {
+                    sum += track.Entry.ReceivedBytes * 100.0 / track.Entry.TotalBytes;
+                    known++;
+                }
+            }
+
+            return known > 0 ? sum / known : 0;
+        }
+    }
+
     /// <summary>暂停一个下载中的条目。</summary>
     public void Pause(string id)
     {
@@ -161,6 +189,16 @@ public sealed class DownloadManager
             return;
         }
 
+        var pendingName = Path.GetFileName(e.ResultFilePath);
+
+        // 危险文件确认（Chrome 同款「保留 / 丢弃」）：可执行类扩展名下载前问一句，丢弃 = 取消下载。
+        if (IsDangerousFile(pendingName) && !ConfirmDangerousDownload(manager, pendingName))
+        {
+            e.Cancel = true;
+            _logger.LogInformation("用户丢弃了危险下载 {File}", pendingName);
+            return;
+        }
+
         // 关掉 WebView2 内建的下载提示条，统一由内部页面承载（与 Chrome 一致）。
         e.Handled = true;
 
@@ -213,8 +251,12 @@ public sealed class DownloadManager
         operation.BytesReceivedChanged += (_, _) => OnProgress(id, operation);
         operation.StateChanged += (_, _) => OnProgress(id, operation);
 
+        DownloadStarted?.Invoke(this, entry);
         Changed?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>一个下载已被接管并真正开始（「重新下载」据此关掉为它开的临时标签）。</summary>
+    public event EventHandler<DownloadEntry>? DownloadStarted;
 
     private void OnProgress(string id, CoreWebView2DownloadOperation operation)
     {
@@ -337,6 +379,32 @@ public sealed class DownloadManager
         }
 
         return Path.Combine(folder, $"{stem} ({Guid.NewGuid():N}){extension}");
+    }
+
+    /// <summary>可直接执行/易携带恶意内容的扩展名（Chrome 询问「保留 / 丢弃」的同类清单）。</summary>
+    private static readonly string[] DangerousExtensions =
+        [".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".pif", ".reg", ".dll", ".js", ".vbs", ".ps1", ".wsf", ".cpl", ".jar"];
+
+    private static bool IsDangerousFile(string fileName)
+    {
+        var extension = Path.GetExtension(fileName);
+        return extension.Length > 0
+               && DangerousExtensions.Any(d => string.Equals(d, extension, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>弹「危险下载」确认；返回是否保留。</summary>
+    private bool ConfirmDangerousDownload(TabManager manager, string fileName)
+    {
+        var owner = _windows.WindowOf(manager) ?? System.Windows.Application.Current?.MainWindow;
+        var answer = System.Windows.MessageBox.Show(
+            owner,
+            $"「{fileName}」通常是危险文件类型，可能损害你的设备。\n\n是否仍要保留？",
+            "危险下载",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning,
+            System.Windows.MessageBoxResult.No);
+
+        return answer == System.Windows.MessageBoxResult.Yes;
     }
 
     private sealed record DownloadTrack(

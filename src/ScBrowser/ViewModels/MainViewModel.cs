@@ -49,6 +49,18 @@ public sealed partial class MainViewModel : ObservableObject
         {
             _extensions.Changed += (_, _) => _ = RefreshExtensionsAsync();
         }
+
+        // 书签数据变化（本窗口、内部页面、别的窗口）→ 刷新书签栏与星标状态。
+        _bookmarks.Changed += (_, _) => _ = RefreshBookmarksAsync();
+        _ = RefreshBookmarksAsync();
+
+        // 设置变化（例如设置页切「始终显示书签栏」/「显示主页按钮」）→ 重算相关可见性。
+        _settings.Changed += (_, _) =>
+        {
+            UpdateBookmarksBarVisibility();
+            UpdateHomeButtonVisibility();
+        };
+        UpdateHomeButtonVisibility();
     }
 
     /// <summary>是否有正在下载的条目（工具栏下载指示器）。</summary>
@@ -59,10 +71,15 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private int _activeDownloadCount;
 
+    /// <summary>进行中下载的综合进度 0-100（工具栏进度环）。</summary>
+    [ObservableProperty]
+    private double _downloadProgress;
+
     private void RefreshDownloadIndicator()
     {
         ActiveDownloadCount = _downloads?.ActiveCount ?? 0;
         HasActiveDownloads = ActiveDownloadCount > 0;
+        DownloadProgress = _downloads?.ActiveProgress ?? 0;
     }
 
     /// <summary>已固定到工具栏的扩展按钮（顺序 = 固定顺序）。图标已解码成 WPF 可用的位图。</summary>
@@ -78,6 +95,14 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>是否有未固定的启用扩展（决定「拼图」菜单按钮显隐）。</summary>
     [ObservableProperty]
     private bool _hasUnpinnedExtensions;
+
+    /// <summary>是否有任意已启用的扩展（拼图按钮在 Chrome 里只要有扩展就显示）。</summary>
+    [ObservableProperty]
+    private bool _hasAnyExtensions;
+
+    /// <summary>工具栏是否显示主页按钮（自定义工具栏菜单 / 设置页外观可切换，持久化）。</summary>
+    [ObservableProperty]
+    private bool _isHomeButtonVisible = true;
 
     /// <summary>重新读取当前 profile 的扩展列表（启动后与扩展发生变化时调用）。</summary>
     public async Task RefreshExtensionsAsync()
@@ -112,7 +137,24 @@ public sealed partial class MainViewModel : ObservableObject
 
         HasExtensions = ExtensionButtons.Count > 0;
         HasUnpinnedExtensions = UnpinnedExtensions.Count > 0;
+        HasAnyExtensions = HasExtensions || HasUnpinnedExtensions;
     }
+
+    /// <summary>切换扩展的固定状态（拼图菜单图钉 / 自定义工具栏勾选）。</summary>
+    public void ToggleExtensionPinned(ExtensionButton extension)
+    {
+        var pinned = ExtensionButtons.Any(b => string.Equals(b.Id, extension.Id, StringComparison.Ordinal));
+        _extensions?.SetPinned(extension.Id, !pinned);
+    }
+
+    /// <summary>切换主页按钮显隐（自定义工具栏菜单，Chrome 同款开关）并落盘。</summary>
+    public void ToggleHomeButton()
+    {
+        _settings.Update(s => s.ShowHomeButton = !s.ShowHomeButton);
+        UpdateHomeButtonVisibility();
+    }
+
+    public void UpdateHomeButtonVisibility() => IsHomeButtonVisible = _settings.Current.ShowHomeButton;
 
     private static System.Windows.Media.ImageSource? DecodeIcon(string? dataUrl)
     {
@@ -333,8 +375,18 @@ public sealed partial class MainViewModel : ObservableObject
     // 标签页命令
     // --------------------------------------------------------------------- //
 
+    /// <summary>
+    /// 用户主动开了新标签（Ctrl+T / 菜单 / 工具栏 + 按钮）——外壳据此把焦点交给地址栏。
+    /// 非主动创建（target=_blank、中间点击链接等）不走 <see cref="NewTabAsync"/>，不会触发。
+    /// </summary>
+    public event EventHandler? NewTabOpened;
+
     [RelayCommand]
-    private Task NewTabAsync() => _tabs.CreateAsync(InternalPageRegistry.NewTabUrl, activate: true);
+    private async Task NewTabAsync()
+    {
+        await _tabs.CreateAsync(InternalPageRegistry.NewTabUrl, activate: true).ConfigureAwait(true);
+        NewTabOpened?.Invoke(this, EventArgs.Empty);
+    }
 
     [RelayCommand]
     private void ActivateTab(BrowserTab? tab)
@@ -476,18 +528,107 @@ public sealed partial class MainViewModel : ObservableObject
     // 书签
     // --------------------------------------------------------------------- //
 
-    /// <summary>切换当前页面的书签状态（Ctrl+D）。写库在后台线程。</summary>
-    [RelayCommand]
-    private async Task ToggleBookmarkAsync()
+    /// <summary>书签栏数据：根目录（即「书签栏」）下的书签与文件夹，顺序按库里的 sort_order。</summary>
+    public ObservableCollection<BookmarkEntry> BarBookmarks { get; } = [];
+
+    /// <summary>书签栏是否可见 = 设置「始终显示」或当前是新标签页（Chrome 默认行为）。</summary>
+    [ObservableProperty]
+    private bool _isBookmarksBarVisible;
+
+    /// <summary>当前页能否收藏（内部页面与空地址不能，星标按钮据此置灰）。</summary>
+    [ObservableProperty]
+    private bool _canBookmarkActiveTab;
+
+    /// <summary>全部书签的缓存（书签栏/星标菜单用；任何变更时整批刷新）。</summary>
+    private IReadOnlyList<BookmarkEntry> _allBookmarks = [];
+
+    /// <summary>星标菜单用的文件夹列表（平铺，含「书签栏」根）。</summary>
+    public IReadOnlyList<BookmarkEntry> BookmarkFolders =>
+        _allBookmarks.Where(e => e.IsFolder).OrderBy(e => e.SortOrder).ToList();
+
+    /// <summary>全部书签的缓存（书签栏右键菜单递归用）。</summary>
+    public IReadOnlyList<BookmarkEntry> AllBookmarks => _allBookmarks;
+
+    /// <summary>书签栏文件夹菜单里的「打开文件夹内全部书签」。</summary>
+    public async Task OpenFolderAllAsync(long folderId)
     {
-        var tab = ActiveTab;
-        if (tab is null || string.IsNullOrWhiteSpace(tab.DisplayUrl) || InternalPageRegistry.IsInternalPage(tab.DisplayUrl))
+        var urls = await _bookmarks.GetFolderUrlsAsync(folderId).ConfigureAwait(true);
+        var first = true;
+        foreach (var url in urls)
         {
-            return;
+            await _tabs.CreateAsync(url, activate: first).ConfigureAwait(true);
+            first = false;
+        }
+    }
+
+    /// <summary>当前页对应的书签节点（未收藏则为 <c>null</c>）。</summary>
+    public BookmarkEntry? BookmarkOfActiveTab
+    {
+        get
+        {
+            var url = ActiveTab?.DisplayUrl;
+            return string.IsNullOrWhiteSpace(url)
+                ? null
+                : _allBookmarks.FirstOrDefault(
+                    e => !e.IsFolder && string.Equals(e.Url, url, StringComparison.Ordinal));
+        }
+    }
+
+    /// <summary>拉全量书签并刷新书签栏、可见性与星标状态（后台线程读库）。</summary>
+    public async Task RefreshBookmarksAsync()
+    {
+        _allBookmarks = await _bookmarks.GetAllAsync().ConfigureAwait(true);
+
+        BarBookmarks.Clear();
+        foreach (var entry in _allBookmarks.Where(e => e.ParentId == 0))
+        {
+            BarBookmarks.Add(entry);
         }
 
-        IsActiveTabBookmarked = await _bookmarks.ToggleAsync(tab.DisplayUrl, tab.Title).ConfigureAwait(true);
+        UpdateBookmarksBarVisibility();
+        RefreshBookmarkState();
     }
+
+    /// <summary>Ctrl+Shift+B：切换书签栏「始终显示」并落盘（Chrome 同款快捷键）。</summary>
+    public void ToggleBookmarksBar()
+    {
+        _settings.Update(s => s.ShowBookmarksBar = !s.ShowBookmarksBar);
+        UpdateBookmarksBarVisibility();
+    }
+
+    public void UpdateBookmarksBarVisibility()
+    {
+        var onNewTab = string.Equals(
+            ActiveTab?.DisplayUrl,
+            InternalPageRegistry.NewTabUrl,
+            StringComparison.OrdinalIgnoreCase);
+        IsBookmarksBarVisible = _settings.Current.ShowBookmarksBar || onNewTab;
+    }
+
+    /// <summary>星标菜单「完成」：新增书签（可指定文件夹）。</summary>
+    public Task AddBookmarkAsync(string url, string title, long parentId) =>
+        _bookmarks.AddAsync(url, title, parentId);
+
+    /// <summary>书签栏右键菜单「新建文件夹」。</summary>
+    public Task AddFolderAsync(string title, long parentId) =>
+        _bookmarks.AddFolderAsync(title, parentId);
+
+    /// <summary>星标菜单「完成」：编辑已有书签的名称/地址并移动文件夹。</summary>
+    public async Task EditBookmarkAsync(long id, string title, string url, long parentId)
+    {
+        await _bookmarks.EditAsync(id, title, url).ConfigureAwait(true);
+        await _bookmarks.MoveAsync(id, parentId).ConfigureAwait(true);
+    }
+
+    /// <summary>星标菜单「移除」：按 id 删除书签。</summary>
+    public Task RemoveBookmarkAsync(long id) => _bookmarks.RemoveByIdAsync(id);
+
+    /// <summary>清除浏览数据对话框用：按范围（null = 全部）清除历史。</summary>
+    public Task ClearHistoryAsync(DateTimeOffset? since) =>
+        since is { } value ? _history.ClearSinceAsync(value) : _history.ClearAsync();
+
+    /// <summary>当前标签的 profile（清除浏览数据对话框用；引擎未就绪时为 <c>null</c>）。</summary>
+    public Microsoft.Web.WebView2.Core.CoreWebView2Profile? ActiveProfile => ActiveTab?.Core?.Profile;
 
     // --------------------------------------------------------------------- //
     // 内部页面快捷入口
@@ -619,6 +760,9 @@ public sealed partial class MainViewModel : ObservableObject
     private void RefreshBookmarkState()
     {
         var url = ActiveTab?.DisplayUrl;
+        CanBookmarkActiveTab = !string.IsNullOrWhiteSpace(url) && !InternalPageRegistry.IsInternalPage(url);
+        UpdateBookmarksBarVisibility();
+
         if (string.IsNullOrWhiteSpace(url) || InternalPageRegistry.IsInternalPage(url))
         {
             IsActiveTabBookmarked = false;

@@ -1,4 +1,4 @@
-// 历史记录页：按日期分组展示「访问流水」，支持时间范围与关键字筛选。
+// 历史记录页：按日期分组 + 时间范围/关键字筛选 + 多选删除 + 行菜单（复制链接等）。
 (function () {
   "use strict";
 
@@ -7,8 +7,11 @@
   var searchEl = document.getElementById("search");
   var rangeEl = document.getElementById("range");
   var clearBtn = document.getElementById("clear-all");
+  var clearDataBtn = document.getElementById("clear-data");
+  var deleteSelectedBtn = document.getElementById("delete-selected");
 
   var debounceTimer = null;
+  var selected = Object.create(null); // visitId -> true
 
   var WEEKDAYS = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 
@@ -49,6 +52,36 @@
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
+  /** 站点首字母图标：没有 favicon 存储，用域名的首字母圆片（Chrome 的缺省图标同款思路）。 */
+  function letterOf(url) {
+    try {
+      var host = new URL(url).hostname.replace(/^www\./, "");
+      return host ? host[0].toUpperCase() : "?";
+    } catch (e) {
+      return "?";
+    }
+  }
+
+  function copyLink(url) {
+    function fallback() {
+      var box = document.createElement("textarea");
+      box.value = url;
+      document.body.appendChild(box);
+      box.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(box);
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () {
+        sc.toast("链接已复制");
+      }, fallback);
+    } else {
+      fallback();
+      sc.toast("链接已复制");
+    }
+  }
+
   function appendGroup(entries) {
     var group = document.createElement("section");
     group.className = "history-group";
@@ -63,6 +96,26 @@
 
       var row = document.createElement("div");
       row.className = "list-row history-row";
+
+      // 多选复选框
+      var check = document.createElement("input");
+      check.type = "checkbox";
+      check.className = "history-check";
+      check.checked = !!selected[entry.id];
+      check.addEventListener("change", function () {
+        if (check.checked) {
+          selected[entry.id] = true;
+        } else {
+          delete selected[entry.id];
+        }
+        updateSelectionUi();
+      });
+      row.appendChild(check);
+
+      var icon = document.createElement("span");
+      icon.className = "site-icon";
+      icon.textContent = letterOf(entry.url);
+      row.appendChild(icon);
 
       var time = document.createElement("div");
       time.className = "history-time";
@@ -83,23 +136,23 @@
       main.appendChild(title);
       main.appendChild(url);
 
-      var del = document.createElement("button");
-      del.className = "icon-btn row-action";
-      del.textContent = "×";
-      del.title = "从历史记录中删除该网址的全部记录";
-      del.addEventListener("click", function (e) {
+      var menuBtn = document.createElement("button");
+      menuBtn.className = "icon-btn row-action";
+      menuBtn.textContent = "⋯";
+      menuBtn.title = "更多操作";
+      menuBtn.addEventListener("click", function (e) {
         e.stopPropagation();
-        if (!confirm("从历史记录中删除这个网址的全部记录？")) {
-          return;
-        }
-        sc.send("history.removeByUrl", { url: entry.url }).then(refresh);
+        showRowMenu(menuBtn, entry);
       });
 
       row.appendChild(time);
       row.appendChild(main);
-      row.appendChild(del);
+      row.appendChild(menuBtn);
 
-      row.addEventListener("click", function () {
+      row.addEventListener("click", function (e) {
+        if (e.target === check || e.target === menuBtn) {
+          return;
+        }
         sc.emit("navigation.navigate", { url: entry.url });
       });
 
@@ -109,8 +162,63 @@
     return group;
   }
 
+  /** 行尾菜单：复制链接 / 删除此条 / 删除该网址全部记录。 */
+  function showRowMenu(anchor, entry) {
+    var existing = document.querySelector(".row-menu");
+    if (existing) {
+      existing.remove();
+    }
+
+    var menu = document.createElement("div");
+    menu.className = "context-menu row-menu";
+
+    function item(label, handler, danger) {
+      var button = document.createElement("button");
+      button.className = "context-menu-item" + (danger ? " danger" : "");
+      button.textContent = label;
+      button.addEventListener("click", function () {
+        menu.remove();
+        handler();
+      });
+      menu.appendChild(button);
+    }
+
+    item("复制链接", function () {
+      copyLink(entry.url);
+    });
+    item("删除此条记录", function () {
+      sc.send("history.remove", { id: entry.id }).then(refresh);
+    });
+    item("删除该网址的全部记录", function () {
+      if (!confirm("从历史记录中删除这个网址的全部记录？")) {
+        return;
+      }
+      sc.send("history.removeByUrl", { url: entry.url }).then(refresh);
+    }, true);
+
+    var rect = anchor.getBoundingClientRect();
+    menu.style.left = Math.min(rect.left, window.innerWidth - 220) + "px";
+    menu.style.top = (rect.bottom + 4) + "px";
+    document.body.appendChild(menu);
+  }
+
+  document.addEventListener("click", function () {
+    var existing = document.querySelector(".row-menu");
+    if (existing) {
+      existing.remove();
+    }
+  });
+
+  function updateSelectionUi() {
+    var count = Object.keys(selected).length;
+    deleteSelectedBtn.hidden = count === 0;
+    deleteSelectedBtn.textContent = "删除所选（" + count + "）";
+  }
+
   function render(visits) {
     listEl.textContent = "";
+    selected = Object.create(null);
+    updateSelectionUi();
 
     if (!visits || visits.length === 0) {
       var empty = document.createElement("div");
@@ -183,6 +291,23 @@
     }
 
     sc.send("history.clear").then(refresh);
+  });
+
+  clearDataBtn.addEventListener("click", function () {
+    // Chrome 的历史页「清除浏览数据」入口；本应用的能力在设置页/快捷键对话框。
+    sc.emit("navigation.openInNewTab", { url: "browser://settings", active: true });
+  });
+
+  deleteSelectedBtn.addEventListener("click", function () {
+    var ids = Object.keys(selected).map(Number);
+    if (ids.length === 0) {
+      return;
+    }
+    if (!confirm("删除选中的 " + ids.length + " 条历史记录？")) {
+      return;
+    }
+
+    sc.send("history.removeMany", { ids: ids }).then(refresh);
   });
 
   refresh();

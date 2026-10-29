@@ -61,10 +61,12 @@ public class InternalPageRegistryTests : IDisposable
     }
 
     [Fact]
-    public void 导航地址应补尾部斜杠_未登记页面返回空()
+    public void 导航地址应补尾部斜杠并保留查询串与锚点_未登记页面返回空()
     {
         Assert.Equal("browser://settings/", InternalPageRegistry.ToNavigableUri("browser://settings"));
-        Assert.Equal("browser://history/", InternalPageRegistry.ToNavigableUri("browser://HISTORY/?q=1"));
+        Assert.Equal("browser://history/?q=1", InternalPageRegistry.ToNavigableUri("browser://HISTORY/?q=1"));
+        // 设置页的 #about 深链（主菜单「关于 ScBrowser」）依赖锚点原样保留。
+        Assert.Equal("browser://settings/#about", InternalPageRegistry.ToNavigableUri("browser://settings#about"));
         Assert.Null(InternalPageRegistry.ToNavigableUri("browser://not-a-page"));
     }
 

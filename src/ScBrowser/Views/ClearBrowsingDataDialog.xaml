@@ -1,0 +1,60 @@
+<Window x:Class="ScBrowser.Views.ClearBrowsingDataDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="清除浏览数据"
+        Width="380"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Icon="/Assets/sc-browser.ico"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        WindowStyle="None"
+        AllowsTransparency="True">
+
+    <!-- 无边框自绘（与「关于」同款）；Ctrl+Shift+Delete 直达，Chrome 同款对话框 -->
+    <Border Background="{DynamicResource WindowBackgroundBrush}"
+            BorderBrush="{DynamicResource SeparatorBrush}"
+            BorderThickness="1"
+            CornerRadius="10"
+            Margin="12">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="18" ShadowDepth="3" Opacity="0.35" Color="Black" />
+        </Border.Effect>
+
+        <StackPanel Margin="22,18,22,16">
+            <TextBlock Text="清除浏览数据" FontSize="16" FontWeight="SemiBold" />
+
+            <TextBlock Text="时间范围" Margin="0,12,0,4" FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+            <ComboBox x:Name="RangeBox" FontSize="13" Padding="6,4"
+                      Background="{DynamicResource AddressBarBackgroundBrush}"
+                      BorderBrush="{DynamicResource SeparatorBrush}">
+                <ComboBoxItem Content="过去 1 小时" />
+                <ComboBoxItem Content="过去 24 小时" />
+                <ComboBoxItem Content="过去 7 天" />
+                <ComboBoxItem Content="过去 4 周" />
+                <ComboBoxItem Content="所有时间" IsSelected="True" />
+            </ComboBox>
+            <TextBlock x:Name="RangeHint"
+                       Margin="0,4,0,0"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="选择「所有时间」以外的范围时，仅历史记录按范围清除；Cookie 与缓存将全部清除。" />
+
+            <CheckBox x:Name="HistoryCheck" Content="浏览历史记录" Margin="0,12,0,0" FontSize="13" />
+            <CheckBox x:Name="CookiesCheck" Content="Cookie 及其它网站数据" Margin="0,8,0,0" FontSize="13" />
+            <CheckBox x:Name="CacheCheck" Content="缓存的图片和文件" Margin="0,8,0,0" FontSize="13" />
+            <CheckBox x:Name="PasswordsCheck" Content="已保存的密码" Margin="0,8,0,0" FontSize="13" />
+            <CheckBox x:Name="AutofillCheck" Content="自动填充表单数据" Margin="0,8,0,0" FontSize="13" />
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                <Button Style="{StaticResource DialogButtonStyle}" Content="取消" IsCancel="True" Click="Cancel_Click" />
+                <Button Style="{StaticResource DialogPrimaryButtonStyle}" Content="清除数据"
+                        Margin="10,0,0,0" Click="Clear_Click" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

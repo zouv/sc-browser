@@ -67,11 +67,14 @@ public partial class MainWindow
                     case Key.R:
                         _viewModel.ActiveTab?.Reload();
                         return true;
-                    case Key.D:
-                        _viewModel.ToggleBookmarkCommand.Execute(null);
+                    case Key.D when !isEditingText:
+                        // Chrome 的 Ctrl+D 不是直接收藏，而是弹出书签菜单（名称/文件夹/完成）。
+                        OpenBookmarkMenu();
                         return true;
                     case Key.F:
-                        return ShowFindBar();
+                        // 选区预填是异步的（页面里取选区），快捷键处理器不能 await，直接发起。
+                        _ = ShowFindBarAsync();
+                        return true;
                     case Key.P when !isEditingText:
                         PrintActivePage();
                         return true;
@@ -124,6 +127,18 @@ public partial class MainWindow
                         return true;
                     case Key.Tab:
                         _tabs.ActivatePrevious();
+                        return true;
+                    case Key.B:
+                        // 书签栏开关（Chrome 语义：Ctrl+Shift+B 全局切换并持久化）。
+                        ToggleBookmarksBar();
+                        return true;
+                    case Key.O when !isEditingText:
+                        // 书签管理器（Chrome：Ctrl+Shift+O）。
+                        _viewModel.OpenBookmarksCommand.Execute(null);
+                        return true;
+                    case Key.Delete when !isEditingText:
+                        // 清除浏览数据对话框（Chrome：Ctrl+Shift+Delete 直达）。
+                        ShowClearBrowsingDataDialog();
                         return true;
                     default:
                         return false;

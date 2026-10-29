@@ -110,7 +110,8 @@
                 </Border>
 
                 <!-- 标签滚动区：横向溢出时不再压到窗口按钮上，而是可滚动（滚轮/触控板） -->
-                <ScrollViewer HorizontalScrollBarVisibility="Hidden"
+                <ScrollViewer x:Name="TabScroller"
+                              HorizontalScrollBarVisibility="Hidden"
                               VerticalScrollBarVisibility="Disabled"
                               Focusable="False">
                     <!-- Background=Transparent 让空白处参与命中测试（同时也是标题栏区域，
@@ -289,7 +290,8 @@
         <Border x:Name="Toolbar"
                 DockPanel.Dock="Top"
                 Background="{DynamicResource ToolbarBackgroundBrush}"
-                Padding="8,6,8,8">
+                Padding="8,6,8,8"
+                MouseRightButtonUp="Toolbar_RightClick">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -333,6 +335,9 @@
 
                 <Button Grid.Column="3" Style="{StaticResource ToolbarButtonStyle}"
                         Content="&#xE80F;" ToolTip="主页"
+                        Visibility="{Binding IsHomeButtonVisible,
+                                     Converter={StaticResource BoolToVisibility},
+                                     FallbackValue=Visible}"
                         Command="{Binding HomeCommand}" />
 
                 <!-- 地址栏：安全图标 + 输入框 -->
@@ -410,11 +415,11 @@
                     </Grid>
                 </Border>
 
-                <!-- 扩展按钮：先「拼图」菜单（未固定的扩展），再已固定的扩展按钮 -->
+                <!-- 扩展按钮：先「拼图」菜单（全部已启用扩展，行内图钉固定），再已固定的扩展按钮 -->
                 <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Style="{StaticResource ToolbarButtonStyle}"
-                            ToolTip="扩展程序（未固定）"
-                            Visibility="{Binding HasUnpinnedExtensions,
+                            ToolTip="扩展程序"
+                            Visibility="{Binding HasAnyExtensions,
                                          Converter={StaticResource BoolToVisibility},
                                          FallbackValue=Collapsed}"
                             Click="ExtensionPuzzle_Click">
@@ -450,10 +455,12 @@
                 </ItemsControl>
                 </StackPanel>
 
-                <!-- 书签星标：未收藏为空心星，已收藏为实心星 + 强调色 -->
-                <Button Grid.Column="6" Style="{StaticResource ToolbarButtonStyle}"
+                <!-- 书签星标：未收藏为空心星，已收藏为实心星 + 强调色；点击弹出书签菜单（Chrome 同款） -->
+                <Button Grid.Column="6" x:Name="BookmarkStarButton"
+                        Style="{StaticResource ToolbarButtonStyle}"
                         ToolTip="收藏此页 (Ctrl+D)"
-                        Command="{Binding ToggleBookmarkCommand}">
+                        IsEnabled="{Binding CanBookmarkActiveTab, FallbackValue=False}"
+                        Click="BookmarkStar_Click">
                     <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
@@ -470,16 +477,28 @@
                     </TextBlock>
                 </Button>
 
-                <!-- 下载指示：只在有进行中的下载时出现，点击直达下载内容页 -->
+                <!-- 下载指示：只在有进行中的下载时出现；外圈是综合进度环，点击直达下载内容页 -->
                 <Button Grid.Column="7" Style="{StaticResource ToolbarButtonStyle}"
                         ToolTip="下载内容 (Ctrl+J)"
                         Visibility="{Binding HasActiveDownloads,
                                      Converter={StaticResource BoolToVisibility},
                                      FallbackValue=Collapsed}"
                         Command="{Binding OpenDownloadsCommand}">
-                    <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="15"
-                               Foreground="{DynamicResource AccentBrush}"
-                               Text="&#xE896;" />
+                    <Grid Width="20" Height="20">
+                        <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="14"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource AccentBrush}"
+                                   Text="&#xE896;" />
+                        <Ellipse Stroke="{DynamicResource AccentBrush}" StrokeThickness="2"
+                                 RenderTransformOrigin="0.5,0.5"
+                                 StrokeDashArray="{Binding DownloadProgress,
+                                     Converter={StaticResource ProgressToDash},
+                                     ConverterParameter=62.8}">
+                            <Ellipse.RenderTransform>
+                                <RotateTransform Angle="-90" />
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                    </Grid>
                 </Button>
 
                 <!-- 主菜单 -->
@@ -645,6 +664,64 @@
                     </Button.ContextMenu>
                 </Button>
             </Grid>
+        </Border>
+
+        <!-- ============ 书签栏（Ctrl+Shift+B；关闭时仅新标签页显示，Chrome 默认行为） ============ -->
+        <Border x:Name="BookmarksBar"
+                DockPanel.Dock="Top"
+                Height="30"
+                Padding="8,0,8,0"
+                Background="{DynamicResource ToolbarBackgroundBrush}"
+                MouseRightButtonUp="BookmarksBar_RightClick">
+            <Border.Visibility>
+                <!-- 全屏（ChromeVisible=false）时必须随外壳一起收起；不能直接赋本地值，
+                     否则会把下面的绑定清掉（§7 的 ClearValue 坑） -->
+                <MultiBinding Converter="{StaticResource BooleansAndToVisibility}">
+                    <Binding Path="IsBookmarksBarVisible" />
+                    <Binding Path="ChromeVisible" RelativeSource="{RelativeSource AncestorType=Window}" />
+                </MultiBinding>
+            </Border.Visibility>
+            <!-- 溢出时横向滚动（滚轮/触控板）；Chrome 用 » 菜单，滚动是可接受的简化 -->
+            <ScrollViewer HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Disabled"
+                          Focusable="False">
+                <ItemsControl ItemsSource="{Binding BarBookmarks}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource BookmarkBarButtonStyle}"
+                                    Click="BookmarkBarItem_Click"
+                                    MouseRightButtonUp="BookmarkBarItem_RightClick">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="{StaticResource IconFontFamily}"
+                                               FontSize="11" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="&#xE774;" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                        <Setter Property="Text" Value="&#xE8B7;" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Title}"
+                                               MaxWidth="160"
+                                               Margin="4,0,0,0"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
         </Border>
 
         <!-- ============ 导航错误提示条 ============ -->

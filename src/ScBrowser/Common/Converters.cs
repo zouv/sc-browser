@@ -97,6 +97,49 @@ public sealed class TextAndChromeVisibilityConverter : IMultiValueConverter
 }
 
 /// <summary>
+/// 下载进度（0-100）→ 圆形进度环的虚线数组。
+/// <para>
+/// 进度环 = 一个 <c>Ellipse</c> 描边，<c>StrokeDashArray</c> 用「已走弧长 / 全长」两段虚线表达，
+/// 因此这里把百分比换算成与给定半径对应的弧长（调用方通过 <c>ConverterParameter</c> 传周长，默认 62.8 ≈ 半径 10）。
+/// </para>
+/// </summary>
+public sealed class ProgressToDashConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var circumference = parameter is string text && double.TryParse(text, NumberStyles.Float, culture, out var parsed)
+            ? parsed
+            : 62.8;
+        var progress = value is double d ? Math.Clamp(d, 0, 100) : 0;
+        return new System.Windows.Media.DoubleCollection
+        {
+            progress / 100 * circumference,
+            circumference,
+        };
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>多个布尔全为 true → Visible（书签栏：设置开关 + 外壳可见两个条件同时成立）。</summary>
+public sealed class BooleansAndToVisibilityConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Length == 0)
+        {
+            return Visibility.Collapsed;
+        }
+
+        return values.All(v => v is true) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public object[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// 安全状态 + 当前地址 → 安全图标的悬停提示。
 /// <para>
 /// 之所以还要地址：<see cref="SecurityState.Unknown"/> 有两种截然不同的成因——

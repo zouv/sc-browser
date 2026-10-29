@@ -16,7 +16,10 @@
         <p class="page-subtitle" id="summary">加载中…</p>
       </div>
       <div class="header-actions">
+        <input class="input search-input" id="search" type="search" placeholder="搜索书签" />
         <button class="btn" id="new-folder">新建文件夹</button>
+        <button class="btn" id="import">导入</button>
+        <button class="btn" id="export">导出</button>
         <button class="btn" id="expand-all">全部展开</button>
         <button class="btn" id="collapse-all">全部收起</button>
       </div>
@@ -24,6 +27,26 @@
 
     <div class="list" id="list"></div>
   </div>
+
+  <!-- 编辑对话框（新建/编辑书签与文件夹，替代 prompt） -->
+  <div class="modal-backdrop" id="edit-backdrop" hidden>
+    <div class="modal">
+      <h2 class="modal-title" id="edit-title">编辑书签</h2>
+      <label class="modal-label" for="edit-name">名称</label>
+      <input class="input" id="edit-name" />
+      <label class="modal-label" for="edit-url" id="edit-url-label">网址</label>
+      <input class="input" id="edit-url" />
+      <label class="modal-label" for="edit-folder">文件夹</label>
+      <select class="input" id="edit-folder"></select>
+      <div class="modal-actions">
+        <button class="btn" id="edit-cancel">取消</button>
+        <button class="btn btn-primary" id="edit-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右键菜单 -->
+  <div class="context-menu" id="context-menu" hidden></div>
 
   <script src="../common/browser-api.js"></script>
   <script src="bookmarks.js"></script>

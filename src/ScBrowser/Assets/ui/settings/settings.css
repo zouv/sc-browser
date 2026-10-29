@@ -1,5 +1,87 @@
 .page {
-  max-width: 760px;
+  max-width: 1060px;
+}
+
+/* Chrome 式两栏：左侧分类导航 + 右侧设置项 */
+.settings-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.settings-nav {
+  position: sticky;
+  top: 12px;
+  flex: 0 0 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+}
+
+.nav-item {
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--hover);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 分类页切换用 hidden 属性；保险起见抢回优先级（bookmarks.css 同款教训：
+   一旦给 .settings-section 写 display 规则，就会覆盖 hidden 的 UA 样式）。 */
+[hidden] {
+  display: none !important;
+}
+
+/* 设置首页：分类卡片列表（Chrome 设置首页同款） */
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.home-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  padding: 14px 16px;
+  text-decoration: none;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.home-card:hover {
+  background: var(--hover);
+}
+
+.home-card-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.home-card span:last-child {
+  color: var(--text-secondary);
 }
 
 .card {
@@ -98,4 +180,44 @@ select.input {
 .info dd {
   margin: 0;
   word-break: break-all;
+}
+
+/* 关于条目（Chrome 的 chrome://settings/help 同款信息块） */
+.about-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.about-name {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.about-version,
+.about-copyright {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.about-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* 窄窗口退化：导航移到顶部横排 */
+@media (max-width: 720px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
 }

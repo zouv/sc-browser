@@ -72,12 +72,19 @@ public static class InternalPageRegistry
 
     /// <summary>
     /// 把内部页面地址规整成可交给 WebView2 导航的形式（<c>browser://settings</c> → <c>browser://settings/</c>）；
-    /// 未登记的页面返回 <c>null</c>。
+    /// 未登记的页面返回 <c>null</c>。查询串与锚点原样保留（设置页的 <c>#about</c> 深链依赖它）。
     /// </summary>
-    public static string? ToNavigableUri(string url) =>
-        TryGetPageName(url, out var name) && Pages.ContainsKey(name)
-            ? Scheme + name + "/"
-            : null;
+    public static string? ToNavigableUri(string url)
+    {
+        if (!TryGetPageName(url, out var name) || !Pages.ContainsKey(name))
+        {
+            return null;
+        }
+
+        // fragment 不会发给资源过滤器（客户端行为），保留它只是让页面加载后能定位到锚点。
+        var suffix = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Query + uri.Fragment : string.Empty;
+        return Scheme + name + "/" + suffix;
+    }
 
     /// <summary>把内部页面地址规整化，供地址栏显示（<c>browser://settings/</c> → <c>browser://settings</c>）。</summary>
     public static string NormalizeDisplayUrl(string url) =>

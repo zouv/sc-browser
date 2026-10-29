@@ -104,6 +104,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Storage/BrowserDatabase.cs` | SQLite 建表 / 连接工厂（WAL） | 改 schema |
 | `src/ScBrowser/Storage/Entries.cs` | 数据记录定义（HistoryEntry/BookmarkEntry/DownloadEntry + 状态枚举） | 加字段 |
 | `src/ScBrowser/Storage/{History,Bookmark,Download}Repository.cs` | 三个仓储的读写 | 改查询/写入 |
+| `src/ScBrowser/Storage/BookmarkHtml.cs` | Netscape 书签 HTML 的解析/生成（导入导出，纯函数 + 单测） | 改导入导出格式 |
 | `src/ScBrowser/Services/SettingsService.cs` | 设置读写（JSON）＋ 归一化 ＋ 变更事件 | 加设置项 |
 | `src/ScBrowser/Services/ThemeService.cs` | 运行时换肤（替换颜色字典索引 0）+ `Applied` 事件（网页跟着换） | 改换肤机制 |
 | `src/ScBrowser/Services/BrowserWindowManager.cs` | **窗口总管**：按窗口组装 TabManager/MainViewModel/MainWindow，跟踪并聚合跨窗口事件 | 加窗口级能力、会话保存 |
@@ -118,8 +119,13 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Views/MainWindow.xaml(.cs)` | 外壳布局（含自绘窗口边框 + 浮动查找条）+ 窗口外观 + **键盘快捷键** | 改外壳结构/快捷键/查找条 |
 | `src/ScBrowser/Views/Controls/BrowserContentHost.cs` | 内容区宿主实现（WebView2 挂载与显示切换） | 改内容区挂载方式 |
 | `src/ScBrowser/Views/AddressBarPopup.xaml(.cs)` | 地址栏下拉浮层（独立顶层窗口，规避 airspace） | 改下拉外观/交互 |
-| `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的落点换算（指针落在哪个槽位）与标签条命中判定，纯函数 + 单测 | 改拖拽落点 / 分窗判定规则 |
-| `src/ScBrowser/Views/AboutDialog.xaml(.cs)` | 「关于」对话框（图标 / 版本 / 用户数据目录） | 改关于页 |
+| `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的纯函数换算：落点（指针落在哪个槽位）、标签条命中判定（垂直容差 15 = Chrome 磁性）、让位动画补偿量 `SlideCompensation`，纯函数 + 单测 | 改拖拽落点 / 分窗判定规则 |
+| `src/ScBrowser/Views/TabStripSlideAnimator.cs` | Chrome 式让位/落回动画的视图层：每容器补偿 `TranslateTransform` + 指数衰减（τ≈66ms），换位前快照、换位后结算、松手落回、窗口关闭清理 | 改让位动画手感 |
+| `src/ScBrowser/Assets/ui/settings/*` | **WebUI 设置页**：Chrome 式「左侧分类导航 + 右侧内容」，每个分类一个独立页面（hash 路由：`browser://settings#downloads` 等，无 hash 显示分类卡片首页）；「关于 ScBrowser」条目承载原关于弹窗内容 | 改设置页 |
+| `src/ScBrowser/Views/BookmarkMenuWindow.xaml(.cs)` | 地址栏星标的弹出菜单（名称/网址/文件夹/完成/移除，Chrome 同款，独立顶层窗口；另可作「新建文件夹」模式） | 改星标菜单 |
+| `src/ScBrowser/Views/ClearBrowsingDataDialog.xaml(.cs)` | 清除浏览数据对话框（Ctrl+Shift+Delete；范围仅作用于历史，WebView 数据全清） | 改清除浏览数据 |
+| `src/ScBrowser/Views/MainWindow.Bookmarks.cs` | 主窗口分册：书签栏交互（点击/条目右键/空白区右键菜单/文件夹下拉/编辑删除）与星标菜单定位 | 改书签栏行为 |
+| `src/ScBrowser/Views/MainWindow.Toolbar.cs` | 主窗口分册：自定义工具栏（拼图菜单行内图钉 / 工具栏右键自定义菜单 / 扩展按钮右键菜单） | 改工具栏扩展交互 |
 | `src/ScBrowser/Views/SiteInfoPopup.xaml(.cs)` | 站点信息浮层（来源 / 安全状态 / 站点权限 / 清除站点数据） | 改站点信息与权限管理 |
 | `src/ScBrowser/Views/FindBarWindow.xaml(.cs)` | **浮动查找条**（独立顶层窗口，输入框/计数/上一下一/关闭）；搜索逻辑在 `MainWindow.Find.cs` | 改查找条外观与交互 |
 | `src/ScBrowser/Views/ExtensionPopupWindow.xaml(.cs)` | 扩展工具栏弹窗（同 profile 的 WebView2 + `chrome.tabs` 兼容层） | 改扩展弹窗 |
@@ -137,7 +143,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `installer/ScBrowser.iss` | Inno Setup 7 安装脚本：按用户安装、卸载、开始菜单/桌面快捷方式 |
 | `installer/ScBrowser.Installer.csproj` | 仅用于通过 NuGet 还原 Inno Setup 编译器（`Tools.InnoSetup`），不参与应用构建 |
 | `check-docs.sh` | 文档体系机械体检（技术栈无关） |
-| `build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `package.bat` / `ci.bat` | `manager.sh` 各命令的 Windows 原生等价物（纯 cmd + dotnet，不需要 bash） |
+| `build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `package.bat` / `ci.bat` | `manager.sh` 各命令的 Windows 原生等价物（纯 cmd + dotnet，不需要 bash）；`dev.bat` 无对应命令，是「询问式关闭运行实例 → build+test → 启动 Debug 版」的便捷入口 |
 | `.gitattributes` | 行尾策略：`*.sh`=LF、`*.bat`=CRLF（否则 Windows 上脚本执行失败） |
 
 ---
@@ -186,14 +192,17 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | newtab | `navigation.navigate` | `input`（原始输入，由宿主解析） | — |
 | 各页 | `navigation.openInNewTab` | `url`, `active` | — |
 | history | `history.query` | `search`, `limit`, `offset` | `HistoryEntry[]` |
-| history | `history.remove` / `history.removeByUrl` / `history.clear` | `id` / `url` | — |
+| history | `history.remove` / `history.removeByUrl` / `history.removeMany` / `history.clear` | `id` / `url` / `ids` | — |
 | history | `history.visits` | `search`, `from`, `to`（ISO）, `limit` | `VisitEntry[]`（按时间倒序） |
 | newtab | `history.topSites` | `limit` | `HistoryEntry[]` |
 | bookmarks | `bookmarks.query` / `bookmarks.add` / `bookmarks.remove` / `bookmarks.toggle` / `bookmarks.exists` | `url`, `title`, `id`, `parentId` | 视消息而定 |
 | bookmarks | `bookmarks.addFolder` / `bookmarks.rename` / `bookmarks.move` / `bookmarks.removeById` | `title`, `id`, `parentId` | 新 id / 是否成功 |
+| bookmarks | `bookmarks.edit` | `id`, `title`, `url` | 是否成功 |
+| bookmarks | `bookmarks.importFromFile` / `bookmarks.exportToFile` | —（弹系统文件对话框） | `{imported}` / `{exported}`；取消为 null |
+| bookmarks | `bookmarks.openAll` | `id`（文件夹，0 = 全部） | `{opened}` |
 | downloads | `downloads.query` / `downloads.clear` / `downloads.remove` | `id` | `DownloadEntry[]` |
 | downloads | `downloads.openFile` / `downloads.revealInFolder` | `id`（**不收路径**，宿主查库） | — |
-| downloads | `downloads.pause` / `downloads.resume` / `downloads.cancel` | `id` | — |
+| downloads | `downloads.pause` / `downloads.resume` / `downloads.cancel` / `downloads.retry` | `id` | — |
 | 扩展 | `extensions.list` | — | `ExtensionInfo[]`（含版本、描述、权限、图标 data URL、弹窗/选项路径、MV 版本、`isPinned`/`pinOrder`） |
 | 扩展 | `extensions.installFromFolder` / `extensions.installFromCrx` | —（弹系统对话框） | `ExtensionInfo \| null`（用户在权限确认里取消时为空） |
 | 扩展 | `extensions.installFromStore` | `input`（商店链接或 32 位 ID） | `ExtensionInfo \| null` |
@@ -204,7 +213,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | settings | `app.info` | — | 版本与各路径 |
 | settings | `app.clearBrowsingData` | `cache`, `cookies`, `storage` | — |
 
-**宿主 → 页面事件**：`downloads.changed`、`extensions.changed`、`settings.changed`（只推给停在内部页面上的标签）。
+**宿主 → 页面事件**：`downloads.changed`、`extensions.changed`、`settings.changed`（只推给停在内部页面上的标签）、
+`bookmarks.changed`（书签增删改/导入导出后推给书签页刷新；书签栏与星标由 `BookmarkRepository.Changed` 驱动）。
 
 **鉴权**：每条消息按发送文档地址（`args.Source`）判定，只有 `InternalPageRegistry.Pages` 登记的页面、且类型命中该页白名单前缀才处理；普通网页 / `file://` 的消息直接丢弃且不回执。
 
@@ -223,6 +233,10 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 - **统一入口**：`manager.sh`（`build` / `run` / `start` / `stop` / `test` / `verify` / `package` / `clean` / `data` / `logs` / `reset`）。
   **`.bat` 是等价物不是第二份真源**：`build.bat` / `run.bat` / `test.bat` / `verify.bat` / `clean.bat` / `package.bat` / `ci.bat`
   用纯 cmd + dotnet 重写同一批命令（不依赖 bash）；**改命令语义时两处必须同步**。
+  另有 Windows 专属 `dev.bat`（无 manager.sh 对应命令）：检测到 ScBrowser 在运行时先列进程并**询问**
+  （仅输入 Y 才关闭：先 WM_CLOSE 正常关闭、12 秒超时强杀；其它输入一律取消），再 build + test + 启动 Debug 版。
+  `dev.bat` 的外部命令一律 System32 全路径（git-bash 派生的 cmd 里 PATH 可能先命中 GNU 同名工具）；
+  实例检测靠解析 tasklist 输出（`tasklist /FI` 退出码恒为 0，不能判）；等待用 ping 延时（timeout 在 stdin 重定向时报错）。
   `verify.bat` / `ci.bat` 的文档体检需 bash，检测到 `sh`（退而求其次 `bash`）才跑，否则只告警不失败。
 - **打包产物（`dist/`，已 gitignore）**：`package` 固定产出——
   `dist/dev/ScBrowser_<版本>_x64-unpack-debug.zip`（Debug 框架依赖发布 + `ScBrowser.pdb`
@@ -288,10 +302,9 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   （`MainWindow.ChromeVisible`），与文本一起走 `TextAndChromeVisibility` 多值绑定。
 - **先移除活跃项再发变更通知**：`DownloadManager.OnProgress` 完成时若先 `Changed` 再 `_active.TryRemove`，
   界面在通知里读到的 `ActiveCount` 还是旧值，工具栏下载指示器就永远不消失。
-- **全屏用 Win32 铺满显示器**：`WindowState=Maximized` 只铺工作区（留出任务栏），
-  不能当全屏用。`NativeMethods.FillMonitor` 按显示器完整矩形 `SetWindowPos`；
-  退出时要把 `Left/Top/Width/Height` 重新设回去（Win32 挪过窗口后 WPF 的值已不同步）。
-  全屏时还要把 `WindowChrome.CaptionHeight` 归零，否则点网页顶部会变成拖窗口。
+- **全屏用 Win32 铺满显示器**：`WindowState=Maximized` 只铺工作区（留出任务栏），不能当全屏用。
+  `NativeMethods.FillMonitor` 按显示器完整矩形 `SetWindowPos`；退出时要把 `Left/Top/Width/Height`
+  重新设回去（Win32 挪过窗口后 WPF 的值已不同步）。全屏时还要把 `WindowChrome.CaptionHeight` 归零，否则点网页顶部会变成拖窗口。
 - **证书错误只该问「顶层导航」**：`ServerCertificateErrorDetected` 对每个子资源都会触发，
   逐个弹窗不可用。`BrowserTab` 用 `_pendingMainFrameUri`（NavigationStarting 记下、Completed 清空）过滤。
 - **CRX3 的头部有两把公钥**：商店包一般同时带 `sha256_with_rsa` 与 `sha256_with_ecdsa`，
@@ -334,22 +347,47 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
      「按钮 Preview」和「窗口冒泡」各处理一次，不拦住会一次拖出建出两个窗口。
   3. **跨窗口命中测试不要拿 WPF DIP 直接相加**：统一 `PointToScreen` 得物理屏幕点，
      目标窗口再用 `PointFromScreen` 换回自己的 DIP（`ContainsTabStripPoint` / `TabIndexAtScreenPoint`）。
-     「是否离开标签条」必须**宽高都判断**（`TabReorder.IsInStrip`）。
+     「是否离开标签条」必须**宽高都判断**（`TabReorder.IsInStrip`，垂直容差 15px 对齐 Chrome 的
+     `kVerticalDetachMagnetism`）。
   4. **Detached 跟随窗口要用 `GetCursorPos` 重新换算**，不能拿 `e.GetPosition(this)` 的差值：
      同一移动被预览/冒泡处理两次时，后者会把窗口位移叠加两次，越拖越偏。
      分窗摆放再用「标签按钮在窗口里的实际左边缘」反向校正一次，保证指针落在同一抓取点。
-- **拖拽补偿量要用「槽位几何」而不是元素偏移**：标签条是 `ItemsControl + DataTemplate`，
-  对被拖的 Button 调 `VisualTreeHelper.GetOffset` 拿到的是它**相对自己 ContentPresenter** 的偏移
-  （恒为 0），不是标签条坐标——用它算补偿，每次换位标签都会瞬移。正解见
-  `TabReorder.Step`：偏移 = 视觉左边缘 − **落点槽位**左边缘（槽位几何在换位前后不变）。
+  5. **换位要在模型移动后 `UpdateLayout()` 让槽位几何立即落地，再算渲染偏移**（`UpdateDragPosition`）：
+     `ObservableCollection.Move` 只**同步**重排面板 Children，Arrange 要等布局帧；
+     不落地就读槽位，会得到「新顺序 + 旧坐标」的错位几何，标签宽度不等时每次换位都跳一下再跳回
+     （用户报告的飘闪根因；`TabStripLayoutTests` 机械验证了这两个前提）。
+     偏移公式 = 指针X − 抓取偏移 − 被拖标签**落地后所在槽位**的左边缘；槽位几何必须取
+     panel 子元素（容器）的偏移——元素是 DataTemplate 里的 Button，它相对 ContentPresenter
+     的偏移恒约 0，取它算会飞。
+  6. **其他标签的让位是补偿衰减动画**（`TabStripSlideAnimator`，对齐 Chrome 的 BoundsAnimator）：
+     布局槽位即时变化，每个容器挂 `TranslateTransform` 补偿 =「旧补偿 + 旧位置 − 新位置」
+     （`TabReorder.SlideCompensation`），按 τ≈66ms 指数衰减到 0 后摘变换；
+     中途再换位把残余补偿叠进去即可自然重定向。条内松手同样用补偿衰减做「滑回槽位」（`BeginGlide`）。
+     换位带 16px 水平滞后（Chrome `kHorizontalMoveThreshold`），防指针停在槽位边界时来回抖动。
+  7. **标签溢出时拖到条两端自动滚动**（`ScrollStripTowardsElement`，判据对齐 Chrome 的
+     `TabDragScrollHandler`：被拖标签视觉边缘越过 `TabScroller` 视口边缘就滚）。
+     滚动改变 panel 坐标映射，滚完要把滚动增量加回指针的 panel 坐标再算重排——
+     偏移公式里滚动量自洽抵消，标签仍恒贴鼠标。
+- **WebView2 SDK（1.0.4258）缺两个 Chrome 类能力**：① `CoreWebView2.StartDownloadAsync` 不存在——
+  「重新下载」用**后台标签导航**触发下载接管，`DownloadStarted` 事件在下载开始后关掉临时标签
+  （15 秒无下载则留给用户）；② `CoreWebView2Profile` 没有按时间范围的清除——清除浏览数据对话框的
+  时间范围只作用于历史（仓储 `ClearSince`），WebView 数据一律全清（对话框里如实提示）。
+- **代码里打开的右键菜单必须延迟到输入事件处理完再弹**：在 `MouseRightButtonUp` 里同步
+  `menu.IsOpen = true`，弹出层会在同一输入事件处理期间抢鼠标捕获——菜单看得见、点不动
+  （工具栏「自定义工具栏」实际踩过）。统一走 `MainWindow.Toolbar.cs` 的 `OpenContextMenu`
+  （`Dispatcher.BeginInvoke(Input 优先级)`），书签栏右键菜单同理。`BrowserMenuItemStyle`
+  模板必须给 `IsChecked` 画对勾，否则勾了也看不出变化。
+- **书签栏的可见性是双条件绑定**：`IsBookmarksBarVisible`（设置开关或新标签页）∧ `ChromeVisible`（全屏）。
+  两个条件用 MultiBinding（`BooleansAndToVisibility`）——全屏逻辑绝不能给 Visibility 赋本地值，
+  否则把绑定清掉（§7 的 `ClearValue` 坑），退出全屏后书签栏永远可见。
 - **导航失败提示要延迟落地**：WebView2 冷启动、被后续导航取代的请求，常在「失败」后几毫秒内就成功；
   立刻挂红条的表现是「闪一下」（新开窗口最容易看到）。`BrowserTab.ReportNavigationError` 的做法是
   延迟 700ms + 版本号作废（期间任何新导航/成功导航都会作废它），把 `OperationCanceled` 直接排除，
   并且**标签首次导航失败会自动重试一次**（冷启动偶发失败重试即好，真实故障重试仍失败、照常报错）。
 - **深色「影响网页」要顺着站点走**：把 `CoreWebView2Profile.PreferredColorScheme` 设成 Dark/Light/Auto，
-  让页面的 `prefers-color-scheme` 随应用主题变化即可——声明了深色样式的站点自动变深，
-  没声明的保持原样。**不要**用 CDP 强制反色：会把排版、图片、图表拧坏。
-  内部页面（`browser://*`）的 `common/base.css` 用的是同一个媒体查询，因此一并跟随，无需另推消息。
+  让页面的 `prefers-color-scheme` 随应用主题变化即可——声明了深色样式的站点自动变深，没声明的保持原样。
+  **不要**用 CDP 强制反色：会把排版、图片、图表拧坏。内部页面（`browser://*`）的 `common/base.css`
+  用的是同一个媒体查询，因此一并跟随，无需另推消息。
 - **全应用只有一个 WebView2 profile**：颜色方案是 profile 级设置，设一次即影响所有标签，
   但新标签仍会显式再设一次（见 `TabManager.ApplyWebTheme`），避免依赖「之前一定设过」的隐含前提。
 - **页内查找要兼容旧 WebView2 运行时**：`CoreWebView2.Find` 需要 `ICoreWebView2_28`，
@@ -357,3 +395,6 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   原生不可用（或启动失败）时退回 JS：用 `TreeWalker` 收集文本节点的匹配区间，再用
   `CSS.highlights` 高亮，状态挂在 `window.__scFind` 上。JS 路径只覆盖主文档、匹配不跨文本节点，
   是旧运行时的降级方案；升级运行时后会自动走原生路径。**不要为了「只留一条实现」删掉兜底。**
+  配套行为：Ctrl+F 首次打开时把页面选区预填进搜索框（`BrowserTab.GetSelectedTextAsync`，上限 150 字符，
+  Chrome 同款）；JS 路径还会把匹配位置**按文档比例**画成滚动条右侧的刻度条（固定浮层 + 指针穿透、
+  比例定位所以滚动无需监听，resize 才重画；原生 Find 拿不到匹配位置，故刻度只有 JS 路径有）。

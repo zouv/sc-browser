@@ -17,10 +17,14 @@
 
 ## 状态快照
 
-- **最近更新**：2026-10-27
-- **整体状态**：✅ 无进行中的开发任务（**v0.4.2 已打包并发布**）
+- **最近更新**：2026-10-29
+- **整体状态**：✅ 无进行中的开发任务；大批改动未提交（见「进行中」）
 - **当前分支（必填）**：`main`
 - **最后验证状态**：
+  · 2026-10-29：**标签拖拽「飘闪」修复 + Chromium 式交互重构**。`sh manager.sh verify` ✅
+    （构建 -warnaserror 0 警告 + **192/192** 单测 + 文档体检）。单测含不等宽槽位「贴鼠标」回归、
+    补偿连续性、`TabStripLayoutTests` 对三个布局前提的机械验证；隔离实例启动干净无异常。
+    **待用户亲手验证**：换位贴手性、让位/落回动画、溢出时边缘自动滚动、5 连交接防回归（实例已备，见「下一步」）。
   · 2026-10-27：`sh manager.sh verify` ✅（构建 + **188/188** 单测 + 文档体检）。
     `sh manager.sh package` ✅（0.4.2 dev/release 产物）；GitHub Release `v0.4.2` 两个资产已上传。
     实跑通过（隔离实例，全程不松手）：**拖出即分窗**（多标签 / 单标签源）→ **拖进另一窗口标签条即合并** →
@@ -32,8 +36,7 @@
     CRX 验签通过、WebView2 报出的 ID 与商店 ID 一致（`ddkjiahejlhfcafbddmgiahcphecmpfh`）、
     manifest 已写入 `key`、受管目录为 `<id>/<版本>`；
     工具栏显示扩展图标，点图标后弹窗加载 `chrome-extension://<id>/popup.html` **成功**（日志 NavigationCompleted=true）。
-  · **未实跑（代码路径完成，靠编译与单测兜底）**：密码保存 / 自动填充的实际行为、标签组 UI 与会话恢复、
-    uBlock 弹窗的实际 UI 效果与 `chrome.tabs` 兼容层是否被扩展真正用上（窗口被其他程序遮挡，只能确认页面加载成功）、
+  · **未实跑（靠编译与单测兜底，清单见「下一步」）**：密码保存/自动填充、标签组 UI、uBlock 弹窗实际 UI、
     后台休眠、内核重建、打印/另存为、证书提示、默认浏览器注册。
 - **已发布**：`v0.4.2`（2026-10-27，https://github.com/zouv/sc-browser/releases/tag/v0.4.2 ）——
   上传 `ScBrowser_0.4.2_x64-setup.exe` 与 `ScBrowser_0.4.2_x64-unpack.zip`。
@@ -43,9 +46,7 @@
 
 ## 当前任务（In Progress）
 
-- **目标**：无
-- **范围 / 涉及文件**：无
-- **完成定义（Definition of Done）**：无
+- **无进行中任务**。
 
 ---
 
@@ -55,7 +56,11 @@
 
 ## 进行中（半成品 / 未提交）
 
-- （无。）
+- **未提交改动**：① 标签拖拽「飘闪」修复 + Chromium 式重构；② 新增 `dev.bat`；③ 查找预填选区 +
+  滚动条匹配刻度 + 新开标签聚焦地址栏；④ 五块功能对齐 Chrome；⑤ 书签页弹窗修复 + 设置页分类独立页 +
+  书签栏空白区右键菜单 + 关于并入设置页；⑥ 自定义工具栏（拼图图钉/工具栏右键/主页按钮开关）。
+  单测 197/197（`BaseOutputPath` 重定向跑的，用户实例锁住 bin）；文档已同步；等用户实跑确认后提交
+  （前缀 `修复：`/`变更：`/`新增：` 拆条）。
 
 ## 阻塞 / 待决策（Blockers）
 
@@ -65,12 +70,15 @@
 
 ## 下一步（Next Steps）
 
-1. 用户在场时补做未实跑项，优先顺序：
+1. **用户在场**：亲手验证四批改动（隔离实例已备好）：拖拽贴手性/让位动画/边缘自动滚动/5 连交接；
+   查找选区预填与滚动条刻度；书签栏（Ctrl+Shift+B）/星标菜单/管理器导入导出；历史多选删除；下载重下/危险确认；
+   关于页与 Ctrl+Shift+Delete 对话框。确认后提交改动。
+2. 用户在场时补做未实跑项，优先顺序：
    - 扩展弹窗的实际 UI（uBlock 点开后是否显示统计/开关）、`chrome.tabs` 兼容层是否被用上；
    - 标签组：右键建组 → 色点出现 → 退出重开看会话是否恢复分组；
    - 密码保存 / 自动填充开关与「清除已保存密码」；
    - 此前遗留：后台休眠、内核重建、打印/另存为、证书提示、默认浏览器注册（写 HKCU，需用户同意）。
-2. 仍未做的规划（见 `ROADMAP`）：**P2-1**（CompositionController，重写承载层，需实机视觉验证）、
+3. 仍未做的规划（见 `ROADMAP`）：**P2-1**（CompositionController，重写承载层，需实机视觉验证）、
    **垂直标签栏**、扩展自动更新、`chrome.action.onClicked`。
 
 ## 如何运行 / 测试（Quick Verify）
@@ -81,14 +89,10 @@
 - 提交前闸门：`sh manager.sh verify`（构建 -warnaserror + 单测 + 文档体检）；`verify.bat` 等价
   （文档体检需 bash，无 `sh`/`bash` 时只告警跳过）
 - 一键 CI：`ci.bat`（clean → verify → package 到 `dist\`）；打包另可 `sh manager.sh package`
-- 打包产物：`dist/dev/ScBrowser_<版本>_x64-unpack-debug.zip`、
-  `dist/release/unpack/` +
-  `dist/release/ScBrowser_<版本>_x64-unpack.zip` +
-  `ScBrowser_<版本>_x64-setup.exe`；`clean` 保留 `dist`。
+- 打包产物：`dist/dev/`（Debug zip）与 `dist/release/`（自包含 unpack zip + setup exe）；`clean` 保留 `dist`。
 - 看日志：`sh manager.sh logs`
 - 端到端自查技巧：设 `SCBROWSER_DATA_DIR=<临时目录>` 起隔离实例（不打扰日常实例），往该目录的 `session.json` 写
-  `{"Urls":["browser://extensions"],"ActiveIndex":0,"SavedAt":"2026-10-16T00:00:00+00:00"}` 再启动，
-  可直接落在指定内部页面；后台窗口截图用 `PrintWindow`（外壳区截不到，外壳状态用 UI Automation 读）；`ScBrowser.exe --install-extension <目录|.crx>` 可验证扩展安装。
+  `{"Urls":["browser://extensions"],"ActiveIndex":0,"SavedAt":"…"}` 再启动可直接落在指定内部页面；`ScBrowser.exe --install-extension <目录|.crx>` 可验证扩展安装。
 
 ---
 
@@ -96,41 +100,36 @@
 
 > 记录「为什么这么做」，避免后续 AI 推翻或重复踩坑。完整版见 `ARCHITECTURE.md` §7。
 
-- **外壳用 WPF 原生控件，不用 WebView**：参考项目 WebView2Browser 用第二个 WebView 环境承载外壳 UI，
-  本项目改为原生控件——省一整套 UI 环境，且系统集成（焦点/输入法/无障碍/DPI）更省心。
+- **外壳用 WPF 原生控件，不用 WebView**：系统集成（焦点/输入法/无障碍/DPI）更省心；
   Chrome / Edge 的外壳同样是原生自绘（Views + Skia），此为业界主流做法。
-- **每个标签页一个 WebView2，不做多标签复用**：换来切换零延迟与页面状态保留，代价是内存开销，
-  与 Chrome 的进程模型一致。**不要为省内存改回单 WebView2 反复导航。**
-- **只用一个 `CoreWebView2Environment`**：所有标签共享 Cookie/缓存/扩展安装态；扩展按 profile 管理正需要这个前提。
-- **快捷键放在窗口级 `PreviewKeyDown`**：经反射核实，WPF 版 WebView2 内部会把
+- **每个标签页一个 WebView2，不做多标签复用**：换来切换零延迟与页面状态保留（见 ARCHITECTURE §7）。
+- **只用一个 `CoreWebView2Environment`**：所有标签共享 Cookie/缓存/扩展安装态（见 ARCHITECTURE §0/§1）。
+- **快捷键放在窗口级 `PreviewKeyDown`**：经反射核实，WPF 版 WebView2 会把
   `CoreWebView2Controller.AcceleratorKeyPressed` 转发成 WPF 的 `PreviewKeyDown` 重新抛出，
-  因此无需反射取 controller。**前提**是关掉 `AreBrowserAcceleratorKeysEnabled`。已实测生效。
-- **存储选 SQLite 而非 JSON/IndexedDB**：需要按时间倒序分页、按关键字搜索、按访问次数取热门站点，
-  这些用 SQL 是几行的事。
+  因此无需反射取 controller。**前提**是关掉 `AreBrowserAcceleratorKeysEnabled`。
+- **存储选 SQLite 而非 JSON/IndexedDB**：按时间倒序分页、关键字搜索、热门站点统计，用 SQL 是几行的事。
 - **内部页面统一走 WebUI（HTML/JS）**：与 Chrome 的 `chrome://` 页面同构，
-  复用项目「C#+JS」栈里的 JS 半边，改版快；代价是要额外维护一套消息协议。
-- **无痕不做第二套环境**：WebView2 的 InPrivate 是**控制器/profile 级**能力，
-  所以无痕窗口仍复用全应用那唯一一个 `CoreWebView2Environment`，只换
-  `IsInPrivateModeEnabled` 的控制器选项——「单环境」铁律不破。
+  复用「C#+JS」栈里的 JS 半边；代价是要额外维护一套消息协议。
+- **无痕不做第二套环境**：复用唯一的 `CoreWebView2Environment`，只换 InPrivate 控制器选项（见 ARCHITECTURE §7）。
 - **per-window 对象不进 DI 容器**：`TabManager` / `MainViewModel` / `MainWindow` 由
-  `BrowserWindowManager` 手工 new。容器表达不了「按会话类型构造」，且单例服务一旦持有
+  `BrowserWindowManager` 手工 new——容器表达不了「按会话类型构造」，且单例服务一旦持有
   某个窗口实例，多窗口下必错。
-- **窗口缩放靠「内缩一圈」而不是加大命中带**：缩放命中带必须落在 WPF 自绘的区域上，
-  因为 WebView2 是独立子 HWND、会吃掉落在它身上的鼠标事件（见 ARCHITECTURE §7）。
-- **下拉/菜单/浮层一律走独立顶层窗口**：airspace 决定的，不是风格选择——WPF 元素盖不到 WebView2 上。
-- **内部页面走 `browser://` 自定义 scheme + 消息桥按来源鉴权**：WebView2 给所有网页都注入消息桥，
-  `file://` 无法区分来源、https 虚拟主机会被扩展 `<all_urls>` 注入，所以选自定义 scheme（详见 ARCHITECTURE §7）。
+- **窗口缩放靠「内缩一圈」而不是加大命中带**（airspace 决定的，见 ARCHITECTURE §7）。
+- **下拉/菜单/浮层一律走独立顶层窗口**：airspace 决定的，不是风格选择（见 ARCHITECTURE §7）。
+- **内部页面走 `browser://` 自定义 scheme + 消息桥按来源鉴权**：`file://` 无法区分来源、
+  https 虚拟主机会被扩展 `<all_urls>` 注入（详见 ARCHITECTURE §7）。
 - **单实例按数据根目录区分**：`SCBROWSER_DATA_DIR` 起的测试实例可与日常实例并存，方便实跑验证。
-- **标签状态与引擎分离**：`BrowserTab` 不再在构造函数里 `new WebView2()`，引擎由 `EnsureInitializedAsync`
-  按需创建；`View`/`Core` 可能为 `null`，导航与缩放会记为待处理、初始化完成后补上。
-  会话恢复只立即加载激活标签——这就是惰性恢复（实测 5 标签只起 1 个渲染进程）。
-- **扩展的信任模型**：没有商店审核，安装即信任其代码。因此 CRX 必须验签、安装前列权限；
-  受管目录按 `<id>/<版本>` 存放，公钥写回 manifest 的 `key` 才能保住 Chrome 同款扩展 ID。
-  平台不提供 `chrome.tabs`，只在**我们自己承载的弹窗**里注入兼容层（后台拿不到），不要夸大兼容性。
+- **标签状态与引擎分离**：`BrowserTab` 构造不再建 WebView2，`View`/`Core` 可能为 `null`；
+  会话恢复只立即加载激活标签（详见 ARCHITECTURE §7「惰性恢复」）。
+- **扩展的信任模型**：没有商店审核，安装即信任其代码——CRX 必须验签、安装前列权限、
+  受管目录按 `<id>/<版本>`、公钥写回 manifest 的 `key` 才能保住 Chrome 同款扩展 ID。
+  平台不提供 `chrome.tabs`，只在**我们自己承载的弹窗**里注入兼容层，不要夸大兼容性。
 - **页内查找优先原生、旧运行时走 JS 兜底**：`CoreWebView2.Find` 需要 `ICoreWebView2_28`，
-  本机 WebView2 131 没有该接口（访问即抛 `NotImplementedException`）。`BrowserTab` 在原生不可用
-  或启动失败时退回 `ExecuteScriptAsync` + `TreeWalker` + `CSS.highlights`；升级运行时后自动走原生。
-  **不要为「只留一条实现」删掉兜底**，否则旧运行时会直接失去查找功能。
+  本机 WebView2 131 没有该接口。**不要为「只留一条实现」删掉兜底**（详见 ARCHITECTURE §7）。
+- **标签拖拽对齐 Chromium 的「几何层/模型层分离」**：被拖标签留在模型里、渲染偏移只从
+  「模型移动 + `UpdateLayout()` 落地后的槽位几何 + 指针」算（不落地就读是飘闪根因）；
+  让位/落回用补偿衰减动画，滞后 16px、垂直容差 15、边缘自动滚动判据均对齐 Chromium 常量。
+  详见 `ARCHITECTURE.md` §7。
 - **打包统一到 `dist/`，脚本名为 `package`**：产物与安装器细节见 `ARCHITECTURE.md` §6 与 `docs/02-使用说明.md`；
   安装器只删程序文件，**绝不删** `%LOCALAPPDATA%\sc-browser` 用户数据。
 
@@ -138,11 +137,13 @@
 
 ## 待解问题 / 给用户的提问（Open Questions）
 
-- **未实跑的功能**（见「最后验证状态」）：内核重建、休眠、打印/另存为/源代码、证书提示、默认浏览器注册。
+- **本轮对齐 Chrome 后的遗留取舍**（有意为之，见代码注释）：书签栏溢出用横向滚动（Chrome 是 » 菜单）；
+  书签拖拽是「移入目标文件夹」近似；下载列表整表刷新、无完成气泡；无 favicon 存储（首字母圆片替代，
+  不外发域名）；清除数据时间范围只作用于历史（内核 API 限制）；导入导出入口在书签管理器页。
+- **未实跑的功能**（清单见「最后验证状态」/「下一步」）。
   其中「设为默认浏览器」会写当前用户注册表，实跑前应先征得用户同意。
 - **站点信息里的安全状态可能显示「未知」**：`Security.securityStateChanged` 对本地 http 页面触发不稳定；
   真实 https 站点正常。若要更准，可在导航完成时主动问一次 CDP。
 - **无痕的扩展支持未验证**：WebView2 的 InPrivate profile 下扩展行为未实测（普通窗口的扩展链路已验证）。
-- **行尾属性后加的坑（已修，供备忘）**：行尾规则只管「以后怎么检出」，**不会自动改写已存在的文件**——
-  `.gitattributes` 加上 `*.sh = LF` 后，工作区里那份 CRLF 的 `check-docs.sh` 依旧带 `\r` 干活，
-  且 `git status` 显示干净（提交时会被规范化，看不出差异）。要真修必须 `rm` 后 `git checkout -- <file>` 重新落盘。
+- **行尾属性后加的坑（已修，供备忘）**：行尾规则只管「以后怎么检出」，不会自动改写已存在的文件——
+  要真修必须 `rm` 后 `git checkout -- <file>` 重新落盘。

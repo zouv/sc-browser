@@ -955,8 +955,11 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     // 会抛 NotImplementedException，此时退回到 JS 实现：
     //   · 用 TreeWalker 收集文本节点里的匹配区间；
     //   · 用 CSS Custom Highlight API 高亮（不修改页面 DOM，站点脚本也看不到）；
+    //   · 匹配位置按文档比例画成滚动条右侧的刻度条（Chrome 观感；原生 Find 路径拿不到
+    //     匹配位置，所以刻度只有 JS 路径有——本机运行时走的就是 JS 路径）；
     //   · 状态挂在 window.__scFind 上，跨多次 ExecuteScriptAsync 保持。
     // JS 路径只覆盖主文档、且匹配不跨文本节点——对旧运行时是可接受的降级。
+    // 另有 GetSelectedTextAsync 供 Ctrl+F 预填页面选区（见 MainWindow.Find.cs）。
     // --------------------------------------------------------------------- //
 
     /// <summary>开始一次查找（从页首搜索）。返回是否成功发起。</summary>
@@ -1060,6 +1063,42 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// 取页面当前选中的文本（含输入框 / 文本域内的选区，Ctrl+F 预填用）。
+    /// 页面还没就绪或脚本执行失败时返回空串。
+    /// </summary>
+    public async Task<string> GetSelectedTextAsync()
+    {
+        if (_core is null)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var json = await _core.ExecuteScriptAsync(GetSelectionScript).ConfigureAwait(true);
+            return string.IsNullOrEmpty(json) || json == "null"
+                ? string.Empty
+                : JsonSerializer.Deserialize<string>(json) ?? string.Empty;
+        }
+        catch (Exception)
+        {
+            // 页面正在导航 / 已关闭：视为没有选区。
+            return string.Empty;
+        }
+    }
+
+    private const string GetSelectionScript = """
+        (() => {
+          const el = document.activeElement;
+          if (el && (el.tagName === 'TEXTAREA' ||
+              (el.tagName === 'INPUT' && /^(text|search|url|tel|password)$/i.test(el.type)))) {
+            try { return el.value.substring(el.selectionStart, el.selectionEnd); } catch (e) {}
+          }
+          return window.getSelection() ? window.getSelection().toString() : '';
+        })()
+        """;
+
+    /// <summary>
     /// 执行一段 JS 查找脚本，并把返回的 <c>{count, index, supported?}</c> 写回状态。
     /// </summary>
     private async Task<bool> ExecuteJsFindAsync(string script)
@@ -1136,7 +1175,11 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
         return $$"""
             (() => {
-              if (window.__scFind) { window.__scFind.ranges = []; }
+              if (window.__scFind) {
+                if (window.__scFind.marksResize) { window.removeEventListener('resize', window.__scFind.marksResize); }
+                if (window.__scFind.marksHost) { window.__scFind.marksHost.remove(); }
+                window.__scFind.ranges = [];
+              }
               window.__scFind = { term: {{termLiteral}}, ranges: [], index: 0 };
 
               const styleId = '__sc_find_style';
@@ -1149,6 +1192,52 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                 (document.head || document.documentElement).appendChild(style);
               }
 
+              // 滚动条刻度（Chrome 同款观感）：把匹配位置按文档比例画到右侧一条固定浮层上，
+              // 正好覆盖在页面滚动条上方；pointer-events:none 让滚动条照常可用。
+              // 用「比例定位」——刻度 Y = 文档Y / 文档总高 × 视口高，因此滚动时无需监听更新；
+              // 页面尺寸变化（reflow）才重画，靠 resize 监听触发。
+              window.__scFindUpdateMarks = function () {
+                const state = window.__scFind;
+                const doc = document.scrollingElement || document.documentElement;
+                const total = state.ranges.length;
+                if (total === 0 || doc.scrollHeight <= window.innerHeight) {
+                  // 没有匹配、或页面根本滚不动：刻度没意义，摘掉。
+                  if (state.marksHost) { state.marksHost.remove(); state.marksHost = null; }
+                  return;
+                }
+                if (!state.marksHost) {
+                  const host = document.createElement('div');
+                  host.id = '__sc_find_marks';
+                  host.setAttribute('style',
+                    'position:fixed;top:0;right:0;width:8px;height:100%;' +
+                    'pointer-events:none;z-index:2147483647;overflow:hidden;');
+                  (document.body || document.documentElement).appendChild(host);
+                  state.marksHost = host;
+                  if (!state.marksResize) {
+                    state.marksResize = () => window.__scFindUpdateMarks();
+                    window.addEventListener('resize', state.marksResize);
+                  }
+                }
+                const host = state.marksHost;
+                while (host.firstChild) { host.removeChild(host.firstChild); }
+                const viewportH = window.innerHeight || 1;
+                const docH = doc.scrollHeight || 1;
+                // 匹配过多时抽样：几百个刻度就糊成一条了，全画既慢又看不出区别。
+                const step = total > 300 ? Math.ceil(total / 300) : 1;
+                for (let i = 0; i < total; i += step) {
+                  const rect = state.ranges[i].getBoundingClientRect();
+                  const y = (rect.top + doc.scrollTop) / docH * viewportH;
+                  const tick = document.createElement('div');
+                  tick.setAttribute('style',
+                    'position:absolute;left:0;width:100%;height:3px;border-radius:1px;' +
+                    (i === state.index
+                      ? 'background:rgba(255,120,0,0.95);'
+                      : 'background:rgba(255,160,0,0.6);') +
+                    'top:' + y.toFixed(1) + 'px;');
+                  host.appendChild(tick);
+                }
+              };
+
               window.__scFindApply = function (index) {
                 const state = window.__scFind;
                 if (!state || state.ranges.length === 0) {
@@ -1156,6 +1245,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                     CSS.highlights.delete('sc-find-all');
                     CSS.highlights.delete('sc-find-active');
                   }
+                  if (typeof window.__scFindUpdateMarks === 'function') { window.__scFindUpdateMarks(); }
                   return { count: 0, index: 0 };
                 }
 
@@ -1178,6 +1268,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                   el.scrollIntoView({ block: 'center', inline: 'nearest' });
                 }
 
+                if (typeof window.__scFindUpdateMarks === 'function') { window.__scFindUpdateMarks(); }
                 return { count: total, index: state.index + 1 };
               };
 
@@ -1234,8 +1325,11 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 
     private const string FindStopScript = """
         (() => {
+          if (window.__scFind && window.__scFind.marksResize) { window.removeEventListener('resize', window.__scFind.marksResize); }
+          if (window.__scFind && window.__scFind.marksHost) { window.__scFind.marksHost.remove(); }
           window.__scFind = null;
           window.__scFindApply = null;
+          window.__scFindUpdateMarks = null;
           if (window.CSS && CSS.highlights) {
             CSS.highlights.delete('sc-find-all');
             CSS.highlights.delete('sc-find-active');

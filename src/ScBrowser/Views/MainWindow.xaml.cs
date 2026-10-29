@@ -86,6 +86,13 @@ public partial class MainWindow : Window
         AddHandler(Mouse.MouseMoveEvent, new MouseEventHandler(OnWindowMouseMove), handledEventsToo: true);
         AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler(OnWindowMouseUp), handledEventsToo: true);
 
+        // 拖到标签条两端时标签条自动滚动（判据：被拖标签视觉边缘越过视口）。
+        _dragScrollTimer.Tick += OnDragScrollTick;
+
+        // 用户主动开新标签（Ctrl+T / 菜单 / + 按钮）→ 焦点交给地址栏（Chrome 同款）。
+        // 非主动创建（target=_blank 等）不走 NewTabCommand，不会抢走页面焦点。
+        _viewModel.NewTabOpened += (_, _) => FocusAddressBar();
+
         // 输入即搜：打字期间只重启防抖计时器，停下来才真正发起一次查找。
         _findDebounce.Tick += (_, _) =>
         {
@@ -260,6 +267,10 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // 窗口关了，让位动画的定时器必须停掉，别留着对死元素的引用。
+        _slide.Reset();
+        _dragScrollTimer.Stop();
+
         // 窗口几何只记主窗口的；会话则在任意窗口关闭时刷新一次，
         // 这样「关掉最后一个窗口」那一刻的状态一定被存下来（应用随之退出）。
         if (_options.IsPrimary)
@@ -466,40 +477,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>点工具栏右侧的「拼图」按钮：列出未固定的扩展，点开其一。</summary>
-    private void ExtensionPuzzle_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement anchor || _viewModel.UnpinnedExtensions.Count == 0)
-        {
-            return;
-        }
-
-        var menu = new ContextMenu();
-        if (FindResource("BrowserMenuStyle") is Style menuStyle)
-        {
-            menu.Style = menuStyle;
-        }
-
-        var itemStyle = FindResource("BrowserMenuItemStyle") as Style;
-
-        foreach (var extension in _viewModel.UnpinnedExtensions)
-        {
-            var item = new MenuItem { Header = extension.Name, ToolTip = "点击打开（在扩展页可固定到工具栏）" };
-            if (itemStyle is not null)
-            {
-                item.Style = itemStyle;
-            }
-
-            var target = extension;
-            item.Click += (_, _) => OpenExtension(target, anchor);
-            menu.Items.Add(item);
-        }
-
-        menu.PlacementTarget = anchor;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
-    }
-
     /// <summary>打开扩展（弹窗优先，其次选项页）。</summary>
     private void OpenExtension(MainViewModel.ExtensionButton item, FrameworkElement anchor)
     {
@@ -584,15 +561,20 @@ public partial class MainWindow : Window
     {
         _isDragging = true;
         _dragPhase = DragPhase.InStrip;
+        // 又拖起一个还在落回动画里的标签：先让 animator 把渲染变换权还回来。
+        _slide.CancelGlide(_dragElement!);
         _dragTransform = new TranslateTransform();
         _dragElement!.RenderTransform = _dragTransform;
         Panel.SetZIndex(_dragElement, DraggingZIndex);
         _dragElement.Opacity = 0.9;
         _dragElement.CaptureMouse();
+        _lastReorderX = null;
+        _dragScrollTimer.Start();
     }
 
     private void EndDrag()
     {
+        _dragScrollTimer.Stop();
         _dragElement?.ReleaseMouseCapture();
         if (_dragElement is not null)
         {
@@ -608,10 +590,19 @@ public partial class MainWindow : Window
         _dragPhase = DragPhase.InStrip;
     }
 
-    /// <summary>让被拖标签贴着鼠标横移，并在越过他人中线时实时换位。</summary>
+    /// <summary>
+    /// 让被拖标签贴着鼠标横移，并在指针越过槽位时实时换位。
+    /// <para>
+    /// 换位按「移动前快照」判定落点；模型移动后立刻 <c>UpdateLayout()</c> 让槽位几何落地，
+    /// 再给其他标签设让位动画的滑动补偿。被拖标签的渲染偏移**只从落地后的槽位左边缘 + 指针位置**算——
+    /// 旧实现用「预换位」的槽位几何算偏移，标签宽度不等时每次换位都错出宽度差、跳一下再跳回（飘闪根因）。
+    /// 注意槽位左边缘必须取「标签当前所在槽位」（panel 子元素的偏移）——不能取元素自身相对父级的偏移：
+    /// 元素是 DataTemplate 里的 Button，它相对自己的 ContentPresenter 偏移恒约 0。
+    /// </para>
+    /// </summary>
     private void UpdateDragPosition(Point mouseInStrip)
     {
-        if (_dragElement is null || _dragTransform is null || _dragTab is null)
+        if (_dragElement is null || _dragTransform is null || _dragTab is null || _tabStripPanel is null)
         {
             return;
         }
@@ -623,15 +614,22 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 一步算出「该换到哪个槽位」与「渲染偏移」（见 TabReorder.Step 的注释：
-        // 偏移按落点槽位的几何算，换位瞬间视觉位置才不会跳）。
-        var step = TabReorder.Step(slots, from, _dragGrabOffset, mouseInStrip.X);
-        if (step.TargetIndex != from)
+        var target = TabReorder.ResolveTargetIndex(slots, mouseInStrip.X);
+        var pastHysteresis = _lastReorderX is not { } last || Math.Abs(mouseInStrip.X - last) > ReorderHysteresis;
+        if (target != from && pastHysteresis)
         {
-            _tabs.Move(_dragTab, step.TargetIndex);
+            _slide.CapturePositions(_tabStripPanel);
+            _tabs.Move(_dragTab, target);
+            _tabStripPanel.UpdateLayout();
+            _slide.ApplyCompensations(_tabStripPanel, _dragElement);
+            _lastReorderX = mouseInStrip.X;
+
+            // 模型已换位、几何已落地：重读槽位，被拖标签所在槽位 = 新下标。
+            from = target;
+            slots = EnumerateTabSlots();
         }
 
-        _dragTransform.X = step.RenderOffset;
+        _dragTransform.X = mouseInStrip.X - _dragGrabOffset - slots[from].Left;
     }
 
     /// <summary>取标签条里每个标签的布局槽位（含被拖那个；<c>GetOffset</c> 不含渲染变换，正是所需）。</summary>
@@ -985,7 +983,22 @@ public partial class MainWindow : Window
         _viewModel.OpenSettingsCommand.Execute(null);
 
     /// <summary>「关于」：显示图标、版本与用户数据目录（排障时最先要问的信息）。</summary>
-    private void Menu_About(object sender, RoutedEventArgs e) => new AboutDialog { Owner = this }.ShowDialog();
+    /// <summary>「关于 ScBrowser」：Chrome 同款——不弹窗，跳到设置页的「关于 ScBrowser」条目。</summary>
+    private void Menu_About(object sender, RoutedEventArgs e)
+    {
+        var aboutUrl = InternalPageRegistry.Scheme + "settings#about";
+        var existing = _viewModel.Tabs.FirstOrDefault(
+            t => string.Equals(t.DisplayUrl, InternalPageRegistry.Scheme + "settings", StringComparison.OrdinalIgnoreCase)
+              || string.Equals(t.DisplayUrl, aboutUrl, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            _tabs.Activate(existing);
+            existing.Navigate(aboutUrl);
+            return;
+        }
+
+        _ = _tabs.CreateAsync(aboutUrl, activate: true);
+    }
 
     private void Menu_Settings(object sender, RoutedEventArgs e) =>
         _viewModel.OpenSettingsCommand.Execute(null);

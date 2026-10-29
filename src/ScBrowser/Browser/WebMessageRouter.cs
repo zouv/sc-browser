@@ -76,6 +76,10 @@ public sealed class WebMessageRouter
 
         // 下载进度变化 → 推给所有内部页面（订阅了 downloads.changed 的页面自会刷新）。
         _downloads.Changed += (_, _) => Broadcast("downloads.changed");
+
+        // 书签变化（无论来自内部页面、星标还是书签栏）→ 推给打开着的书签页刷新。
+        // 事件已由仓储回投到 UI 线程，直接广播即可。
+        _bookmarks.Changed += (_, _) => Broadcast("bookmarks.changed");
     }
 
     /// <summary>向所有停留在内部页面上的标签推送一个事件（普通网页收不到）。</summary>
@@ -216,6 +220,20 @@ public sealed class WebMessageRouter
                 await _history.RemoveByUrlAsync(GetString(payload, "url") ?? string.Empty).ConfigureAwait(true);
                 return null;
 
+            case "history.removeMany":
+                {
+                    var ids = payload.ValueKind == JsonValueKind.Object
+                              && payload.TryGetProperty("ids", out var idsProp)
+                              && idsProp.ValueKind == JsonValueKind.Array
+                        ? idsProp.EnumerateArray()
+                            .Where(v => v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out _))
+                            .Select(v => v.GetInt64())
+                            .ToList()
+                        : [];
+                    await _history.RemoveManyAsync(ids).ConfigureAwait(true);
+                    return null;
+                }
+
             case "history.clear":
                 await _history.ClearAsync().ConfigureAwait(true);
                 return null;
@@ -262,6 +280,66 @@ public sealed class WebMessageRouter
             case "bookmarks.exists":
                 return await _bookmarks.ExistsAsync(GetString(payload, "url") ?? string.Empty).ConfigureAwait(true);
 
+            case "bookmarks.edit":
+                return await _bookmarks.EditAsync(
+                    GetLong(payload, "id", -1),
+                    GetString(payload, "title") ?? string.Empty,
+                    GetString(payload, "url") ?? string.Empty).ConfigureAwait(true);
+
+            case "bookmarks.importFromFile":
+                {
+                    var file = PickFile(OwnerOf(manager), "导入书签", "HTML 文件 (*.html;*.htm)|*.html;*.htm|所有文件 (*.*)|*.*");
+                    if (file is null)
+                    {
+                        return null;
+                    }
+
+                    try
+                    {
+                        var html = await File.ReadAllTextAsync(file).ConfigureAwait(true);
+                        var imported = await _bookmarks.ImportAsync(BookmarkHtml.Parse(html)).ConfigureAwait(true);
+                        _logger.LogInformation("导入书签 {Count} 条（{File}）", imported, file);
+                        return new { imported };
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new InvalidOperationException("读取书签文件失败：" + ex.Message, ex);
+                    }
+                }
+
+            case "bookmarks.exportToFile":
+                {
+                    var dialog = new Microsoft.Win32.SaveFileDialog
+                    {
+                        Title = "导出书签",
+                        FileName = "bookmarks_" + DateTime.Now.ToString("yyyyMMdd") + ".html",
+                        Filter = "HTML 文件 (*.html)|*.html",
+                    };
+                    if (dialog.ShowDialog(OwnerOf(manager)) != true)
+                    {
+                        return null;
+                    }
+
+                    var entries = await _bookmarks.GetAllAsync().ConfigureAwait(true);
+                    var roots = BuildHtmlTree(entries);
+                    await File.WriteAllTextAsync(dialog.FileName, BookmarkHtml.Generate(roots), new System.Text.UTF8Encoding(false)).ConfigureAwait(true);
+                    _logger.LogInformation("导出书签 {Count} 条（{File}）", entries.Count, dialog.FileName);
+                    return new { exported = entries.Count };
+                }
+
+            case "bookmarks.openAll":
+                {
+                    var urls = await _bookmarks.GetFolderUrlsAsync(GetLong(payload, "id", 0)).ConfigureAwait(true);
+                    var first = true;
+                    foreach (var url in urls)
+                    {
+                        await manager.CreateAsync(url, activate: first).ConfigureAwait(true);
+                        first = false;
+                    }
+
+                    return new { opened = urls.Count };
+                }
+
             // ---------------- 下载 ----------------
             case "downloads.query":
                 return await _downloads.ListAsync().ConfigureAwait(true);
@@ -285,6 +363,43 @@ public sealed class WebMessageRouter
             case "downloads.cancel":
                 _downloads.Cancel(GetString(payload, "id") ?? string.Empty);
                 return null;
+
+            case "downloads.retry":
+                {
+                    // 重新下载：本 SDK 没有「按 URL 直接发起下载」的 API，用一次**后台标签导航**
+                    // 触发下载接管（WebView2 对不可导航内容会走 DownloadStarting）；
+                    // 下载一开始就把这个临时标签关掉。15 秒内没有下载开始（URL 其实是普通网页），
+                    // 就把标签留给用户正常浏览。
+                    var entry = _downloads.Find(GetString(payload, "id") ?? string.Empty);
+                    if (entry is null)
+                    {
+                        return null;
+                    }
+
+                    var url = entry.Url;
+                    var retryTab = await manager.CreateAsync(url, activate: false).ConfigureAwait(true);
+
+                    var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void OnStarted(object? sender, DownloadEntry startedEntry)
+                    {
+                        if (string.Equals(startedEntry.Url, url, StringComparison.Ordinal))
+                        {
+                            started.TrySetResult();
+                        }
+                    }
+
+                    _downloads.DownloadStarted += OnStarted;
+                    var winner = await Task.WhenAny(started.Task, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(true);
+                    _downloads.DownloadStarted -= OnStarted;
+
+                    if (winner == started.Task)
+                    {
+                        manager.Close(retryTab);
+                        _logger.LogInformation("重新下载已开始，关闭临时标签 {Url}", url);
+                    }
+
+                    return null;
+                }
 
             // 只收下载记录的 id，路径由宿主自己查库——页面传来的路径一律不信，
             // 否则「打开文件」就成了「执行任意本地程序」。
@@ -491,6 +606,34 @@ public sealed class WebMessageRouter
 
         var json = JsonSerializer.Serialize(new { type = "response", requestId, ok, result, error }, JsonOptions);
         tab.Core.PostWebMessageAsJson(json);
+    }
+
+    /// <summary>扁平书签列表 → 导出用的树（根节点的 parent_id = 0）。</summary>
+    private static IReadOnlyList<BookmarkHtml.Node> BuildHtmlTree(IReadOnlyList<BookmarkEntry> entries)
+    {
+        var byParent = entries
+            .GroupBy(e => e.ParentId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(e => e.SortOrder).ToList());
+
+        List<BookmarkHtml.Node> Build(long parentId)
+        {
+            var result = new List<BookmarkHtml.Node>();
+            if (!byParent.TryGetValue(parentId, out var children))
+            {
+                return result;
+            }
+
+            foreach (var entry in children)
+            {
+                result.Add(entry.IsFolder
+                    ? new BookmarkHtml.Node(entry.Title, Children: Build(entry.Id))
+                    : new BookmarkHtml.Node(entry.Title, entry.Url));
+            }
+
+            return result;
+        }
+
+        return Build(0);
     }
 
     // --------------------------------------------------------------------- //

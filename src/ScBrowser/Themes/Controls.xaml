@@ -90,6 +90,36 @@
         </Setter>
     </Style>
 
+    <!-- 书签栏上的条目（书签 / 文件夹），扁平悬停高亮 -->
+    <Style x:Key="BookmarkBarButtonStyle" TargetType="Button">
+        <Setter Property="Height" Value="24" />
+        <Setter Property="Padding" Value="8,0" />
+        <Setter Property="Margin" Value="0,2,2,2" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="4"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background"
+                                    Value="{DynamicResource TabHoverBackgroundBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- 标签内的关闭按钮 -->
     <Style x:Key="TabCloseButtonStyle" TargetType="Button">
         <Setter Property="Width" Value="18" />
@@ -226,11 +256,23 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
-                            <!-- 左侧图标列：留固定宽度，没有图标时文字仍对齐 -->
-                            <ContentPresenter Grid.Column="0"
+                            <!-- 左侧图标列：留固定宽度，没有图标时文字仍对齐；
+                                 勾选态（IsCheckable）时图标换成对勾（Chrome 同款） -->
+                            <ContentPresenter x:Name="IconPresenter"
+                                              Grid.Column="0"
                                               ContentSource="Icon"
                                               HorizontalAlignment="Center"
                                               VerticalAlignment="Center" />
+
+                            <TextBlock x:Name="CheckMark"
+                                       Grid.Column="0"
+                                       Text="&#xE73E;"
+                                       FontFamily="{StaticResource IconFontFamily}"
+                                       FontSize="13"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       Visibility="Collapsed" />
 
                             <ContentPresenter Grid.Column="1"
                                               ContentSource="Header"
@@ -284,6 +326,10 @@
                         </Trigger>
                         <Trigger Property="HasItems" Value="True">
                             <Setter TargetName="Arrow" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="IconPresenter" Property="Visibility" Value="Collapsed" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

@@ -15,6 +15,25 @@ public sealed class BookmarkRepository
 
     public BookmarkRepository(BrowserDatabase database) => _database = database;
 
+    /// <summary>书签数据发生变化（增删改/导入导出后刷新书签栏与星标用）。</summary>
+    public event EventHandler? Changed;
+
+    // 写操作都跑在后台线程（Async 包装），但订阅者（书签栏/星标）要碰 UI 集合——
+    // 捕获创建时的同步上下文（DI 装配在 UI 线程上），事件回投到 UI 线程再触发。
+    private readonly SynchronizationContext? _syncContext = SynchronizationContext.Current;
+
+    private void NotifyChanged()
+    {
+        if (_syncContext is not null)
+        {
+            _syncContext.Post(_ => Changed?.Invoke(this, EventArgs.Empty), null);
+        }
+        else
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     /// <summary>所有节点（根与子孙都在这一个列表里，由界面按 parent_id 组装成树）。</summary>
     public IReadOnlyList<BookmarkEntry> GetAll()
     {
@@ -90,12 +109,14 @@ public sealed class BookmarkRepository
                 update.Parameters.AddWithValue("$id", id);
                 update.ExecuteNonQuery();
                 transaction.Commit();
+                NotifyChanged();
                 return id;
             }
         }
 
         var newId = Insert(connection, transaction, url, title, parentId, kind: 0);
         transaction.Commit();
+        NotifyChanged();
         return newId;
     }
 
@@ -109,6 +130,7 @@ public sealed class BookmarkRepository
         using var transaction = connection.BeginTransaction();
         var id = Insert(connection, transaction, string.Empty, title, parentId, kind: 1);
         transaction.Commit();
+        NotifyChanged();
         return id;
     }
 
@@ -123,7 +145,13 @@ public sealed class BookmarkRepository
         command.CommandText = "UPDATE bookmarks SET title = $title WHERE id = $id;";
         command.Parameters.AddWithValue("$title", title ?? string.Empty);
         command.Parameters.AddWithValue("$id", id);
-        return command.ExecuteNonQuery() > 0;
+        var changed = command.ExecuteNonQuery() > 0;
+        if (changed)
+        {
+            NotifyChanged();
+        }
+
+        return changed;
     }
 
     public Task<bool> RenameAsync(long id, string title) => Task.Run(() => Rename(id, title));
@@ -152,6 +180,11 @@ public sealed class BookmarkRepository
         command.Parameters.AddWithValue("$id", id);
         var changed = command.ExecuteNonQuery() > 0;
         transaction.Commit();
+        if (changed)
+        {
+            NotifyChanged();
+        }
+
         return changed;
     }
 
@@ -173,7 +206,13 @@ public sealed class BookmarkRepository
             DELETE FROM bookmarks WHERE id IN (SELECT id FROM sub);
             """;
         command.Parameters.AddWithValue("$id", id);
-        return command.ExecuteNonQuery() > 0;
+        var changed = command.ExecuteNonQuery() > 0;
+        if (changed)
+        {
+            NotifyChanged();
+        }
+
+        return changed;
     }
 
     public Task<bool> RemoveByIdAsync(long id) => Task.Run(() => RemoveById(id));
@@ -187,7 +226,13 @@ public sealed class BookmarkRepository
         using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM bookmarks WHERE url = $url AND kind = 0;";
         command.Parameters.AddWithValue("$url", url);
-        return command.ExecuteNonQuery() > 0;
+        var changed = command.ExecuteNonQuery() > 0;
+        if (changed)
+        {
+            NotifyChanged();
+        }
+
+        return changed;
     }
 
     /// <summary>切换书签状态；返回切换后是否处于已收藏。</summary>
@@ -203,6 +248,122 @@ public sealed class BookmarkRepository
     }
 
     public Task<bool> ToggleAsync(string url, string title) => Task.Run(() => Toggle(url, title));
+
+    /// <summary>编辑书签的名称与地址（URL 只对书签生效，文件夹只改名）。</summary>
+    public bool Edit(long id, string title, string url)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE bookmarks
+            SET title = $title,
+                url = CASE WHEN kind = 0 THEN $url ELSE url END
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$title", title ?? string.Empty);
+        command.Parameters.AddWithValue("$url", url ?? string.Empty);
+        command.Parameters.AddWithValue("$id", id);
+        var changed = command.ExecuteNonQuery() > 0;
+        if (changed)
+        {
+            NotifyChanged();
+        }
+
+        return changed;
+    }
+
+    public Task<bool> EditAsync(long id, string title, string url) => Task.Run(() => Edit(id, title, url));
+
+    /// <summary>
+    /// 把导入树写进库（递归建文件夹与书签，挂到 <paramref name="parentId"/> 下）。
+    /// 返回实际写入的书签数（不含文件夹）。
+    /// </summary>
+    public int Import(IReadOnlyList<BookmarkHtml.Node> nodes, long parentId = 0)
+    {
+        var count = 0;
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        void InsertNode(BookmarkHtml.Node node, long parent)
+        {
+            if (node.IsFolder)
+            {
+                var folderId = Insert(connection, transaction, string.Empty, node.Title, parent, kind: 1);
+                foreach (var child in node.Children)
+                {
+                    InsertNode(child, folderId);
+                }
+            }
+            else if (node.Url.Length > 0)
+            {
+                Insert(connection, transaction, node.Url, node.Title, parent, kind: 0);
+                count++;
+            }
+        }
+
+        foreach (var node in nodes)
+        {
+            InsertNode(node, parentId);
+        }
+
+        transaction.Commit();
+        if (count > 0)
+        {
+            NotifyChanged();
+        }
+
+        return count;
+    }
+
+    public Task<int> ImportAsync(IReadOnlyList<BookmarkHtml.Node> nodes, long parentId = 0) =>
+        Task.Run(() => Import(nodes, parentId));
+
+    /// <summary>取一个文件夹（或其子孙文件夹）里的全部书签 URL，按树序展开——「打开文件夹内全部书签」用。</summary>
+    public IReadOnlyList<string> GetFolderUrls(long folderId)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+
+        // 根目录没有对应的行（约定 parent_id=0 表示根），要特判成全树。
+        if (folderId == 0)
+        {
+            command.CommandText =
+                """
+                SELECT url FROM bookmarks
+                WHERE kind = 0 AND url <> ''
+                ORDER BY parent_id, sort_order;
+                """;
+        }
+        else
+        {
+            command.CommandText =
+                """
+                WITH RECURSIVE sub(id) AS (
+                    SELECT id FROM bookmarks WHERE id = $id
+                    UNION ALL
+                    SELECT b.id FROM bookmarks b JOIN sub s ON b.parent_id = s.id
+                )
+                SELECT b.url
+                FROM bookmarks b
+                JOIN sub s ON s.id = b.id
+                WHERE b.kind = 0 AND b.url <> ''
+                ORDER BY b.parent_id, b.sort_order;
+                """;
+            command.Parameters.AddWithValue("$id", folderId);
+        }
+
+        var result = new List<string>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            result.Add(reader.GetString(0));
+        }
+
+        return result;
+    }
+
+    public Task<IReadOnlyList<string>> GetFolderUrlsAsync(long folderId) => Task.Run(() => GetFolderUrls(folderId));
 
     private static long Insert(
         SqliteConnection connection,
