@@ -181,8 +181,10 @@ public partial class MainWindow
                         _viewModel.ActiveTab?.Reload();
                         return true;
                     case Key.F12:
-                        // WebView2 已开启 DevTools，这里不拦截，交给默认处理。
-                        return false;
+                        // AreBrowserAcceleratorKeysEnabled 已关，WebView2 不再自己处理 F12，
+                        // 必须显式调 DevTools API，否则按键没有任何反应。
+                        _viewModel.ActiveTab?.OpenDevTools();
+                        return true;
                     case Key.F11:
                         ToggleFullScreen();
                         return true;

@@ -929,6 +929,32 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>请求关闭当前页（走 <c>window.close()</c> 同路径，供内部页面调用）。</summary>
     public void RequestClose() => CloseRequested?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>
+    /// 打开当前页的 DevTools 窗口（F12）。
+    /// <para>
+    /// 浏览器默认快捷键已在 <c>ConfigureSettings</c> 里关掉（<c>AreBrowserAcceleratorKeysEnabled=false</c>），
+    /// 所以必须由宿主显式调用，不能指望 WebView2 自己响应 F12。引擎未创建（惰性标签）时返回 false。
+    /// </para>
+    /// </summary>
+    public bool OpenDevTools()
+    {
+        if (_core is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            _core.OpenDevToolsWindow();
+            return true;
+        }
+        catch (Exception)
+        {
+            // 页面正在关闭 / 运行时禁用了 DevTools：静默失败即可。
+            return false;
+        }
+    }
+
     public void SetZoom(double factor)
     {
         var value = Math.Clamp(factor, 0.25, 5.0);
@@ -1238,6 +1264,53 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                 }
               };
 
+              // 把匹配滚进视口中央。不能对父元素调 scrollIntoView：JSON / 日志这类页面
+              // 整页就是一个大文本节点，父元素（<pre>）的顶部在文档最上方，滚了等于没滚。
+              // 改用 Range 的矩形定位，按需滚文档，再逐层处理内部滚动容器。
+              window.__scFindScrollToRange = function (range) {
+                const rects = range.getClientRects();
+                if (!rects.length) { return false; }
+                let rect = rects[0];
+                if (rect.width === 0 && rect.height === 0) { return false; }
+
+                const vw = window.innerWidth || 1;
+                const vh = window.innerHeight || 1;
+                if (rect.bottom > 0 && rect.top < vh && rect.right > 0 && rect.left < vw) {
+                  return true;   // 已经可见，不用滚。
+                }
+
+                const doc = document.scrollingElement || document.documentElement;
+                if (doc && (doc.scrollHeight > vh || doc.scrollWidth > vw)) {
+                  window.scrollBy({
+                    top: rect.top + rect.height / 2 - vh / 2,
+                    left: rect.left + rect.width / 2 - vw / 2,
+                    behavior: 'instant'
+                  });
+                  rect = range.getBoundingClientRect();
+                  if (rect.bottom > 0 && rect.top < vh) { return true; }
+                }
+
+                // 文档滚不动时，内容多半在某个 overflow:auto 的容器里：由内向外逐层修正。
+                // 包含 body（少数站点让 body 当滚动容器），到 documentElement 为止。
+                let el = range.startContainer;
+                if (el && el.nodeType === 3) { el = el.parentElement; }
+                while (el && el !== document.documentElement) {
+                  const style = getComputedStyle(el);
+                  if (/(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight) {
+                    const box = el.getBoundingClientRect();
+                    el.scrollTop += (rect.top - box.top) - (el.clientHeight - rect.height) / 2;
+                    rect = range.getBoundingClientRect();
+                  }
+                  if (/(auto|scroll|overlay)/.test(style.overflowX) && el.scrollWidth > el.clientWidth) {
+                    const box = el.getBoundingClientRect();
+                    el.scrollLeft += (rect.left - box.left) - (el.clientWidth - rect.width) / 2;
+                    rect = range.getBoundingClientRect();
+                  }
+                  el = el.parentElement;
+                }
+                return true;
+              };
+
               window.__scFindApply = function (index) {
                 const state = window.__scFind;
                 if (!state || state.ranges.length === 0) {
@@ -1261,11 +1334,8 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                   try { CSS.highlights.set('sc-find-active', new Highlight(active)); } catch (e2) {}
                 }
 
-                const el = active.startContainer.nodeType === 3
-                  ? active.startContainer.parentElement
-                  : active.startContainer;
-                if (el && el.scrollIntoView) {
-                  el.scrollIntoView({ block: 'center', inline: 'nearest' });
+                if (typeof window.__scFindScrollToRange === 'function') {
+                  window.__scFindScrollToRange(active);
                 }
 
                 if (typeof window.__scFindUpdateMarks === 'function') { window.__scFindUpdateMarks(); }
@@ -1298,13 +1368,23 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
               while ((node = walker.nextNode()) && window.__scFind.ranges.length < 10000) {
                 const text = node.nodeValue;
                 const hay = text.toLowerCase();
-                let at = 0;
-                while ((at = hay.indexOf(hayNeedle, at)) !== -1) {
+                let at = hay.indexOf(hayNeedle);
+                if (at === -1) { continue; }
+
+                // 隐藏节点不计入匹配：命中后既画不出高亮，也没有可滚动的可见位置
+                // （Edge JSON 查看器就残留着一份隐藏的原始 JSON）。
+                const parent = node.parentElement;
+                if (parent && parent.checkVisibility &&
+                    !parent.checkVisibility({ checkVisibilityCSS: true })) {
+                  continue;
+                }
+
+                while (at !== -1) {
                   const range = document.createRange();
                   range.setStart(node, at);
                   range.setEnd(node, at + needle.length);
                   window.__scFind.ranges.push(range);
-                  at += needle.length;
+                  at = hay.indexOf(hayNeedle, at + needle.length);
                 }
               }
 
@@ -1330,6 +1410,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
           window.__scFind = null;
           window.__scFindApply = null;
           window.__scFindUpdateMarks = null;
+          window.__scFindScrollToRange = null;
           if (window.CSS && CSS.highlights) {
             CSS.highlights.delete('sc-find-all');
             CSS.highlights.delete('sc-find-active');

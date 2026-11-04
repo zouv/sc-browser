@@ -276,4 +276,81 @@ internal static class NativeMethods
     /// 转发参数之前先让出这个权利，否则已有实例只会在任务栏闪烁。
     /// </summary>
     public static void AllowAnyProcessToSetForeground() => _ = AllowSetForegroundWindow(AsfwAny);
+
+    // ---- 低层鼠标钩子（标签条滚轮用）----
+    //
+    // 为什么需要它：Windows 把 WM_MOUSEWHEEL 投递给「焦点窗口」，不是「指针下的窗口」。
+    // 页面聚焦时焦点在 WebView2（另一个进程的 HWND），WPF 的标签条根本收不到滚轮消息。
+    // WH_MOUSE_LL 在输入进入任何窗口之前回调，因此能在悬停标签条时把滚轮改成横向滚动。
+
+    /// <summary>WH_MOUSE_LL：全局低层鼠标钩子。</summary>
+    public const int WhMouseLl = 14;
+
+    /// <summary>WM_MOUSEWHEEL：鼠标滚轮。</summary>
+    public const int WmMouseWheel = 0x020A;
+
+    /// <summary>低层鼠标钩子回调；必须由调用方长期持有委托，否则会被 GC 回收。</summary>
+    public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(
+        int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetModuleHandle(string? moduleName);
+
+    /// <summary>MSLLHOOKSTRUCT：只声明需要读取的前两个字段。</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LowLevelMouseInfo
+    {
+        public int X;
+        public int Y;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    /// <summary>安装全局低层鼠标钩子；失败返回 <see cref="IntPtr.Zero"/>。</summary>
+    public static IntPtr InstallLowLevelMouseHook(LowLevelMouseProc proc) =>
+        SetWindowsHookEx(WhMouseLl, proc, GetModuleHandle(null), 0);
+
+    public static void UninstallLowLevelMouseHook(IntPtr hook)
+    {
+        if (hook != IntPtr.Zero)
+        {
+            _ = UnhookWindowsHookEx(hook);
+        }
+    }
+
+    public static IntPtr CallNextLowLevelMouseHook(IntPtr hook, int nCode, IntPtr wParam, IntPtr lParam) =>
+        CallNextHookEx(hook, nCode, wParam, lParam);
+
+    /// <summary>
+    /// 从低层鼠标钩子的 <c>lParam</c> 读出屏幕坐标与滚轮增量（每格 ±120；向上为正）。
+    /// </summary>
+    public static bool TryReadLowLevelWheel(IntPtr lParam, out int x, out int y, out int delta)
+    {
+        x = 0;
+        y = 0;
+        delta = 0;
+
+        if (lParam == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var info = Marshal.PtrToStructure<LowLevelMouseInfo>(lParam);
+        x = info.X;
+        y = info.Y;
+        // mouseData 高 16 位是有符号的滚轮增量。
+        delta = unchecked((short)(info.MouseData >> 16));
+        return true;
+    }
 }

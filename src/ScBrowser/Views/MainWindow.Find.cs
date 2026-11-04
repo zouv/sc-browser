@@ -337,6 +337,7 @@ public partial class MainWindow
         _findWindow.StepForward += (_, _) => StepFind(forward: true);
         _findWindow.StepBackward += (_, _) => StepFind(forward: false);
         _findWindow.CloseRequested += (_, _) => CloseFindBar();
+        _findWindow.DevToolsRequested += (_, _) => _viewModel.ActiveTab?.OpenDevTools();
         _findWindow.Deactivated += (_, _) => HideFindBarForBackground();
     }
 

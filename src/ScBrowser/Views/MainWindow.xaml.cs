@@ -89,6 +89,10 @@ public partial class MainWindow : Window
         // 拖到标签条两端时标签条自动滚动（判据：被拖标签视觉边缘越过视口）。
         _dragScrollTimer.Tick += OnDragScrollTick;
 
+        // 指针悬停标签条期间临时接管滚轮（详见 MainWindow.Tabs.cs 的说明）。
+        _tabWheelProbe.Tick += OnTabWheelProbeTick;
+        _tabWheelProbe.Start();
+
         // 用户主动开新标签（Ctrl+T / 菜单 / + 按钮）→ 焦点交给地址栏（Chrome 同款）。
         // 非主动创建（target=_blank 等）不走 NewTabCommand，不会抢走页面焦点。
         _viewModel.NewTabOpened += (_, _) => FocusAddressBar();

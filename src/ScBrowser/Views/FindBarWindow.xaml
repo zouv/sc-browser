@@ -5,7 +5,7 @@
         ResizeMode="NoResize"
         ShowInTaskbar="False"
         ShowActivated="True"
-        Width="432"
+        Width="418"
         Height="46"
         Background="{DynamicResource ToolbarBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}">
@@ -20,51 +20,42 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Column="0"
-                       Text="&#xE721;"
-                       FontFamily="{StaticResource IconFontFamily}"
-                       FontSize="14"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextSecondaryBrush}" />
-
+            <!-- 不画放大镜图标（Chrome 的查找条同样没有）：图标只会挤占输入框空间。 -->
             <TextBox x:Name="FindBox"
-                     Grid.Column="1"
+                     Grid.Column="0"
                      Width="220"
-                     Margin="6,0,0,0"
                      Style="{StaticResource AddressBarTextBoxStyle}"
                      FontFamily="Segoe UI"
                      TextChanged="FindBox_TextChanged"
                      KeyDown="FindBox_KeyDown" />
 
             <TextBlock x:Name="FindStatus"
-                       Grid.Column="2"
+                       Grid.Column="1"
                        MinWidth="64"
                        Margin="10,0,0,0"
                        VerticalAlignment="Center"
                        FontSize="12"
                        Foreground="{DynamicResource TextSecondaryBrush}" />
 
-            <Button Grid.Column="4"
+            <Button Grid.Column="3"
                     Style="{StaticResource ToolbarButtonStyle}"
                     Content="&#xE70E;"
                     ToolTip="上一个匹配 (Shift+Enter)"
                     Click="FindPrevious_Click" />
 
-            <Button Grid.Column="5"
+            <Button Grid.Column="4"
                     Style="{StaticResource ToolbarButtonStyle}"
                     Content="&#xE70D;"
                     ToolTip="下一个匹配 (Enter)"
                     Click="FindNext_Click" />
 
-            <Button Grid.Column="6"
+            <Button Grid.Column="5"
                     Style="{StaticResource ToolbarButtonStyle}"
                     Content="&#xE711;"
                     ToolTip="关闭查找 (Esc)"

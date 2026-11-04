@@ -44,6 +44,9 @@ public partial class FindBarWindow : Window
     /// <summary>请求关闭（Esc / 关闭按钮）。</summary>
     public event EventHandler? CloseRequested;
 
+    /// <summary>请求打开 DevTools（F12）；查找条是独立窗口，主窗口收不到这个按键。</summary>
+    public event EventHandler? DevToolsRequested;
+
     /// <summary>输入框文本；设置时会触发 <see cref="SearchTextChanged"/>。</summary>
     public string Text
     {
@@ -82,6 +85,10 @@ public partial class FindBarWindow : Window
                 break;
             case Key.Escape:
                 CloseRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
+                break;
+            case Key.F12:
+                DevToolsRequested?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
                 break;
         }

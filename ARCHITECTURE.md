@@ -55,7 +55,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 多窗口 / 无痕 / 窗口级装配 | `Services/BrowserWindowManager.cs`、`Browser/BrowserSession.cs`、`Views/MainWindow.xaml.cs`（窗口与几何部分） | Storage/、Assets/ | arch/flows.md §3.5 |
 | 改地址栏（解析/下拉建议） | `Browser/AddressBarResolver.cs`、`Services/OmniboxSuggestions.cs`、`Views/AddressBarPopup.xaml(.cs)`、`ViewModels/MainViewModel.cs`（Suggestions 部分） | Storage/、Assets/ | arch/flows.md §3.6 |
 | 改全屏 / 站点信息 / 证书提示 | `Views/MainWindow.xaml(.cs)`（`ToggleFullScreen` / `SecurityButton_Click` / `AskAboutCertificateError`）、`Views/SiteInfoPopup.xaml(.cs)`、`Interop/NativeMethods.cs`（`FillMonitor`）、`Browser/BrowserTab.cs`（`FullScreenChanged` / `CertificateErrorDetected`） | Storage/、Assets/ | §2.1、§7 |
-| 改页内查找（Ctrl+F） | `Views/FindBarWindow.xaml(.cs)`、`Views/MainWindow.Find.cs`（会话/防抖/按标签记忆）、`Views/MainWindow.Shortcuts.cs`（快捷键）、`Browser/BrowserTab.cs`（Find 封装与 JS 兜底） | Storage/、Assets/ | §2.1、§2.2、§7 |
+| 改页内查找（Ctrl+F） | `Views/FindBarWindow.xaml(.cs)`、`Views/MainWindow.Find.cs`（会话/防抖/按标签记忆）、`Views/MainWindow.Shortcuts.cs`（快捷键）、`Browser/BrowserTab.cs`（Find 封装与 JS 兜底） | Storage/、Assets/ | §2.1、§2.2、§7、arch/flows.md §3.8 |
 | 加/改内部页面（WebUI） | `Assets/ui/<page>/*`、`Browser/WebMessageRouter.cs`、`Browser/InternalPageRegistry.cs`（含消息白名单） | Views/、Storage/（除非要新数据） | §2.3、§4、§7 |
 | 加/改数据存储（历史/书签/下载） | `Storage/*`（含 `BrowserDatabase` 的 `user_version` 迁移） | Views/、Assets/ | §2.4、§4 |
 | 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Browser/ExtensionManifest.cs`、`Browser/ExtensionStoreClient.cs`、`Browser/ExtensionApiBridge.cs`、`Views/ExtensionPopupWindow.xaml(.cs)`、`Assets/ui/extensions/*` | Views/（除弹窗）、Storage/ | §2.5、arch/flows.md §3.2、docs/03 |
@@ -79,13 +79,12 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Infrastructure/PathSafety.cs` | 防目录穿越的路径判定（**补分隔符**比较），CRX 解包与内部页面资源共用 | 新增「把外部路径落到本地」的地方 |
 | `src/ScBrowser/Infrastructure/AtomicFile.cs` | 原子写文件（临时文件 + 替换），settings/session 用 | 新增需防半截写坏的配置文件 |
 | `src/ScBrowser/Infrastructure/KnownFolders.cs` | 系统已知文件夹（目前只有「下载」）；不要自己拼 `%USERPROFILE%\Downloads` | 需要系统标准目录时 |
-| `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作：深色标题栏、圆角窗口 | 新增窗口级原生外观 |
+| `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作：深色标题栏、圆角窗口、低层鼠标钩子 | 新增窗口级原生外观 / 输入接管 |
 | `src/ScBrowser/Themes/Theme.{Light,Dark}.xaml` | 颜色令牌（键名必须成对一致） | 调色 / 加令牌 |
 | `src/ScBrowser/Themes/Controls.xaml` | 控件样式（工具栏按钮/标签/窗口按钮/地址栏/对话框按钮） | 改控件外观 |
 | `src/ScBrowser/Common/Converters.cs` | 值转换器（安全图标、可空、显隐） | 加绑定转换 |
-| `src/ScBrowser/Interop/NativeMethods.cs` | Win32 互操作（DWM 深色/圆角、最大化钉工作区） | 加系统级外观/窗口行为 |
 | `src/ScBrowser/Assets/sc-browser.ico` + `docs/icons/` | 应用图标（exe 内嵌 + 窗口 `Icon`）；`docs/icons/` 是设计源（SVG 为源，附各尺寸导出） | 换图标 |
-| `src/ScBrowser/Browser/BrowserEnvironmentProvider.cs` | 创建并缓存**唯一**的 WebView2 环境（含扩展总开关） | 改环境级选项（代理/扩展开关） |
+| `src/ScBrowser/Browser/BrowserEnvironmentProvider.cs` | 创建并缓存**唯一**的 WebView2 环境（含扩展总开关、Edge JSON 查看器开关） | 改环境级选项（代理/扩展开关/浏览器参数） |
 | `src/ScBrowser/Browser/BrowserTab.cs` | **单标签页**：全部可观察状态 + **按需创建**的 WebView2 引擎 + 事件接线 + 页内查找（原生/JS 兜底） | 改单页行为（导航/事件/图标/查找）；引擎生命周期见 §7 |
 | `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建（含惰性）/关闭/切换/相邻选择/历史记录 + **按需初始化引擎** + 网页颜色方案 | 改标签生命周期语义 |
 | `src/ScBrowser/Browser/WebTheme.cs` | 应用主题 → `CoreWebView2Profile.PreferredColorScheme` 映射 | 改「深色如何影响网页」 |
@@ -179,6 +178,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | arch/flows.md §3.5 | 多窗口与无痕（一份 vs 共享） | 动窗口/标签的装配 |
 | arch/flows.md §3.6 | 地址栏下拉（omnibox 建议） | 改地址栏 |
 | arch/flows.md §3.7 | 标签惰性恢复（状态与引擎分离） | 改标签创建 / 会话恢复 |
+| arch/flows.md §3.8 | 输入接管与页内查找（滚轮 / JSON / 虚拟滚动） | 改标签条滚轮 / 页内查找 |
 
 ---
 
@@ -396,5 +396,5 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   `CSS.highlights` 高亮，状态挂在 `window.__scFind` 上。JS 路径只覆盖主文档、匹配不跨文本节点，
   是旧运行时的降级方案；升级运行时后会自动走原生路径。**不要为了「只留一条实现」删掉兜底。**
   配套行为：Ctrl+F 首次打开时把页面选区预填进搜索框（`BrowserTab.GetSelectedTextAsync`，上限 150 字符，
-  Chrome 同款）；JS 路径还会把匹配位置**按文档比例**画成滚动条右侧的刻度条（固定浮层 + 指针穿透、
-  比例定位所以滚动无需监听，resize 才重画；原生 Find 拿不到匹配位置，故刻度只有 JS 路径有）。
+  Chrome 同款）；JS 路径还会把匹配位置按文档比例画成滚动条右侧的刻度条（原生 Find 没有这个能力）。
+- **输入接管与页内查找的边界处理**（滚轮 / JSON 查看器 / Range 滚动）见 [`arch/flows.md`](arch/flows.md) §3.8。

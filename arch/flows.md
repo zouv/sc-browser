@@ -4,28 +4,6 @@
 > 文件职责总表与易踩的坑；「高频改动区到底怎么连」这类纵深内容拆到这里，避免主文件变成 token 黑洞。
 > 编号沿用主文件（§3.x），交叉引用不会因此失效。
 
-### 3.7 标签惰性恢复（状态与引擎分离）
-
-- **为什么**：恢复 N 个标签时若立刻建 N 个 WebView2，启动慢、内存被占满。现在标签是「状态 + 按需引擎」：
-  `BrowserTab` 先持有地址/标题/缩放，`View` 为空；被激活时才 `EnsureInitializedAsync` 创建 WebView2。
-- **链路**：`MainViewModel.StartAsync`（只有 activeIndex 那个 `deferLoad:false`）
-  → `TabManager.CreateAsync(..., deferLoad)`（`SetInitialLocation` 写好状态、`WireTabEvents` 接 tab 级事件）
-  → 用户点开标签 → `TabManager.Activate` → `TryEnsureEngineAsync` → `BrowserTab.EnsureInitializedAsync`
-  → `EngineAttached`（宿主 `AttachTab` 挂树）→ `EnsureCoreWebView2Async` → 补 `_pendingUrl` 导航 / `_pendingZoom`。
-- **注意**：
-  1. `View` / `Core` 都可能为 `null`，所有读写它们的地方要空安全；缩放与导航在引擎未就绪时记成待处理。
-  2. `TabCreated` 现在在引擎创建**之前**触发（tab 级事件订阅者不受影响）。
-  3. 激活时初始化失败不抛到 UI 线程，而是把原因挂到该标签的错误条（`ShowEngineError`）。
-  4. 惰性标签不会在启动时导航，因此不会重复写历史。
-- **同一套机制支撑的三个能力**：
-  - **引擎退出后重建**：内核进程没了 → `BrowserTab.LoseEngine`（保留状态、丢弃控件）→ 用户点「重新加载」
-    或再次激活 → `TryEnsureEngineAsync` 重新创建并回到原地址。
-  - **后台休眠**：`TabManager.SuspendIdleTabs` 每分钟检查，30 分钟没被激活且没在放声音的标签
-    `TrySuspendAsync`；`Activate` / `Navigate` 会先 `Resume`。
-  - **拖出成新窗口**：`TabManager.ReleaseTab`（不写「最近关闭」、不 Dispose）→ `Adopt` 到新窗口。
-    标签事件处理器一律经 `tab.Owner` 路由，所以迁移后不会把事件送回旧窗口；
-    无痕标签只会迁移到无痕窗口。
-
 ---
 
 ## 3. 重点链路详解（高频改动区 / 容易写错的地方）
@@ -119,5 +97,52 @@
   新文本等于当前高亮项地址时直接返回（见 §7）。
 - **内容来源**：只查本地历史（`HistoryRepository.Query`）+ 一行「使用 XX 搜索 / 直接打开」
   （`Services/OmniboxSuggestions.cs`，纯函数、可单测）。**不外发输入内容**（没有网络搜索建议）。
+
+### 3.7 标签惰性恢复（状态与引擎分离）
+
+- **为什么**：恢复 N 个标签时若立刻建 N 个 WebView2，启动慢、内存被占满。现在标签是「状态 + 按需引擎」：
+  `BrowserTab` 先持有地址/标题/缩放，`View` 为空；被激活时才 `EnsureInitializedAsync` 创建 WebView2。
+- **链路**：`MainViewModel.StartAsync`（只有 activeIndex 那个 `deferLoad:false`）
+  → `TabManager.CreateAsync(..., deferLoad)`（`SetInitialLocation` 写好状态、`WireTabEvents` 接 tab 级事件）
+  → 用户点开标签 → `TabManager.Activate` → `TryEnsureEngineAsync` → `BrowserTab.EnsureInitializedAsync`
+  → `EngineAttached`（宿主 `AttachTab` 挂树）→ `EnsureCoreWebView2Async` → 补 `_pendingUrl` 导航 / `_pendingZoom`。
+- **注意**：
+  1. `View` / `Core` 都可能为 `null`，所有读写它们的地方要空安全；缩放与导航在引擎未就绪时记成待处理。
+  2. `TabCreated` 现在在引擎创建**之前**触发（tab 级事件订阅者不受影响）。
+  3. 激活时初始化失败不抛到 UI 线程，而是把原因挂到该标签的错误条（`ShowEngineError`）。
+  4. 惰性标签不会在启动时导航，因此不会重复写历史。
+- **同一套机制支撑的三个能力**：
+  - **引擎退出后重建**：内核进程没了 → `BrowserTab.LoseEngine`（保留状态、丢弃控件）→ 用户点「重新加载」
+    或再次激活 → `TryEnsureEngineAsync` 重新创建并回到原地址。
+  - **后台休眠**：`TabManager.SuspendIdleTabs` 每分钟检查，30 分钟没被激活且没在放声音的标签
+    `TrySuspendAsync`；`Activate` / `Navigate` 会先 `Resume`。
+  - **拖出成新窗口**：`TabManager.ReleaseTab`（不写「最近关闭」、不 Dispose）→ `Adopt` 到新窗口。
+    标签事件处理器一律经 `tab.Owner` 路由，所以迁移后不会把事件送回旧窗口；
+    无痕标签只会迁移到无痕窗口。
+
+### 3.8 输入接管与页内查找（滚轮 / JSON / 虚拟滚动）
+
+- **滚轮为什么必须用低层钩子**：Windows 把 `WM_MOUSEWHEEL` 投递给**焦点窗口**，不是指针下的窗口。
+  页面聚焦时焦点在 WebView2（另一个进程的 `Chrome_WidgetWin_1`），WPF 的 `TabScroller` 根本收不到消息
+  （系统「悬停非活动窗口时滚动」的默认值也不可靠）。解法：`MainWindow.Tabs.cs` 用 50ms 探针
+  （`OnTabWheelProbeTick`）判断指针是否在本窗口标签条上，是则在 `NativeMethods` 装 `WH_MOUSE_LL`
+  低层钩子（`TabStripWheelHook`）——它先于任何窗口拿到滚轮，换算成横向滚动后返回 1 吞掉事件。
+  **只在悬停期间安装**，避免全局钩子常驻的输入开销。
+- **不要改回 MouseEnter/MouseLeave 判悬停**：WPF ToolTip 是独立顶层窗口，指针停在标签上等提示弹出时
+  会触发一次假的 `MouseLeave`；按事件摘钩子就会出现「悬停一会儿再滚滚轮没反应」。探针按
+  `GetCursorPos` + 标签条几何判断，天然避开。
+- **Edge JSON 查看器必须关掉**：`msEdgeJSONViewer`（`edge://jsonviewer/`）用 CodeMirror 虚拟滚动，
+  离屏文本不在 DOM 里。页内查找的 `TreeWalker` 只找得到 `<div hidden>` 里的原始 JSON——计数有，
+  但高亮和滚动都落在隐藏节点上（用户看到「1/3 但不跳转」）。环境创建参数
+  `--disable-features=msEdgeJSONViewer` 让 JSON 退回普通 `<pre>`。
+- **JS 兜底查找要按 Range 矩形滚动**：对匹配的父元素 `scrollIntoView` 在 JSON/日志这种
+  「整页就是一个大文本节点」的页面里等于没滚（父元素顶部就是文档顶部）。`__scFindScrollToRange`
+  用 `range.getBoundingClientRect()` 定位，先滚文档、再逐层修正 `overflow:auto` 祖先；
+  `checkVisibility()` 为 false 的隐藏文本不计入匹配。
+- **原生 Find 仍优先**：以上只影响旧运行时的 JS 兜底；运行时支持 `ICoreWebView2_28` 后自动走
+  原生 `CoreWebView2.Find`，不要为「只留一条实现」删掉兜底（见 ARCHITECTURE §7）。
+- **书签菜单关闭要幂等**：`Close()` 过程中的 `Deactivated` 回调若再 `Close()`，会触发 WPF
+  `VerifyNotClosing`（「在窗口关闭期间…无法调用 Close」）；所有关闭入口统一走
+  `BookmarkMenuWindow.CloseOnce()`。
 
 ---

@@ -61,6 +61,11 @@ public sealed class BrowserEnvironmentProvider
             // 扩展支持必须先在这里开总开关，否则 Profile.AddBrowserExtensionAsync 直接
             // 返回 ERROR_NOT_SUPPORTED。该开关属于「环境创建期参数」，改动需重启应用生效。
             AreBrowserExtensionsEnabled = _settings.Current.EnableExtensions,
+
+            // 关掉 Edge 内置 JSON 查看器（msEdgeJSONViewer）。它用 CodeMirror 虚拟滚动渲染，
+            // 离屏内容根本不在 DOM 里：Ctrl+F 只能命中隐藏的原始 JSON，既不会跳转也无法高亮。
+            // 关闭后 JSON 以普通文本（<pre>）呈现，页内查找/选择/复制才可靠。
+            AdditionalBrowserArguments = "--disable-features=msEdgeJSONViewer",
         };
 
         // browserExecutableFolder 传 null → 使用系统安装的 Evergreen WebView2 运行时。

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -98,6 +99,133 @@ public partial class MainWindow
             e.Handled = true;
             _viewModel.CloseTabCommand.Execute(tab);
         }
+    }
+
+    /// <summary>
+    /// 标签条滚轮：纵向滚轮横向滚动标签条（Chrome 同款）。
+    /// <para>
+    /// 这是「焦点在本窗口（地址栏 / 标签按钮）」时的路径；焦点在网页里时 WPF 根本收不到
+    /// 滚轮消息，由 <see cref="TabStripWheelHook"/> 接管，见下方注释。
+    /// </para>
+    /// </summary>
+    private void TabScroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (ScrollTabStripBy(e.Delta))
+        {
+            e.Handled = true;
+        }
+    }
+
+    // --------------------------------------------------------------------- //
+    // 标签条滚轮（WebView2 聚焦时）
+    //
+    // Windows 把 WM_MOUSEWHEEL 发给「焦点窗口」而不是「指针下的窗口」。页面聚焦时焦点在
+    // WebView2（另一个进程的 HWND），WPF 的 ScrollViewer 收不到滚轮消息——表现为悬停标签条
+    // 滚轮完全没反应。这里在指针悬停标签条期间临时安装 WH_MOUSE_LL 低层钩子：它先于所有窗口
+    // 拿到输入，换算成横向滚动并吞掉事件。
+    //
+    // 用定时器探测「指针是否在本窗口标签条上」而不是 MouseEnter/MouseLeave：
+    // WPF ToolTip 是独立顶层窗口，指针停在标签上等它弹出时会触发一次假的 MouseLeave，
+    // 按事件摘钩子会导致「悬停一会儿再滚滚轮就没反应」。50ms 轮询的代价可以忽略。
+    // --------------------------------------------------------------------- //
+
+    /// <summary>低层鼠标钩子回调；作为字段持有，防止被 GC 回收后回调飞掉。</summary>
+    private NativeMethods.LowLevelMouseProc? _tabWheelHookProc;
+
+    private IntPtr _tabWheelHook;
+
+    /// <summary>探测指针是否悬停标签条：只在这期间安装全局钩子，避免常驻的输入开销。</summary>
+    private readonly DispatcherTimer _tabWheelProbe = new(DispatcherPriority.Background)
+    {
+        Interval = TimeSpan.FromMilliseconds(50),
+    };
+
+    private void OnTabWheelProbeTick(object? sender, EventArgs e)
+    {
+        // 只有本应用在前台、且指针确实在标签条上时才接管；否则立即摘钩子。
+        if (NativeMethods.GetForegroundProcessId() == (uint)Environment.ProcessId
+            && ContainsTabStripPoint(NativeMethods.GetCursorPosition()))
+        {
+            InstallTabWheelHook();
+        }
+        else
+        {
+            UninstallTabWheelHook();
+        }
+    }
+
+    private void InstallTabWheelHook()
+    {
+        if (_tabWheelHook != IntPtr.Zero)
+        {
+            return;
+        }
+
+        _tabWheelHookProc = TabStripWheelHook;
+        _tabWheelHook = NativeMethods.InstallLowLevelMouseHook(_tabWheelHookProc);
+        if (_tabWheelHook == IntPtr.Zero)
+        {
+            _tabWheelHookProc = null;
+            Serilog.Log.Debug("标签条滚轮钩子安装失败（Win32 错误 {Code}）", Marshal.GetLastWin32Error());
+        }
+    }
+
+    private void UninstallTabWheelHook()
+    {
+        if (_tabWheelHook == IntPtr.Zero)
+        {
+            return;
+        }
+
+        NativeMethods.UninstallLowLevelMouseHook(_tabWheelHook);
+        _tabWheelHook = IntPtr.Zero;
+        _tabWheelHookProc = null;
+    }
+
+    private IntPtr TabStripWheelHook(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && wParam == (IntPtr)NativeMethods.WmMouseWheel)
+        {
+            try
+            {
+                if (NativeMethods.TryReadLowLevelWheel(lParam, out var x, out var y, out var delta)
+                    // 指针必须真的在标签条上（窗口可能已被移走 / 最小化）：这里再判一次而不是只信安装时机。
+                    && ContainsTabStripPoint(new Point(x, y)))
+                {
+                    ScrollTabStripBy(delta);
+                    return (IntPtr)1;   // 吞掉，否则焦点在网页里时页面会跟着滚。
+                }
+            }
+            catch (Exception ex)
+            {
+                // 低层钩子回调不能把异常抛回系统输入链（会破坏后续鼠标事件），失败就放行。
+                Serilog.Log.Debug(ex, "标签条滚轮钩子处理失败");
+            }
+        }
+
+        return NativeMethods.CallNextLowLevelMouseHook(_tabWheelHook, nCode, wParam, lParam);
+    }
+
+    /// <summary>按滚轮增量横向滚动标签条；有溢出并实际处理时返回 <c>true</c>。</summary>
+    private bool ScrollTabStripBy(int delta)
+    {
+        if (TabScroller.ScrollableWidth <= 0)
+        {
+            return false;
+        }
+
+        // 滚轮向上（delta > 0）→ 标签条向左滚（Chrome 同向）。
+        TabScroller.ScrollToHorizontalOffset(
+            Math.Clamp(TabScroller.HorizontalOffset - delta, 0, TabScroller.ScrollableWidth));
+        return true;
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        // 窗口关闭时必须摘钩子：回调里会访问已经销毁的 WPF 元素。
+        _tabWheelProbe.Stop();
+        UninstallTabWheelHook();
+        base.OnClosed(e);
     }
 
     private void TabButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

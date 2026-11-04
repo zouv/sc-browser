@@ -24,6 +24,12 @@ public partial class BookmarkMenuWindow : Window
     /// <summary>新建文件夹模式（书签栏右键菜单入口）：隐藏网址、保存时建文件夹。</summary>
     private readonly bool _folderMode;
 
+    /// <summary>
+    /// 是否已经发起关闭。关闭过程中窗口会失去激活并触发 <see cref="Window_Deactivated"/>，
+    /// 那里若再调一次 <c>Close()</c>，WPF 会抛「在窗口关闭期间…无法调用 Close」。
+    /// </summary>
+    private bool _closing;
+
     public BookmarkMenuWindow(
         MainViewModel viewModel,
         string url,
@@ -47,7 +53,8 @@ public partial class BookmarkMenuWindow : Window
         UrlBox.Visibility = showUrl ? Visibility.Visible : Visibility.Collapsed;
         if (showUrl)
         {
-            UrlBox.Text = entry.Url;
+            // showUrl 已保证 entry 非空；用 ! 告诉可空流分析器。
+            UrlBox.Text = entry!.Url;
         }
 
         // 文件夹下拉：书签栏（根目录）+ 各文件夹，选中当前所在位置。
@@ -108,7 +115,7 @@ public partial class BookmarkMenuWindow : Window
             _ = _viewModel.EditBookmarkAsync(_entry.Id, name, url, parentId);
         }
 
-        Close();
+        CloseOnce();
     }
 
     private void Remove_Click(object sender, RoutedEventArgs e)
@@ -118,16 +125,38 @@ public partial class BookmarkMenuWindow : Window
             _ = _viewModel.RemoveBookmarkAsync(_entry.Id);
         }
 
-        Close();
+        CloseOnce();
     }
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
-            Close();
+            CloseOnce();
         }
     }
 
-    private void Window_Deactivated(object? sender, EventArgs e) => Close();
+    private void Window_Deactivated(object? sender, EventArgs e) => CloseOnce();
+
+    /// <summary>
+    /// 幂等关闭：确定 / 移除 / Esc / 失焦都走这里。
+    /// 第一次调用先把标记置位，再 <see cref="Window.Close"/> 引发的失焦就不会二次关闭。
+    /// </summary>
+    private void CloseOnce()
+    {
+        if (_closing)
+        {
+            return;
+        }
+
+        _closing = true;
+        Close();
+    }
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        // 外部途径（Alt+F4 / Owner 关闭）也可能直接触发 Close：同样置位，兜住失焦回调。
+        _closing = true;
+        base.OnClosing(e);
+    }
 }
