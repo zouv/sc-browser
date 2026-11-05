@@ -18,23 +18,24 @@
 ## 状态快照
 
 - **最近更新**：2026-11-05
-- **整体状态**：🚧 **v0.7.0 发布中**（版本号与变更记录已就绪，打包 / 上传待完成）
+- **整体状态**：✅ 无进行中的开发任务（**v0.7.0 已打包并发布**）
 - **当前分支（必填）**：`main`
 - **最后验证状态**：
-  · 2026-11-05：`sh manager.sh verify` ✅（构建 0 警告 + **206/206** 单测 + 文档体检 0 警告）。
+  · 2026-11-05：**v0.7.0 已提交推送并发布**（https://github.com/zouv/sc-browser/releases/tag/v0.7.0，
+    上传 `ScBrowser_0.7.0_x64-setup.exe` 与 `ScBrowser_0.7.0_x64-unpack.zip`）；
+    发布闸门 `sh manager.sh verify` ✅（构建 0 警告 + **206/206** 单测 + 文档体检 0 警告）；
+    隐私自查通过（release exe `CompanyName=ScBrowser`、setup `CompanyName=zouv`；Debug zip 未上传）。
   · 2026-11-05 隔离实例实跑（`%TEMP%` 数据目录，未触用户日常实例）：28 标签时标签条等宽压缩、
     不出现横向滚动；Ctrl+单击两个链接依次生成在发起标签右侧（原标签保持激活）；悬停链接时
     地址气泡浮在内容区左下角、页面视口不变。
-  · v0.6.0 已发布（GitHub Release `v0.6.0`）；更早版本见 `CHANGELOG.md` / `ROADMAP.md`。
+  · 更早的 v0.6.0 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.0 发布细节见 `CHANGELOG.md` / `ROADMAP.md`。
   · 未实跑：密码保存/自动填充、标签组 UI、uBlock 弹窗实际 UI、后台休眠、内核重建、打印/另存为、证书提示、默认浏览器注册。
 
 ---
 
 ## 当前任务（In Progress）
 
-- **v0.7.0 发布中**：标签条自动压缩宽度 / Ctrl+单击右侧后台新建 / 链接悬停浮动气泡
-  已实现、验证并记入 `CHANGELOG [0.7.0]` 与 `ROADMAP` U-1。
-- 下一步：`sh manager.sh package` → 隐私自查 → 创建 GitHub Release `v0.7.0` 并上传资产 → 补记发布状态。
+- **无进行中任务**。
 
 ---
 

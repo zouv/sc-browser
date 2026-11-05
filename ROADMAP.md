@@ -9,6 +9,9 @@
 
 ## 总进度（2026-11-05 更新）
 
+**v0.7.0 已发布（2026-11-05）**：https://github.com/zouv/sc-browser/releases/tag/v0.7.0 ——：标签条自动压缩宽度（不再横向滚动）、
+Ctrl+单击在右侧后台打开并按点击顺序排列、链接悬停地址改为浮动气泡（不占页面高度）。细节见 `CHANGELOG [0.7.0]`。
+
 **v0.6.0 已发布（2026-11-05）**：https://github.com/zouv/sc-browser/releases/tag/v0.6.0 ——：页签栏支持鼠标滚轮横向滚动（页面聚焦时也生效）；修复 JSON 页面
 Ctrl+F 不跳转（关闭虚拟滚动的内置 JSON 查看器 + 按匹配矩形滚动）、F12 打开 DevTools、Ctrl+D
 书签菜单关闭报错，并移除查找条多余的放大镜图标。细节见 `CHANGELOG [0.6.0]`。
