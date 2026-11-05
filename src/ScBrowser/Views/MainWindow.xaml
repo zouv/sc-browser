@@ -109,7 +109,8 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 标签滚动区：横向溢出时不再压到窗口按钮上，而是可滚动（滚轮/触控板） -->
+                <!-- 标签滚动区：正常数量下标签等宽压缩（TabStripMetrics），不会出现横向滚动；
+                     只有窗口窄到每个标签都顶到最小值时，才作为兜底允许滚动。 -->
                 <ScrollViewer x:Name="TabScroller"
                               HorizontalScrollBarVisibility="Hidden"
                               VerticalScrollBarVisibility="Disabled"
@@ -127,7 +128,10 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
+                                    <!-- 宽度统一由窗口按可用空间/标签数计算（Chrome 式等宽 + 压缩）。 -->
                                     <Button Style="{StaticResource BrowserTabButtonStyle}"
+                                            Width="{Binding TabItemWidth,
+                                                            RelativeSource={RelativeSource AncestorType=Window}}"
                                             Command="{Binding DataContext.ActivateTabCommand,
                                                       RelativeSource={RelativeSource AncestorType=Window}}"
                                             CommandParameter="{Binding}"
@@ -749,29 +753,6 @@
                            VerticalAlignment="Center"
                            TextWrapping="Wrap" />
             </DockPanel>
-        </Border>
-
-        <!-- ============ 链接悬停状态栏 ============ -->
-        <!-- WebView2 自带的状态栏画在网页内部、与外壳主题不一致；关掉它（IsStatusBarEnabled=false），
-             由外壳在底部绘制一行。 -->
-        <Border x:Name="StatusBar"
-                DockPanel.Dock="Bottom"
-                Height="22"
-                Padding="10,0"
-                Background="{DynamicResource ToolbarBackgroundBrush}"
-                BorderBrush="{DynamicResource SeparatorBrush}"
-                BorderThickness="0,1,0,0">
-            <Border.Visibility>
-                <MultiBinding Converter="{StaticResource TextAndChromeVisibility}">
-                    <Binding Path="ActiveTab.StatusText" FallbackValue="" TargetNullValue="" />
-                    <Binding Path="ChromeVisible" RelativeSource="{RelativeSource AncestorType=Window}" />
-                </MultiBinding>
-            </Border.Visibility>
-            <TextBlock Text="{Binding ActiveTab.StatusText, FallbackValue=''}"
-                       VerticalAlignment="Center"
-                       FontSize="12"
-                       TextTrimming="CharacterEllipsis"
-                       Foreground="{DynamicResource TextSecondaryBrush}" />
         </Border>
 
         <!-- ============ 内容区（WebView2 容器） ============ -->

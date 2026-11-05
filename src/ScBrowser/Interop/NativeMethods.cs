@@ -250,6 +250,42 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
 
+    // ---- 覆盖在网页上的浮层（链接悬停气泡）----
+    //
+    // 浮层是独立顶层窗口，物理上盖在 WebView2 上面；因此必须点击穿透、永不激活，
+    // 否则鼠标移到气泡上时链接点击会被它吃掉，键盘焦点也可能被它抢走。
+
+    private const int GwlExStyle = -20;
+    private const int WsExTransparent = 0x00000020;
+    private const int WsExNoActivate = 0x08000000;
+    private const int WsExToolWindow = 0x00000080;
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
+    private static extern int GetWindowLong(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
+    private static extern int SetWindowLong(IntPtr hwnd, int index, int value);
+
+    /// <summary>
+    /// 让窗口点击穿透（<c>WS_EX_TRANSPARENT</c>）、不参与激活（<c>WS_EX_NOACTIVATE</c>）、
+    /// 不出现在 Alt+Tab（<c>WS_EX_TOOLWINDOW</c>）。
+    /// <para>调用前窗口句柄必须已创建（<c>SourceInitialized</c> 之后）。</para>
+    /// </summary>
+    public static void MakeClickThrough(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var style = GetWindowLong(handle, GwlExStyle);
+        _ = SetWindowLong(
+            handle,
+            GwlExStyle,
+            style | WsExTransparent | WsExNoActivate | WsExToolWindow);
+    }
+
     // ---- 鼠标位置 ----
 
     [StructLayout(LayoutKind.Sequential)]

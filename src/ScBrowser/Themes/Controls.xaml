@@ -56,9 +56,11 @@
     </Style>
 
     <!-- ======== 标签条上的单个标签 ======== -->
+    <!-- 宽度由 MainWindow.TabItemWidth 统一给出（见 TabStripMetrics）：标签等宽，数量多时压缩，
+         不再随标题长短伸缩。MinWidth 必须为 0，否则压缩时会被样式卡在 72px。 -->
     <Style x:Key="BrowserTabButtonStyle" TargetType="Button">
         <Setter Property="Height" Value="34" />
-        <Setter Property="MinWidth" Value="72" />
+        <Setter Property="MinWidth" Value="0" />
         <Setter Property="MaxWidth" Value="220" />
         <Setter Property="Margin" Value="0,4,2,0" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />

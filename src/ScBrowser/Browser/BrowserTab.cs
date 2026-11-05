@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -60,6 +61,12 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     /// <summary>所属的标签集合（窗口）。迁移到别的窗口后随之改变，事件处理器据此路由。</summary>
     public TabManager? Owner { get; internal set; }
 
+    /// <summary>
+    /// 由哪个标签页触发打开（Ctrl+单击等）。只用于排列：连续从同一标签打开的新标签
+    /// 会插在它右侧并按打开顺序向右排（见 <see cref="TabInsertion.RightOfOpener"/>）。
+    /// </summary>
+    public BrowserTab? Opener { get; internal set; }
+
     /// <summary>WebView2 控件已创建，宿主该把它挂进可视化树了。</summary>
     public event EventHandler? EngineAttached;
 
@@ -112,7 +119,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     [ObservableProperty]
     private double _zoomFactor = 1.0;
 
-    /// <summary>链接悬停时地址栏下方的状态提示（由页面透过 WebView2 的状态栏文本给出）。</summary>
+    /// <summary>链接悬停时显示的地址提示（由外壳画成浮动气泡，不占页面布局）。</summary>
     [ObservableProperty]
     private string? _statusText;
 
@@ -556,9 +563,14 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                 return;
             }
 
+            // Ctrl+单击 = Chrome 的「在后台右侧新开」：不抢焦点，新标签插到本标签右边。
+            // WebView2 的事件参数不带修饰键，只能从当前键盘状态判断（事件在点击处理中同步触发）。
+            var ctrlClick = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+
             NewWindowRequested?.Invoke(this, new NewWindowRequestedEventArgs(
                 e.Uri,
-                foreground: true));
+                foreground: !ctrlClick,
+                fromCtrlClick: ctrlClick));
         };
 
         core.WindowCloseRequested += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
@@ -1551,10 +1563,11 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
 /// <summary>新窗口/新标签请求的参数。</summary>
 public sealed class NewWindowRequestedEventArgs : EventArgs
 {
-    public NewWindowRequestedEventArgs(string url, bool foreground)
+    public NewWindowRequestedEventArgs(string url, bool foreground, bool fromCtrlClick = false)
     {
         Url = url;
         Foreground = foreground;
+        FromCtrlClick = fromCtrlClick;
     }
 
     /// <summary>目标地址。</summary>
@@ -1562,6 +1575,9 @@ public sealed class NewWindowRequestedEventArgs : EventArgs
 
     /// <summary>是否应抢占焦点（即切换到新标签）。</summary>
     public bool Foreground { get; }
+
+    /// <summary>是否由 Ctrl+单击触发：新标签应插到发起标签右侧，且保持后台打开。</summary>
+    public bool FromCtrlClick { get; }
 }
 
 /// <summary>证书错误：用户选择是否继续访问。</summary>

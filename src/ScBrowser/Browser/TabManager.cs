@@ -123,13 +123,18 @@ public sealed class TabManager
     /// <param name="deferLoad">
     /// 先不创建引擎，等被激活时再加载（会话惰性恢复）。标签地址与标题照常可用。
     /// </param>
+    /// <param name="opener">
+    /// 触发打开本标签的标签页（Ctrl+单击等）。只用于排序：让连续打开的新标签依次排在它右侧，
+    /// 见 <see cref="TabInsertion.RightOfOpener"/>。
+    /// </param>
     public async Task<BrowserTab> CreateAsync(
         string url,
         bool activate = true,
         int? insertAt = null,
-        bool deferLoad = false)
+        bool deferLoad = false,
+        BrowserTab? opener = null)
     {
-        var tab = new BrowserTab(_nextId++);
+        var tab = new BrowserTab(_nextId++) { Opener = opener };
         tab.SetInitialLocation(url);
         tab.Owner = this;
 
@@ -580,7 +585,17 @@ public sealed class TabManager
             {
                 if (tab.Owner is { } owner)
                 {
-                    await owner.CreateAsync(e.Url, activate: e.Foreground).ConfigureAwait(true);
+                    // Ctrl+单击（Chrome 语义）：插到发起标签右侧，连续打开时按顺序向右排，
+                    // 且留在后台；其他来源（target=_blank / window.open）仍是追加到末尾并激活。
+                    var insertAt = e.FromCtrlClick
+                        ? TabInsertion.RightOfOpener(owner.Tabs, tab)
+                        : null;
+
+                    await owner.CreateAsync(
+                        e.Url,
+                        activate: e.Foreground,
+                        insertAt: insertAt,
+                        opener: e.FromCtrlClick ? tab : null).ConfigureAwait(true);
                 }
             }
             catch (Exception ex)

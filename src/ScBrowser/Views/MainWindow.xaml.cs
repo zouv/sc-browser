@@ -56,6 +56,10 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         RestoreWindowPlacement();
 
+        // 标签等宽并在放不下时压缩（不横向滚动）：可用宽度随窗口大小变、标签数随增删变。
+        TabScroller.SizeChanged += (_, _) => UpdateTabItemWidth();
+        _tabs.Tabs.CollectionChanged += (_, _) => UpdateTabItemWidth();
+
         // 最后一个标签关闭即退出（Chrome 语义）。外壳自己决定怎么响应，TabManager 不越权。
         _tabs.LastTabClosed += (_, _) => Close();
 
@@ -73,11 +77,24 @@ public partial class MainWindow : Window
         {
             HideSuggestionPopup();
             HideFindBarForBackground();
+            HideLinkStatus();
         };
         Activated += (_, _) =>
         {
             HideSuggestionPopup();
             RestoreFindBarForForeground();
+            UpdateLinkStatus();
+        };
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                HideLinkStatus();
+            }
+            else
+            {
+                RepositionLinkStatus();
+            }
         };
 
         // 标签拖拽的候选状态从「按下标签」开始，但鼠标一旦移出按钮，按钮就收不到 MouseMove 了——
@@ -110,16 +127,20 @@ public partial class MainWindow : Window
             if (e.PropertyName == nameof(MainViewModel.ActiveTab))
             {
                 OnActiveTabChanged();
+                OnActiveStatusTabChanged();
             }
         };
+
+        // 构造期间可能已经有激活标签（未来若改成先建标签再建窗口，这里不会漏订阅）。
+        OnActiveStatusTabChanged();
     }
 
     /// <summary>本窗口的标签页集合（窗口关闭时由 <see cref="BrowserWindowManager"/> 摘除）。</summary>
     public TabManager Tabs => _tabs;
 
     /// <summary>
-    /// 外壳 chrome（标签条 / 工具栏 / 状态栏 / 错误条）是否可见。全屏时为 <c>false</c>。
-    /// 做成依赖属性是为了让错误条与状态栏的可见性绑定能参与多值判断——
+    /// 外壳 chrome（标签条 / 工具栏 / 书签栏 / 错误条）是否可见。全屏时为 <c>false</c>。
+    /// 做成依赖属性是为了让错误条与书签栏的可见性绑定能参与多值判断——
     /// 直接给它们的 Visibility 赋本地值再 ClearValue 会把 XAML 绑定一起清掉。
     /// </summary>
     public static readonly DependencyProperty ChromeVisibleProperty =
@@ -133,6 +154,23 @@ public partial class MainWindow : Window
     {
         get => (bool)GetValue(ChromeVisibleProperty);
         set => SetValue(ChromeVisibleProperty, value);
+    }
+
+    /// <summary>
+    /// 每个标签按钮的宽度（DIP）。由标签条可用宽度与标签数算出（<see cref="TabStripMetrics"/>），
+    /// 标签模板通过 RelativeSource 绑定它——所有标签因此等宽，数量多时一起压缩。
+    /// </summary>
+    public static readonly DependencyProperty TabItemWidthProperty =
+        DependencyProperty.Register(
+            nameof(TabItemWidth),
+            typeof(double),
+            typeof(MainWindow),
+            new PropertyMetadata(TabStripMetrics.MaxTabWidth));
+
+    public double TabItemWidth
+    {
+        get => (double)GetValue(TabItemWidthProperty);
+        set => SetValue(TabItemWidthProperty, value);
     }
 
     /// <summary>把窗口切到前台（二次启动转发地址时用）；最小化的先还原。</summary>
@@ -433,14 +471,14 @@ public partial class MainWindow : Window
         ApplyWindowedFrame(WindowState != WindowState.Maximized);
     }
 
-    /// <summary>全屏时收起标签条 / 工具栏 / 查找条 / 状态栏，并把标题栏命中区归零。</summary>
+    /// <summary>全屏时收起标签条 / 工具栏 / 书签栏 / 错误条，并把标题栏命中区归零。</summary>
     private void SetChromeVisible(bool visible)
     {
         var visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         TabStrip.Visibility = visibility;
         Toolbar.Visibility = visibility;
 
-        // 错误条与状态栏的可见性由绑定决定，全屏只是一个额外条件（见 ChromeVisible）。
+        // 错误条与书签栏的可见性由绑定决定，全屏只是一个额外条件（见 ChromeVisible）。
         ChromeVisible = visible;
 
         if (!visible)
@@ -919,7 +957,11 @@ public partial class MainWindow : Window
     private void MoveSuggestionSelection(int delta) => _viewModel.MoveSuggestionSelection(delta);
 
     /// <summary>窗口移动/缩放后下拉会跟地址栏错位；直接收起来最省事也最不易出错。</summary>
-    private void OnWindowGeometryChanged(object? sender, EventArgs e) => HideSuggestionPopup();
+    private void OnWindowGeometryChanged(object? sender, EventArgs e)
+    {
+        HideSuggestionPopup();
+        RepositionLinkStatus();
+    }
 
     /// <summary>判断一个按键是否会改变输入框内容（用于区分「聚焦」与「真的在编辑」）。</summary>
     private static bool IsTextProducingKey(Key key) => key switch

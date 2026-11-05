@@ -32,7 +32,8 @@
 | 「编辑态」判定 | `AddressBar_PreviewKeyDown` + `IsTextProducingKey` | **不能**用「获得焦点」判定，见 §7 |
 | 键盘快捷键 | `MainWindow.TryHandleShortcut` | 单一 switch，按修饰键分组；含 Ctrl+Shift+B（书签栏）/ O（书签管理器）/ Delete（清除浏览数据）、F12（DevTools，显式调 `BrowserTab.OpenDevTools`） |
 | 全屏（F11 / 网页视频） | `ToggleFullScreen` / `SetUserFullScreen` / `OnTabFullScreenChanged` / `UpdateFullScreenState` / `EnterFullScreen` / `ExitFullScreen` / `SetChromeVisible` + `NativeMethods.FillMonitor` | 两个来源（用户 F11 / 网页 requestFullscreen）合流到 `_fullScreenApplied` |
-| 链接悬停状态栏 | XAML 的 `StatusBar`（绑定 `ActiveTab.StatusText`）+ `BrowserTab.WireEvents` 的 `StatusBarTextChanged` | WebView2 自带状态栏关闭（`IsStatusBarEnabled=false`） |
+| 链接悬停地址气泡 | `MainWindow.Status.cs` 的 `OnActiveStatusTabChanged` / `UpdateLinkStatus` / `PositionLinkStatusWindow` / `HideLinkStatus`；`Views/LinkStatusWindow.xaml(.cs)` + `NativeMethods.MakeClickThrough`；`BrowserTab.WireEvents` 的 `StatusBarTextChanged` | WebView2 自带状态栏关闭（`IsStatusBarEnabled=false`）；气泡是**独立顶层窗口**（airspace），悬停时不再压掉页面高度，见 §7 |
+| 标签条宽度 / 溢出 | `TabStripMetrics.ResolveTabWidth` + `MainWindow.UpdateTabItemWidth`（`TabScroller.SizeChanged` / `Tabs.CollectionChanged`）+ `MainWindow.TabItemWidth` DP；`MainWindow.xaml` 里按钮宽度绑定该 DP | 标签**等宽**、放不下时压缩而不是横向滚动；`BrowserTabButtonStyle.MinWidth` 必须为 0，否则压缩被样式卡住 |
 | 站点信息 | `SecurityButton_Click` → `Views/SiteInfoPopup` | 独立顶层窗口（airspace）；按钮同样用 `DialogButtonStyle` / `DialogPrimaryButtonStyle` |
 | 证书错误 | `BrowserTab` 的 `ServerCertificateErrorDetected` → `TabManager.CertificateErrorDetected` → `AskAboutCertificateError` | 只对顶层导航询问，子资源走默认 |
 | 页内查找条（Ctrl+F） | `Views/FindBarWindow.xaml(.cs)`；`MainWindow.Find.cs` 的 `ShowFindBarAsync` / `CloseFindBar` / `OnActiveTabChanged` / `ShowFindWindow` / `HideFindBarForBackground` / `RunFindAsync` / `StepFind`；工具栏放大镜 `FindButton_Click` | **独立顶层窗口**（Popup 拿不到键盘焦点）；`ShowFindWindow` 里先 `BringToForeground` 再延后聚焦；查找状态按 `tab.Id` 存于 `_findStates`；切后台/最小化隐藏，回前台按当前标签状态恢复；**首次打开预填页面选区**（`GetSelectedTextAsync`，上限 150 字符）。查找条**不画放大镜图标**。JSON 查找跳转依赖环境参数关闭 Edge JSON 查看器，见 `flows.md` §3.8 |
@@ -45,7 +46,7 @@
 
 | 我要改的东西 | 关键函数 / 锚点 | 备注 |
 |---|---|---|
-| 新增标签 | `TabManager.CreateAsync` | 顺序：入集合 →（可选挪位）→ 接线 → 创建引擎（除非 `deferLoad`）→ 激活 → 导航；`insertAt` 供「在右侧新增」 |
+| 新增标签 | `TabManager.CreateAsync` | 顺序：入集合 →（可选挪位）→ 接线 → 创建引擎（除非 `deferLoad`）→ 激活 → 导航；`insertAt` 供「在右侧新增」，`opener` 记录 Ctrl+单击来源（连续打开的排列见 `TabInsertion`） |
 | 按需加载（惰性恢复） | `CreateAsync(deferLoad: true)` → 激活时 `Activate` → `TryEnsureEngineAsync`；引擎创建后 `BrowserTab.EngineAttached` → `IBrowserTabHost.AttachTab` | `BrowserTab.View` 可能为 `null`，所有调用点要空安全 |
 | 未加载标签的地址/标题/缩放 | `BrowserTab.SetInitialLocation` / `ZoomFactor` / `_pendingUrl` / `_pendingZoom` | 引擎就绪后自动补导航与缩放 |
 | 重开已关闭的标签 | `TabManager.ReopenLastClosedAsync` + `ClosedTabHistory` | `Close` 时入栈（Dispose 前取状态） |
@@ -60,7 +61,7 @@
 | 安全图标数据来源 | `BrowserTab.EnableSecurityEventsAsync` / `OnSecurityStateChanged` | CDP `Security.enable` + `securityStateChanged` |
 | favicon 获取 | `BrowserTab.UpdateFaviconAsync` | `Core.GetFaviconAsync(Png)` |
 | 历史入库时机 | `TabManager.RecordHistory`（订阅 `BrowserTab.NavigationFinished`） | 跳过 `browser://`/`about:`/`file://` |
-| 新窗口请求转新标签 | `TabManager.WireTabEvents` 的 `NewWindowRequested` | |
+| 新窗口请求转新标签 | `TabManager.WireTabEvents` 的 `NewWindowRequested` + `TabInsertion.RightOfOpener`；`BrowserTab` 里用 `Keyboard.Modifiers` 判定 Ctrl+单击 | Ctrl+单击 = **后台标签 + 插到发起标签右侧**（连续打开按顺序向右）；target=_blank / window.open 仍追加末尾并激活 |
 | WebView2 设置项 | `BrowserTab.ConfigureSettings`；环境参数在 `BrowserEnvironmentProvider.CreateAsync` | 注意 `AreBrowserAcceleratorKeysEnabled=false`（F12 必须由宿主显式调 `OpenDevToolsWindow`）；`--disable-features=msEdgeJSONViewer` 关闭虚拟滚动的 JSON 查看器，保证页内查找可用（见 `flows.md` §3.8） |
 | 页内查找（引擎） | `BrowserTab.StartFindAsync` / `FindNext` / `FindPrevious` / `StopFind` / `GetSelectedTextAsync` / `BuildFindStartScript` | 优先 `CoreWebView2.Find`；旧运行时自动退回 JS（含滚动条刻度条），JS 用 `Range` 矩形滚动并跳过隐藏文本；见 `flows.md` §3.8 |
 | 新开标签聚焦地址栏 | `MainViewModel.NewTabOpened` 事件（`NewTabAsync` 完成后触发）→ `MainWindow` 订阅调 `FocusAddressBar` | 只覆盖用户主动开标签（Ctrl+T / 菜单 / + 按钮）；target=_blank、中间点击等非主动创建不抢焦点 |

@@ -50,8 +50,9 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 
 | 任务类型 | 该读（仅限） | 可忽略 | 入口小节 |
 |---|---|---|---|
-| 改外壳 UI（标签条/工具栏/地址栏/窗口按钮） | `Views/MainWindow.xaml(.cs)`、`Themes/*`、`Interop/NativeMethods.cs`、`Common/Converters.cs` | Browser/、Storage/、Assets/ | §2.1、§7 |
-| 改标签页行为（导航/事件/安全图标/favicon/重开/拖拽排序） | `Browser/BrowserTab.cs`、`Browser/TabManager.cs`、`Browser/ClosedTabHistory.cs` | Views/（除非动标签条交互）、Assets/、Storage/ | §2.2 |
+| 改外壳 UI（标签条/工具栏/地址栏/窗口按钮） | `Views/MainWindow.xaml(.cs)`、`Views/TabStripMetrics.cs`、`Themes/*`、`Interop/NativeMethods.cs`、`Common/Converters.cs` | Browser/、Storage/、Assets/ | §2.1、§7 |
+| 改标签页行为（导航/事件/安全图标/favicon/重开/拖拽排序/新建位置） | `Browser/BrowserTab.cs`、`Browser/TabManager.cs`、`Browser/TabInsertion.cs`、`Browser/ClosedTabHistory.cs` | Views/（除非动标签条交互）、Assets/、Storage/ | §2.2 |
+| 改链接悬停地址提示 | `Views/MainWindow.Status.cs`、`Views/LinkStatusWindow.xaml(.cs)`、`Interop/NativeMethods.cs`（`MakeClickThrough`） | Browser/、Storage/、Assets/ | §2.1、§7 |
 | 多窗口 / 无痕 / 窗口级装配 | `Services/BrowserWindowManager.cs`、`Browser/BrowserSession.cs`、`Views/MainWindow.xaml.cs`（窗口与几何部分） | Storage/、Assets/ | arch/flows.md §3.5 |
 | 改地址栏（解析/下拉建议） | `Browser/AddressBarResolver.cs`、`Services/OmniboxSuggestions.cs`、`Views/AddressBarPopup.xaml(.cs)`、`ViewModels/MainViewModel.cs`（Suggestions 部分） | Storage/、Assets/ | arch/flows.md §3.6 |
 | 改全屏 / 站点信息 / 证书提示 | `Views/MainWindow.xaml(.cs)`（`ToggleFullScreen` / `SecurityButton_Click` / `AskAboutCertificateError`）、`Views/SiteInfoPopup.xaml(.cs)`、`Interop/NativeMethods.cs`（`FillMonitor`）、`Browser/BrowserTab.cs`（`FullScreenChanged` / `CertificateErrorDetected`） | Storage/、Assets/ | §2.1、§7 |
@@ -86,7 +87,8 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Assets/sc-browser.ico` + `docs/icons/` | 应用图标（exe 内嵌 + 窗口 `Icon`）；`docs/icons/` 是设计源（SVG 为源，附各尺寸导出） | 换图标 |
 | `src/ScBrowser/Browser/BrowserEnvironmentProvider.cs` | 创建并缓存**唯一**的 WebView2 环境（含扩展总开关、Edge JSON 查看器开关） | 改环境级选项（代理/扩展开关/浏览器参数） |
 | `src/ScBrowser/Browser/BrowserTab.cs` | **单标签页**：全部可观察状态 + **按需创建**的 WebView2 引擎 + 事件接线 + 页内查找（原生/JS 兜底） | 改单页行为（导航/事件/图标/查找）；引擎生命周期见 §7 |
-| `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建（含惰性）/关闭/切换/相邻选择/历史记录 + **按需初始化引擎** + 网页颜色方案 | 改标签生命周期语义 |
+| `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建（含惰性）/关闭/切换/相邻选择/历史记录 + **按需初始化引擎** + 网页颜色方案 + Ctrl+单击的右侧插入 | 改标签生命周期语义 |
+| `src/ScBrowser/Browser/TabInsertion.cs` | 「Ctrl+单击新标签插在哪」的纯函数：发起标签右侧、跳过由它连续打开的标签（`Opener` 链） | 改新标签排列规则 |
 | `src/ScBrowser/Browser/WebTheme.cs` | 应用主题 → `CoreWebView2Profile.PreferredColorScheme` 映射 | 改「深色如何影响网页」 |
 | `src/ScBrowser/Browser/BrowserSession.cs` | 会话类型（普通/无痕）→ WebView2 控制器选项 | 加新的隔离会话 |
 | `src/ScBrowser/Browser/ClosedTabHistory.cs` | 「最近关闭的标签」栈（Ctrl+Shift+T，容量 25） | 改重开策略 |
@@ -119,6 +121,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Views/Controls/BrowserContentHost.cs` | 内容区宿主实现（WebView2 挂载与显示切换） | 改内容区挂载方式 |
 | `src/ScBrowser/Views/AddressBarPopup.xaml(.cs)` | 地址栏下拉浮层（独立顶层窗口，规避 airspace） | 改下拉外观/交互 |
 | `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的纯函数换算：落点（指针落在哪个槽位）、标签条命中判定（垂直容差 15 = Chrome 磁性）、让位动画补偿量 `SlideCompensation`，纯函数 + 单测 | 改拖拽落点 / 分窗判定规则 |
+| `src/ScBrowser/Views/TabStripMetrics.cs` | 标签宽度换算（纯函数 + 单测）：等宽、按可用宽度压缩、最小 28 / 最大 220，保证总宽不超视口 | 改标签宽度/溢出策略 |
 | `src/ScBrowser/Views/TabStripSlideAnimator.cs` | Chrome 式让位/落回动画的视图层：每容器补偿 `TranslateTransform` + 指数衰减（τ≈66ms），换位前快照、换位后结算、松手落回、窗口关闭清理 | 改让位动画手感 |
 | `src/ScBrowser/Assets/ui/settings/*` | **WebUI 设置页**：Chrome 式「左侧分类导航 + 右侧内容」，每个分类一个独立页面（hash 路由：`browser://settings#downloads` 等，无 hash 显示分类卡片首页）；「关于 ScBrowser」条目承载原关于弹窗内容 | 改设置页 |
 | `src/ScBrowser/Views/BookmarkMenuWindow.xaml(.cs)` | 地址栏星标的弹出菜单（名称/网址/文件夹/完成/移除，Chrome 同款，独立顶层窗口；另可作「新建文件夹」模式） | 改星标菜单 |
@@ -127,8 +130,10 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Views/MainWindow.Toolbar.cs` | 主窗口分册：自定义工具栏（拼图菜单行内图钉 / 工具栏右键自定义菜单 / 扩展按钮右键菜单） | 改工具栏扩展交互 |
 | `src/ScBrowser/Views/SiteInfoPopup.xaml(.cs)` | 站点信息浮层（来源 / 安全状态 / 站点权限 / 清除站点数据） | 改站点信息与权限管理 |
 | `src/ScBrowser/Views/FindBarWindow.xaml(.cs)` | **浮动查找条**（独立顶层窗口，输入框/计数/上一下一/关闭）；搜索逻辑在 `MainWindow.Find.cs` | 改查找条外观与交互 |
+| `src/ScBrowser/Views/LinkStatusWindow.xaml(.cs)` | **链接悬停地址气泡**：独立顶层窗口，盖在内容区左下角；`MakeClickThrough` 保证点击穿透/不激活；状态逻辑在 `MainWindow.Status.cs` | 改悬停提示外观 |
+| `src/ScBrowser/Views/MainWindow.Status.cs` | 主窗口分册：订阅激活标签的 `StatusText`，显示/定位/隐藏链接悬停气泡 | 改悬停提示行为 |
 | `src/ScBrowser/Views/ExtensionPopupWindow.xaml(.cs)` | 扩展工具栏弹窗（同 profile 的 WebView2 + `chrome.tabs` 兼容层） | 改扩展弹窗 |
-| `src/ScBrowser/Views/MainWindow.{Tabs,Shortcuts,Find}.cs` | 主窗口的 partial 分册（标签条交互 / 快捷键 / 页内查找） | 改对应区域 |
+| `src/ScBrowser/Views/MainWindow.{Tabs,Shortcuts,Find,Status}.cs` | 主窗口的 partial 分册（标签条交互与宽度 / 快捷键 / 页内查找 / 链接悬停气泡） | 改对应区域 |
 | `src/ScBrowser/Assets/ui/**` | **WebUI 内部页面**（HTML/CSS/JS） | 改内部页面 |
 | `src/ScBrowser/Assets/ui/common/browser-api.js` | WebUI 侧消息桥（协议客户端） | 改协议 |
 
@@ -268,19 +273,24 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   （与 Chrome 进程模型一致）。不要为了省内存改成单 WebView2 反复导航——会丢状态且切换卡顿。
 - **airspace（空气墙）**：WebView2 是 HWND 控件，任何 WPF 元素都无法绘制在其之上。
   因此**浮层必须走独立顶层窗口**（主菜单用 `ContextMenu` 正是这个原因）。
-- **ZIP 段必须切到独立流再解包**：ZIP 的中央目录偏移是相对归档起点记录的，
-  `ZipArchive` 从非零偏移的流起读会报 "End Of Central Directory ... does not correspond"。
+- **链接悬停气泡是点击穿透的顶层窗口**（airspace）：必须设 `WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`，
+  否则会吃掉链接点击、抢焦点；实现见 `NativeMethods.MakeClickThrough` + `Views/LinkStatusWindow`。
+  **不要改回布局里的底部条**——那样悬停时会压缩网页视口。
+- **标签压缩宽度**：`BrowserTabButtonStyle.MinWidth` 必须为 0；`TabStripMetrics.ResolveTabWidth` 按
+  `TabScroller` 视口均分并 `Math.Floor` 扣间距，否则亚像素会撑出 `ScrollableWidth > 0`（横向滚动又回来）。
+- **Ctrl+单击新标签位置**：不能每次都插「发起标签 + 1」（顺序会反转）；新标签记 `Opener`，沿
+  `Opener == 发起标签` 的连续段向右跳过（`TabInsertion.RightOfOpener`）。`NewWindowRequested` 不带修饰键，
+  只能同步读 `Keyboard.Modifiers`。
+- **ZIP 段必须切到独立流再解包**：中央目录偏移相对归档起点，从非零偏移起读会报 "End Of Central Directory ... 不对应"。
 - **`CoreWebView2BrowsingDataKinds` 没有 `None`**：用 `(CoreWebView2BrowsingDataKinds)0` 作为空集起点。
 - **`TotalBytesToReceive` 是 `ulong?`、`BytesReceived` 是 `long`**：算进度前先统一成 `long`。
 - **MVVM 源生成器命名冲突**：`[ObservableProperty] _activeTab` 会生成 `OnActiveTabChanged` 部分方法钩子，
   自己再写同名方法会 CS0111；本项目把自定义方法命名为 `HandleActiveTabChanged`。
 - **XML 注释里不能出现连续 `--`**：XAML 注释中的装饰线要用 `====`。
 - **`IsKeyboardFocusWithin` 是只读依赖属性**：不能在 XAML 里绑定写回，只能走代码。
-- **自绘外壳的第三个坑：缩放带必须内缩**：WebView2 是独立子 HWND，会吃掉落在它身上的鼠标事件——
-  缩放命中带若压在网页上，`WindowChrome` 的缩放判定永远轮不到。因此根布局留了
-  `Margin="6,0,6,6"` 的内缩带（`MainWindow.xaml`），改布局时别把这圈吃掉，否则窗口又变成拖不动尺寸。
-  **但最大化时必须把它收成 0**：最大化不需要缩放，留着白让出 14×8 px 视口，
-  宽度卡得紧的页面（例如自建面板）会因此冒出滚动条——`MainWindow.ApplyWindowedFrame` 负责切换。
+- **缩放带必须内缩**：WebView2 会吃掉落在它身上的鼠标事件，所以根布局留了 `Margin="2,0,2,2"`
+  的内缩带（`MainWindow.xaml`），改布局时别把它吃掉；**最大化时归零**（`ApplyWindowedFrame`），
+  否则白让出视口、宽页面会冒出滚动条。
 - **任何网页都能 `chrome.webview.postMessage`**：WebView2 给所有顶层文档注入消息桥，并非只给内部页面。
   宿主能力必须按 `args.Source` 鉴权（`InternalPageRegistry.IsMessageAllowed`），页面传来的路径一律不信（下载按 id 查库）。
   内部页面因此用自定义 scheme `browser://<页面>/`（每页一个来源）而不是 `file://`；也不要换成 `https` 虚拟主机映射——
@@ -290,21 +300,17 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   资源过滤器优先用带 `RequestSourceKinds` 的重载，旧运行时退回旧重载（`BrowserTab.ServeInternalPages`）。
 - **防目录穿越要「目录 + 分隔符」前缀比较**（`PathSafety.IsUnderDirectory`）：只比目录本身，
   `…\foo-evil\x` 也以 `…\foo` 开头，同级同前缀目录会被放行。
-- **标签状态与引擎分离（惰性恢复）**：`BrowserTab` 的构造函数**不再创建 WebView2**，`View` 在第一次
-  `EnsureInitializedAsync` 时才创建并触发 `EngineAttached`（宿主据此挂树）。会话恢复时只有激活的标签
-  立刻建引擎，其余只持有地址/标题，激活时才加载——标签数不再等于 WebView2 进程数。
-  **改单页行为时注意**：`View` / `Core` 都可能为 `null`，导航与缩放会被记成「待处理」，初始化完成后补上；
-  宿主挂载必须在 `EnsureCoreWebView2Async` 之前完成，所以挂树动作只能由 `EngineAttached` 触发，不要提前调用。
-  顺带的好处：恢复出来的后台标签不再重复写历史（导航完成才记历史）。
-- **`ClearValue(VisibilityProperty)` 会把 XAML 绑定一起清掉**：全屏需要收起错误条 / 状态栏，
-  但它们是绑定控制可见性的。清掉本地值等于连绑定一起删，退出全屏后绑定失效、退回默认值
-  `Visible`，于是留下一条没有文字的红条。正确做法是把「chrome 是否可见」做成窗口依赖属性
-  （`MainWindow.ChromeVisible`），与文本一起走 `TextAndChromeVisibility` 多值绑定。
+- **标签状态与引擎分离（惰性恢复）**：`BrowserTab` 构造不创建 WebView2，`View` 在首次 `EnsureInitializedAsync`
+  时才创建并触发 `EngineAttached`（宿主据此挂树）。会话恢复只立即加载激活标签，其余激活时才加载。
+  **`View` / `Core` 可能为 `null`**，导航与缩放会记成「待处理」；挂树必须在 `EnsureCoreWebView2Async` 之前，
+  所以只能由 `EngineAttached` 触发。顺带好处：后台标签不再重复写历史。
+- **`ClearValue(VisibilityProperty)` 会把 XAML 绑定一起清掉**：全屏收起错误条 / 书签栏时不能给它们赋本地值，
+  否则绑定失效、退出全屏后一直可见。正确做法是 `MainWindow.ChromeVisible` 依赖属性 + `TextAndChromeVisibility` 多值绑定。
 - **先移除活跃项再发变更通知**：`DownloadManager.OnProgress` 完成时若先 `Changed` 再 `_active.TryRemove`，
   界面在通知里读到的 `ActiveCount` 还是旧值，工具栏下载指示器就永远不消失。
-- **全屏用 Win32 铺满显示器**：`WindowState=Maximized` 只铺工作区（留出任务栏），不能当全屏用。
-  `NativeMethods.FillMonitor` 按显示器完整矩形 `SetWindowPos`；退出时要把 `Left/Top/Width/Height`
-  重新设回去（Win32 挪过窗口后 WPF 的值已不同步）。全屏时还要把 `WindowChrome.CaptionHeight` 归零，否则点网页顶部会变成拖窗口。
+- **全屏用 Win32 铺满显示器**：`WindowState=Maximized` 只铺工作区，不能当全屏用。`NativeMethods.FillMonitor`
+  按显示器完整矩形 `SetWindowPos`；退出时要把 `Left/Top/Width/Height` 设回去（Win32 挪过窗口后 WPF 值已不同步），
+  并把 `WindowChrome.CaptionHeight` 归零，否则点网页顶部会变成拖窗口。
 - **证书错误只该问「顶层导航」**：`ServerCertificateErrorDetected` 对每个子资源都会触发，
   逐个弹窗不可用。`BrowserTab` 用 `_pendingMainFrameUri`（NavigationStarting 记下、Completed 清空）过滤。
 - **CRX3 的头部有两把公钥**：商店包一般同时带 `sha256_with_rsa` 与 `sha256_with_ecdsa`，
@@ -318,19 +324,13 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   `CoreWebView2ControllerOptions`（见 §3.5）。
 - **主题令牌键必须成对存在**：`Theme.Light.xaml` 与 `Theme.Dark.xaml` 键名不一致时，换肤会缺键。
 - **自绘窗口外壳的两个坑**（`WindowStyle=None` + `WindowChrome`）：
-  1. **最大化会被撑出屏幕**：系统仍按「带边框窗口」算最大化尺寸，把隐形缩放边框也算进去，
-     窗口于是溢出屏幕若干像素（本机实测 7px），贴着边缘的内容被裁掉（右侧关闭按钮首当其冲）。
-     解法是在 `WM_GETMINMAXINFO` 里把尺寸钉到显示器工作区（`NativeMethods.ClampMaximizedToWorkArea`），
-     别用「最大化时补 Margin」那种猜边宽的写法，多屏/DPI 变化下会错。
-  2. **标题栏区域内点击会变成拖窗口**：`CaptionHeight` 覆盖的整条标签条都走了标题栏命中测试，
-     里面的按钮/标签必须标 `WindowChrome.IsHitTestVisibleInChrome="True"`（本项目统一写在
-     `Controls.xaml` 的按钮样式里）。验证手法：`SendMessage(hwnd, WM_NCHITTEST, …)` 看返回
-     是 `HTCAPTION` 还是 `HTCLIENT`——比肉眼试点更可靠。
-- **绑定的路径取不到值时，目标属性会退回「类型默认值」**：`Visibility` 的默认值是
-  **Visible**（不是 Collapsed）。所以 `Visibility="{Binding ActiveTab.LastError, Converter=...}"`
-  在 `ActiveTab` 为 `null` 的那一瞬间（新建窗口、首个标签还没建好）会**显示一个没有内容的红条**，
-  随后又消失——看起来就是「开窗时红条闪一下」。凡是靠绑定控制显隐的地方，
-  都要显式写 `FallbackValue=Collapsed`（必要时再加 `TargetNullValue`）。
+  1. **最大化会被撑出屏幕**：系统按「带边框窗口」算最大化尺寸，溢出屏幕若干像素、边缘内容被裁掉。
+     在 `WM_GETMINMAXINFO` 里钉到显示器工作区（`NativeMethods.ClampMaximizedToWorkArea`），别用补 Margin 的写法。
+  2. **标题栏区域内点击会变成拖窗口**：`CaptionHeight` 覆盖的标签条里，按钮/标签必须标
+     `IsHitTestVisibleInChrome="True"`（见 `Controls.xaml`）。可用 `WM_NCHITTEST` 的返回值验证。
+- **绑定的路径取不到值时，目标属性会退回类型默认值**：`Visibility` 的默认值是 **Visible**，所以
+  `ActiveTab` 为 `null` 的瞬间（新窗口首个标签还没建好）红条会闪一下。凡是绑定控制显隐的地方，
+  都要显式写 `FallbackValue=Collapsed`（必要时加 `TargetNullValue`）。
 - **WebView2 的默认底色也要跟着主题走**：`WebView2.DefaultBackgroundColor` 默认是**白色**，
   深色主题下新建标签/新窗口会在页面画出来之前先闪一下白底。见
   `WebTheme.DefaultBackground` + `TabManager.ApplyWebTheme`（与颜色方案一起设）。

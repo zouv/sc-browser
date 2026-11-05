@@ -220,11 +220,27 @@ public partial class MainWindow
         return true;
     }
 
+    /// <summary>
+    /// 重算所有标签的统一宽度（Chrome 式：等宽，放不下就压缩）。
+    /// 用 <see cref="TabScroller"/> 的视口宽度——它已经扣掉了右侧窗口按钮与无痕徽标，
+    /// 是标签真正能占用的空间。
+    /// </summary>
+    private void UpdateTabItemWidth() =>
+        TabItemWidth = TabStripMetrics.ResolveTabWidth(TabScroller.ActualWidth, _tabs.Tabs.Count);
+
     protected override void OnClosed(EventArgs e)
     {
         // 窗口关闭时必须摘钩子：回调里会访问已经销毁的 WPF 元素。
         _tabWheelProbe.Stop();
         UninstallTabWheelHook();
+
+        // 标签可能比窗口活得久（最近关闭栈/会话），别让状态订阅拖住窗口。
+        if (_statusTab is { } statusTab)
+        {
+            statusTab.PropertyChanged -= OnStatusTabPropertyChanged;
+            _statusTab = null;
+        }
+
         base.OnClosed(e);
     }
 
