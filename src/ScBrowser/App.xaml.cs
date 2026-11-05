@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,34 @@ public partial class App : Application
 {
     private IHost? _host;
     private SingleInstance? _instance;
+
+    /// <summary>
+    /// 对外展示的应用版本号（关于页 / 启动日志）。
+    /// <para>
+    /// 不能用 <c>Assembly.GetName().Version</c>：程序集版本固定四段，
+    /// <c>&lt;Version&gt;0.7.0&lt;/Version&gt;</c> 会被补成 <c>0.7.0.0</c>。
+    /// SDK 生成的 <c>InformationalVersion</c> 是 <c>0.7.0+&lt;提交哈希&gt;</c>，
+    /// 去掉 <c>+</c> 之后的构建元数据即为用户期望的版本号。
+    /// </para>
+    /// </summary>
+    public static string DisplayVersion { get; } = ResolveDisplayVersion();
+
+    private static string ResolveDisplayVersion()
+    {
+        var informational = typeof(App).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            var plus = informational.IndexOf('+');
+            return plus >= 0 ? informational[..plus] : informational;
+        }
+
+        // 兜底：AssemblyVersion 是四段，去掉自动补齐的修订号。
+        var version = typeof(App).Assembly.GetName().Version;
+        return version is null ? "未知" : $"{version.Major}.{version.Minor}.{version.Build}";
+    }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -82,7 +111,7 @@ public partial class App : Application
         }
 
         logger.LogInformation("ScBrowser {Version} 启动，WebView2 运行时 {Runtime}，数据目录 {DataRoot}",
-            typeof(App).Assembly.GetName().Version, runtimeVersion, AppPaths.AppDataRoot);
+            DisplayVersion, runtimeVersion, AppPaths.AppDataRoot);
 
         // 1) 建表（幂等）
         services.GetRequiredService<BrowserDatabase>().Initialize();

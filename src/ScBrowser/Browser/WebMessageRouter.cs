@@ -531,7 +531,7 @@ public sealed class WebMessageRouter
             case "app.info":
                 return new
                 {
-                    version = typeof(App).Assembly.GetName().Version?.ToString() ?? "0.1.0",
+                    version = App.DisplayVersion,
                     userDataFolder = AppPaths.UserDataFolder,
                     managedExtensionsFolder = AppPaths.ManagedExtensionsFolder,
                     databaseFile = AppPaths.DatabaseFile,

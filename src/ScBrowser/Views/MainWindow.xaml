@@ -280,7 +280,8 @@
                         </ItemsControl>
 
                         <!-- 新建标签 -->
-                        <Button Style="{StaticResource ToolbarButtonStyle}"
+                        <Button x:Name="NewTabButton"
+                                Style="{StaticResource ToolbarButtonStyle}"
                                 Content="&#xE710;"
                                 Margin="4,0,0,0"
                                 VerticalAlignment="Center"

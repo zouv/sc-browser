@@ -62,8 +62,9 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
     public TabManager? Owner { get; internal set; }
 
     /// <summary>
-    /// 由哪个标签页触发打开（Ctrl+单击等）。只用于排列：连续从同一标签打开的新标签
-    /// 会插在它右侧并按打开顺序向右排（见 <see cref="TabInsertion.RightOfOpener"/>）。
+    /// 由哪个标签页触发打开（Ctrl+单击、普通左键打开 target=_blank / window.open 等）。
+    /// 只用于排列：连续从同一标签打开的新标签会插在它右侧并按打开顺序向右排
+    /// （见 <see cref="TabInsertion.RightOfOpener"/>）。
     /// </summary>
     public BrowserTab? Opener { get; internal set; }
 
@@ -563,7 +564,7 @@ public sealed partial class BrowserTab : ObservableObject, IDisposable
                 return;
             }
 
-            // Ctrl+单击 = Chrome 的「在后台右侧新开」：不抢焦点，新标签插到本标签右边。
+            // Ctrl+单击 = Chrome 的「后台打开」：不抢焦点；插入位置由 TabManager 统一按发起标签计算。
             // WebView2 的事件参数不带修饰键，只能从当前键盘状态判断（事件在点击处理中同步触发）。
             var ctrlClick = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
 
@@ -1576,7 +1577,7 @@ public sealed class NewWindowRequestedEventArgs : EventArgs
     /// <summary>是否应抢占焦点（即切换到新标签）。</summary>
     public bool Foreground { get; }
 
-    /// <summary>是否由 Ctrl+单击触发：新标签应插到发起标签右侧，且保持后台打开。</summary>
+    /// <summary>是否由 Ctrl+单击触发：保持后台打开（插入位置对所有来源一致）。</summary>
     public bool FromCtrlClick { get; }
 }
 

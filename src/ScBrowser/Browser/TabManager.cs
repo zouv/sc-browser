@@ -585,17 +585,13 @@ public sealed class TabManager
             {
                 if (tab.Owner is { } owner)
                 {
-                    // Ctrl+单击（Chrome 语义）：插到发起标签右侧，连续打开时按顺序向右排，
-                    // 且留在后台；其他来源（target=_blank / window.open）仍是追加到末尾并激活。
-                    var insertAt = e.FromCtrlClick
-                        ? TabInsertion.RightOfOpener(owner.Tabs, tab)
-                        : null;
-
+                    // 所有新窗口/新标签请求都插到发起标签右侧：Ctrl+单击（后台）与普通左键点击
+                    // target=_blank / window.open（前台自动切换）共用同一套位置规则，连续打开按顺序向右排。
                     await owner.CreateAsync(
                         e.Url,
                         activate: e.Foreground,
-                        insertAt: insertAt,
-                        opener: e.FromCtrlClick ? tab : null).ConfigureAwait(true);
+                        insertAt: TabInsertion.RightOfOpener(owner.Tabs, tab),
+                        opener: tab).ConfigureAwait(true);
                 }
             }
             catch (Exception ex)

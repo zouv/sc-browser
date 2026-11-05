@@ -74,7 +74,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 
 | 文件 | 职责 | 何时改它 |
 |---|---|---|
-| `src/ScBrowser/App.xaml(.cs)` | 应用入口：DI 装配、Serilog 日志、全局异常兜底、启动期初始化顺序 | 增删服务注册 / 改启动流程 |
+| `src/ScBrowser/App.xaml(.cs)` | 应用入口：DI 装配、Serilog 日志、全局异常兜底、启动期初始化顺序；`DisplayVersion` 是对外版本号的唯一来源（关于页 / 日志） | 增删服务注册 / 改启动流程 / 改版本展示 |
 | `src/ScBrowser/app.manifest` | PerMonitorV2 DPI 感知、Win10/11 兼容性声明 | 改 DPI 策略 |
 | `src/ScBrowser/Infrastructure/AppPaths.cs` | **路径单一源**（用户数据/扩展/日志/DB/会话/WebUI）；`SCBROWSER_DATA_DIR` 开发覆盖 | 新增落盘位置 |
 | `src/ScBrowser/Infrastructure/PathSafety.cs` | 防目录穿越的路径判定（**补分隔符**比较），CRX 解包与内部页面资源共用 | 新增「把外部路径落到本地」的地方 |
@@ -121,7 +121,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Views/Controls/BrowserContentHost.cs` | 内容区宿主实现（WebView2 挂载与显示切换） | 改内容区挂载方式 |
 | `src/ScBrowser/Views/AddressBarPopup.xaml(.cs)` | 地址栏下拉浮层（独立顶层窗口，规避 airspace） | 改下拉外观/交互 |
 | `src/ScBrowser/Views/TabReorder.cs` | 标签拖拽的纯函数换算：落点（指针落在哪个槽位）、标签条命中判定（垂直容差 15 = Chrome 磁性）、让位动画补偿量 `SlideCompensation`，纯函数 + 单测 | 改拖拽落点 / 分窗判定规则 |
-| `src/ScBrowser/Views/TabStripMetrics.cs` | 标签宽度换算（纯函数 + 单测）：等宽、按可用宽度压缩、最小 28 / 最大 220，保证总宽不超视口 | 改标签宽度/溢出策略 |
+| `src/ScBrowser/Views/TabStripMetrics.cs` | 标签宽度换算（纯函数 + 单测）：等宽、按可用宽度（已扣除「+」新建按钮）压缩、最小 28 / 最大 220，保证总宽不超视口 | 改标签宽度/溢出策略 |
 | `src/ScBrowser/Views/TabStripSlideAnimator.cs` | Chrome 式让位/落回动画的视图层：每容器补偿 `TranslateTransform` + 指数衰减（τ≈66ms），换位前快照、换位后结算、松手落回、窗口关闭清理 | 改让位动画手感 |
 | `src/ScBrowser/Assets/ui/settings/*` | **WebUI 设置页**：Chrome 式「左侧分类导航 + 右侧内容」，每个分类一个独立页面（hash 路由：`browser://settings#downloads` 等，无 hash 显示分类卡片首页）；「关于 ScBrowser」条目承载原关于弹窗内容 | 改设置页 |
 | `src/ScBrowser/Views/BookmarkMenuWindow.xaml(.cs)` | 地址栏星标的弹出菜单（名称/网址/文件夹/完成/移除，Chrome 同款，独立顶层窗口；另可作「新建文件夹」模式） | 改星标菜单 |
@@ -277,10 +277,10 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
   否则会吃掉链接点击、抢焦点；实现见 `NativeMethods.MakeClickThrough` + `Views/LinkStatusWindow`。
   **不要改回布局里的底部条**——那样悬停时会压缩网页视口。
 - **标签压缩宽度**：`BrowserTabButtonStyle.MinWidth` 必须为 0；`TabStripMetrics.ResolveTabWidth` 按
-  `TabScroller` 视口均分并 `Math.Floor` 扣间距，否则亚像素会撑出 `ScrollableWidth > 0`（横向滚动又回来）。
-- **Ctrl+单击新标签位置**：不能每次都插「发起标签 + 1」（顺序会反转）；新标签记 `Opener`，沿
-  `Opener == 发起标签` 的连续段向右跳过（`TabInsertion.RightOfOpener`）。`NewWindowRequested` 不带修饰键，
-  只能同步读 `Keyboard.Modifiers`。
+  `TabScroller` 视口**扣除「+」新建按钮宽度**后均分并 `Math.Floor` 扣间距，否则总宽会撑出 `ScrollableWidth > 0`。
+- **新标签插入位置**：所有 `NewWindowRequested`（Ctrl+单击后台、普通左键 `target=_blank` / `window.open` 前台）
+  都不能每次插「发起标签 + 1」（顺序会反转）；新标签记 `Opener`，沿 `Opener == 发起标签` 的连续段向右跳过
+  （`TabInsertion.RightOfOpener`）。`NewWindowRequested` 不带修饰键，`Ctrl` 只能同步读 `Keyboard.Modifiers` 判断。
 - **ZIP 段必须切到独立流再解包**：中央目录偏移相对归档起点，从非零偏移起读会报 "End Of Central Directory ... 不对应"。
 - **`CoreWebView2BrowsingDataKinds` 没有 `None`**：用 `(CoreWebView2BrowsingDataKinds)0` 作为空集起点。
 - **`TotalBytesToReceive` 是 `ulong?`、`BytesReceived` 是 `long`**：算进度前先统一成 `long`。

@@ -58,6 +58,7 @@ public partial class MainWindow : Window
 
         // 标签等宽并在放不下时压缩（不横向滚动）：可用宽度随窗口大小变、标签数随增删变。
         TabScroller.SizeChanged += (_, _) => UpdateTabItemWidth();
+        NewTabButton.SizeChanged += (_, _) => UpdateTabItemWidth();
         _tabs.Tabs.CollectionChanged += (_, _) => UpdateTabItemWidth();
 
         // 最后一个标签关闭即退出（Chrome 语义）。外壳自己决定怎么响应，TabManager 不越权。

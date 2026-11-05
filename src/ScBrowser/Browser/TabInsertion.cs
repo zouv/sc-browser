@@ -1,11 +1,12 @@
 namespace ScBrowser.Browser;
 
 /// <summary>
-/// 「新标签插在哪里」的纯函数（Chrome 的 Ctrl+单击语义）。
+/// 「新标签插在哪里」的纯函数（Chrome 的「在发起标签右侧打开」语义）。
 /// <para>
 /// WebView2 的 <c>NewWindowRequested</c> 不告诉宿主点击位置，只给目标地址；
 /// 因此插入位置由发起标签在集合中的下标推出。连续从同一标签打开时，新标签的
 /// <see cref="BrowserTab.Opener"/> 都指向该标签，沿链向右跳过它们即可保持打开顺序。
+/// 普通左键（前台切换）与 Ctrl+单击（后台）共用这套规则。
 /// </para>
 /// </summary>
 public static class TabInsertion

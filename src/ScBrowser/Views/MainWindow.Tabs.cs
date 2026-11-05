@@ -223,10 +223,19 @@ public partial class MainWindow
     /// <summary>
     /// 重算所有标签的统一宽度（Chrome 式：等宽，放不下就压缩）。
     /// 用 <see cref="TabScroller"/> 的视口宽度——它已经扣掉了右侧窗口按钮与无痕徽标，
-    /// 是标签真正能占用的空间。
+    /// 是标签条能占用的空间；还要再扣掉滚动内容末尾的「+」按钮及其间距，
+    /// 否则标签总宽正好填满视口、再加「+」就多出一截横向溢出。
     /// </summary>
-    private void UpdateTabItemWidth() =>
-        TabItemWidth = TabStripMetrics.ResolveTabWidth(TabScroller.ActualWidth, _tabs.Tabs.Count);
+    private void UpdateTabItemWidth()
+    {
+        var newTabButtonWidth = NewTabButton.ActualWidth
+                                + NewTabButton.Margin.Left
+                                + NewTabButton.Margin.Right;
+
+        TabItemWidth = TabStripMetrics.ResolveTabWidth(
+            TabScroller.ActualWidth - newTabButtonWidth,
+            _tabs.Tabs.Count);
+    }
 
     protected override void OnClosed(EventArgs e)
     {
