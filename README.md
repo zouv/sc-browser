@@ -94,6 +94,27 @@ sh manager.sh verify    # 提交前闸门：构建(-warnaserror) + 单测 + 文�
 sh manager.sh package   # 打包到 dist/（dev zip + release 可运行目录 / zip / setup）
 ```
 
+## manager.sh 命令一览
+
+所有命令通过 `sh manager.sh <命令>` 执行（Windows 用 Git Bash），与 `sh manager.sh help` 一致：
+
+| 命令 | 说明 |
+|---|---|
+| `build` | 构建（Debug） |
+| `release` | 构建（Release） |
+| `run` | 前台启动（dotnet run，可传启动参数） |
+| `start` | 运行已构建的 exe（后台） |
+| `stop` | 结束 ScBrowser 进程 |
+| `test` | 运行单元测试 |
+| `verify` | 构建（-warnaserror）+ 测试 + 文档体检（提交前跑这个） |
+| `fmt` | 格式化代码 |
+| `package` | 打包到 `dist/`（dev zip + release setup/unpack zip） |
+| `clean` | 清理构建产物（保留 `dist/` 成品包） |
+| `data` | 查看应用数据目录 |
+| `logs` | 跟踪应用日志末尾 n 行（默认 80） |
+| `reset` | 清空全部本地数据（危险，需确认） |
+| `help` | 显示本帮助 |
+
 **不装 bash 也能用**：仓库根提供等价的 Windows 批处理脚本 `build.bat` / `run.bat` / `test.bat` /
 `verify.bat` / `clean.bat` / `package.bat` / `ci.bat`（纯 cmd + dotnet；`ci.bat` 一键跑完
 「清理 → 闸门 → 打包」）。`manager.sh` 是命令语义的单一来源，两者保持同步。

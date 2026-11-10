@@ -1,0 +1,7 @@
+# 由 vibe-coding-starter/init.sh 生成；用来判断本项目的文档体系 / 脚手架是否落后于模板（升级见模板 README.md）。
+type=custom
+base_type=desktop-csharp-webview
+project_name=sc-browser
+template_version=2026-11-10.1
+created=2026-11-10
+upgraded=2026-11-11

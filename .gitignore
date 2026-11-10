@@ -59,3 +59,12 @@ settings.json
 .cache/
 .runtime/
 
+# 环境变量（真实值绝不提交；样例 .env.example 入库）
+# IDE / 系统
+.DS_Store
+Thumbs.db
+# AI 工具的本地会话 / 个人设置（项目共享的 .claude/settings.json 与 skills 要入库）
+.claude/settings.local.json
+.claude/worktrees/
+.codex/
+.opencode/
