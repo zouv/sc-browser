@@ -168,15 +168,17 @@
         </section>
 
         <!-- 关于 ScBrowser（原「关于」弹窗的内容并入此处，Chrome 的 chrome://settings/help 同款） -->
-        <section class="settings-section card" id="about" data-title="关于 ScBrowser" data-subtitle="版本与用户数据">
-          <h2 class="card-title">关于 ScBrowser</h2>
+        <section class="settings-section card" id="about" data-title="关于 ScBrowser" data-subtitle="版本、作者与用户数据">
           <div class="about-brand">
-            <p class="about-name">ScBrowser</p>
-            <p class="about-version" id="about-version">—</p>
-            <p class="about-copyright" id="about-copyright">—</p>
-            <div class="about-actions">
-              <button class="btn" id="check-update">检查更新</button>
-              <button class="btn" id="open-extensions">打开扩展程序</button>
+            <img class="about-logo" src="../common/sc-browser.svg" alt="ScBrowser" draggable="false" />
+            <div class="about-main">
+              <p class="about-name">ScBrowser</p>
+              <p class="about-meta-line"><span id="about-version">版本 —</span><span class="about-sep">·</span><span id="about-author">作者 @zouv</span></p>
+              <p class="about-description">基于 Chromium 内核（WebView2）的 Windows 桌面浏览器，开放源代码。</p>
+              <div class="about-actions">
+                <button class="btn" id="check-update">检查更新</button>
+                <button class="btn" id="open-extensions">打开扩展程序</button>
+              </div>
             </div>
           </div>
           <dl class="info" id="app-info">

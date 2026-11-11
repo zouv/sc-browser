@@ -41,8 +41,6 @@
   function loadInfo() {
     return sc.send("app.info").then(function (info) {
       document.getElementById("about-version").textContent = "版本 " + (info.version || "—");
-      document.getElementById("about-copyright").textContent =
-        "Copyright © " + new Date().getFullYear() + " ScBrowser 项目（zouv）。基于 Chromium 内核（WebView2），开放源代码。";
       document.getElementById("info-userdata").textContent = info.userDataFolder;
       document.getElementById("info-extensions").textContent = info.managedExtensionsFolder;
       document.getElementById("info-db").textContent = info.databaseFile;

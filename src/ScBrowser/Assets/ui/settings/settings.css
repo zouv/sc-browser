@@ -185,28 +185,60 @@ select.input {
 /* 关于条目（Chrome 的 chrome://settings/help 同款信息块） */
 .about-brand {
   display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.about-logo {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.about-main {
+  display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 14px;
+  flex: 1;
+  min-width: 0;
 }
 
 .about-name {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   margin: 0;
 }
 
-.about-version,
-.about-copyright {
+.about-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.about-version,
+.about-author {
   margin: 0;
+}
+
+.about-description {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
 }
 
 .about-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 /* 窄窗口退化：导航移到顶部横排 */
@@ -219,5 +251,9 @@ select.input {
     position: static;
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  .about-brand {
+    flex-direction: column;
   }
 }
