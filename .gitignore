@@ -12,6 +12,9 @@ obj/
 # 构建产物
 [Dd]ebug/
 [Rr]elease/
+# 共享技能目录也叫 release，必须保留入库
+!.claude/skills/release/
+!.claude/skills/release/SKILL.md
 publish/
 # 最终打包产物（package.bat / manager.sh package）
 dist/
