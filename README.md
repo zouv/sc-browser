@@ -115,9 +115,11 @@ sh manager.sh package   # 打包到 dist/（dev zip + release 可运行目录 / 
 | `reset` | 清空全部本地数据（危险，需确认） |
 | `help` | 显示本帮助 |
 
-**不装 bash 也能用**：仓库根提供等价的 Windows 批处理脚本 `build.bat` / `run.bat` / `test.bat` /
+**不装 bash 也能用**：仓库根提供等价的 Windows 批处理脚本 `build.bat` / `run.bat` / `dev.bat` / `test.bat` /
 `verify.bat` / `clean.bat` / `package.bat` / `ci.bat`（纯 cmd + dotnet；`ci.bat` 一键跑完
 「清理 → 闸门 → 打包」）。`manager.sh` 是命令语义的单一来源，两者保持同步。
+
+`dev.bat` 检测到运行中的 ScBrowser 时会直接强制关闭后继续构建 / 启动；`package.bat` 会先列出进程并询问，输入 Y 才强制关闭并继续，其它输入以退出码 2 取消。
 
 **打包产物**（`dist/` 已加入 `.gitignore`，`clean` 会保留成品包）：
 

@@ -213,9 +213,31 @@ cmd_package() {
   local rel_zip="${RELEASE_DIR}/ScBrowser_${version}_x64-unpack.zip"
   local setup_exe="${RELEASE_DIR}/ScBrowser_${version}_x64-setup.exe"
 
-  # 结束可能驻留的实例，避免 exe 被占用导致 package 覆盖失败。
-  if command -v taskkill >/dev/null 2>&1; then
-    taskkill //F //IM ScBrowser.exe >/dev/null 2>&1 || true
+  # 检测到运行中的实例时先询问；输入 Y 才强制关闭，其它输入取消。
+  local running=""
+  if command -v tasklist >/dev/null 2>&1; then
+    running="$(tasklist //FI "IMAGENAME eq ScBrowser.exe" 2>/dev/null | grep -i 'ScBrowser\.exe' || true)"
+  fi
+  if [ -n "${running}" ]; then
+    warn "检测到 ScBrowser 正在运行："
+    printf '%s\n' "${running}"
+    local answer=""
+    if ! read -r -p "是否强制关闭并继续打包？输入 Y 确认，其它任意输入取消: " answer; then
+      answer=""
+    fi
+    if [[ ! "${answer}" =~ ^[[:space:]]*[Yy]([Ee][Ss])?[[:space:]]*$ ]]; then
+      err "已取消打包：未关闭任何进程，也未生成新包。"
+      exit 2
+    fi
+    if command -v taskkill >/dev/null 2>&1; then
+      taskkill //F //IM ScBrowser.exe >/dev/null 2>&1 || true
+      sleep 1
+    fi
+    if command -v tasklist >/dev/null 2>&1 && tasklist //FI "IMAGENAME eq ScBrowser.exe" 2>/dev/null | grep -qi 'ScBrowser\.exe'; then
+      err "无法关闭运行中的 ScBrowser，请手动退出后重试。"
+      exit 1
+    fi
+    ok "已强制关闭运行中的实例，继续打包。"
   fi
 
   log "清理旧打包产物与暂存目录"

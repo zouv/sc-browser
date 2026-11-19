@@ -7,6 +7,9 @@ rem  sc-browser - 打包脚本（dev + release）
 rem  用法: package.bat
 rem  等价命令: sh manager.sh package
 rem
+rem  检测到运行中的 ScBrowser 时先列出进程并询问；输入 Y 才强制关闭后继续，
+rem  其它输入取消（退出码 2），不会生成新包。
+rem
 rem  产物（dist/ 已 gitignore）:
 rem    dist\dev\ScBrowser_<版本>_x64-unpack-debug.zip
 rem    dist\release\unpack\                        （可直接运行）
@@ -21,6 +24,7 @@ set "DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1"
 
 rem 注意：不要用 OUTDIR 作变量名——它是 MSBuild 保留属性 OutDir。
 set "ROOT=%~dp0"
+set "SYS=%SystemRoot%\System32"
 set "PROJ=%ROOT%src\ScBrowser\ScBrowser.csproj"
 set "PROJDIR=%ROOT%src\ScBrowser"
 set "TESTDIR=%ROOT%tests\ScBrowser.Tests"
@@ -72,8 +76,31 @@ echo  Setup   : %SETUP_EXE%
 echo ============================================================
 
 rem 结束可能驻留的实例，否则它占用的 exe 会让打包覆盖失败。
-echo Stopping any running ScBrowser instances...
-taskkill /IM ScBrowser.exe /F >nul 2>&1
+rem 只有输入 Y 才强制关闭；其它输入取消，不生成新包。
+"%SYS%\tasklist.exe" /FI "IMAGENAME eq ScBrowser.exe" 2>nul | "%SYS%\findstr.exe" /I /C:"ScBrowser.exe" >nul
+if errorlevel 1 goto :InstancesClosed
+echo.
+echo [WARN] 检测到 ScBrowser 正在运行：
+"%SYS%\tasklist.exe" /FI "IMAGENAME eq ScBrowser.exe"
+echo        强制关闭可能丢失未保存状态。
+set "ANSWER="
+set /p ANSWER="是否强制关闭并继续打包？输入 Y 确认，其它任意输入取消: "
+if /I "%ANSWER%"=="Y"   goto :StopInstances
+if /I "%ANSWER%"=="YES" goto :StopInstances
+echo.
+echo [INFO] 已取消打包：未关闭任何进程，也未生成新包。
+exit /b 2
+
+:StopInstances
+echo [INFO] 强制关闭运行中的 ScBrowser...
+"%SYS%\taskkill.exe" /F /IM ScBrowser.exe >nul 2>&1
+"%SYS%\ping.exe" -n 2 127.0.0.1 >nul
+"%SYS%\tasklist.exe" /FI "IMAGENAME eq ScBrowser.exe" 2>nul | "%SYS%\findstr.exe" /I /C:"ScBrowser.exe" >nul
+if not errorlevel 1 (
+    echo [ERROR] 无法关闭运行中的 ScBrowser，请手动退出后重试。
+    exit /b 1
+)
+:InstancesClosed
 
 rem 清理 bin/obj 与旧产物，强制一次干净的打包。
 echo Cleaning bin/obj and previous artifacts...
