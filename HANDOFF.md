@@ -18,27 +18,14 @@
 ## 状态快照
 
 - **最近更新**：2026-11-24
-- **整体状态**：✅ 无进行中的开发任务（未发布改动见 `CHANGELOG.md`）
+- **整体状态**：✅ 无进行中的开发任务（**v0.7.2 已打包并发布**）
 - **当前分支（必填）**：`main`
 - **最后验证状态**：
-  · 2026-11-24：从原发布源码仅替换本机 `dist/release/unpack/` 的图标相关文件，实查 exe、WPF 与 WebUI 资源均为新版；
-    未关闭日常实例，下次启动生效。原文件在 `.runtime/icon-rollout/backup/`，原安装包与 ZIP 不变。
-  · 2026-11-24：`sh manager.sh verify` 通过（构建 0 警告、207/207 单测；文档体检仅提示历史提交的 CHANGELOG 警告）；
-    已在深浅背景对比图标，并验证九种 PNG 尺寸、应用资源副本、调试 exe 与隔离编译的安装器均含新版七帧图标。未安装或发版。
-  · 2026-11-05：**v0.7.1 已提交推送并发布**（https://github.com/zouv/sc-browser/releases/tag/v0.7.1，
-    上传 `ScBrowser_0.7.1_x64-setup.exe` 与 `ScBrowser_0.7.1_x64-unpack.zip`）；
+  · 2026-11-24：**v0.7.2 已提交推送并发布**（https://github.com/zouv/sc-browser/releases/tag/v0.7.2，
+    上传 `ScBrowser_0.7.2_x64-setup.exe`（49,157,896 B）与 `ScBrowser_0.7.2_x64-unpack.zip`（66,011,978 B））；
     发布闸门 `sh manager.sh verify` ✅（构建 0 警告 + **207/207** 单测 + 文档体检 0 警告）；
-    隐私自查通过（release exe `CompanyName=ScBrowser`、setup `CompanyName=zouv`；Debug zip 未上传）。
-  · 2026-11-05 反馈修复：30 标签隔离实例截图确认「+」新建按钮完整可见、标签条不再横向溢出；
-    普通左键开新标签复用与 Ctrl+单击相同的 `TabInsertion` 规则（单测覆盖），未再合成点击实跑。
-  · 2026-11-05：**v0.7.0 已提交推送并发布**（https://github.com/zouv/sc-browser/releases/tag/v0.7.0，
-    上传 `ScBrowser_0.7.0_x64-setup.exe` 与 `ScBrowser_0.7.0_x64-unpack.zip`）；
-    发布闸门 `sh manager.sh verify` ✅（构建 0 警告 + **206/206** 单测 + 文档体检 0 警告）；
-    隐私自查通过（release exe `CompanyName=ScBrowser`、setup `CompanyName=zouv`；Debug zip 未上传）。
-  · 2026-11-05 隔离实例实跑（`%TEMP%` 数据目录，未触用户日常实例）：28 标签时标签条等宽压缩、
-    不出现横向滚动；Ctrl+单击两个链接依次生成在发起标签右侧（原标签保持激活）；悬停链接时
-    地址气泡浮在内容区左下角、页面视口不变。
-  · 更早的 v0.6.0 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.0 发布细节见 `CHANGELOG.md` / `ROADMAP.md`。
+    `sh manager.sh package` ✅；隐私自查通过（release exe `CompanyName=ScBrowser`、setup `CompanyName=zouv`；Debug zip 未上传）。
+  · 更早的 v0.7.1 / v0.7.0 / v0.6.0 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.0 发布细节见 `CHANGELOG.md` / `ROADMAP.md`。
   · 未实跑：密码保存/自动填充、标签组 UI、uBlock 弹窗实际 UI、后台休眠、内核重建、打印/另存为、证书提示、默认浏览器注册。
 
 ---
