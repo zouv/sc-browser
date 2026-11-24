@@ -39,7 +39,7 @@
 | 页内查找条（Ctrl+F） | `Views/FindBarWindow.xaml(.cs)`；`MainWindow.Find.cs` 的 `ShowFindBarAsync` / `CloseFindBar` / `OnActiveTabChanged` / `ShowFindWindow` / `HideFindBarForBackground` / `RunFindAsync` / `StepFind`；工具栏放大镜 `FindButton_Click` | **独立顶层窗口**（Popup 拿不到键盘焦点）；`ShowFindWindow` 里先 `BringToForeground` 再延后聚焦；查找状态按 `tab.Id` 存于 `_findStates`；切后台/最小化隐藏，回前台按当前标签状态恢复；**首次打开预填页面选区**（`GetSelectedTextAsync`，上限 150 字符）。查找条**不画放大镜图标**。JSON 查找跳转依赖环境参数关闭 Edge JSON 查看器，见 `flows.md` §3.8 |
 | 主菜单项 | `MenuButton_Click` + XAML 里的 `Button.ContextMenu` | |
 | 窗口深色标题栏/圆角 | `NativeMethods.ApplyDarkMode` / `ApplyRoundedCorners`（由 `OnStateChanged` 在最大化时改直角） | |
-| 应用图标 | `ScBrowser.csproj` 的 `ApplicationIcon` + `Assets/sc-browser.ico`；窗口用 `Icon="/Assets/sc-browser.ico"` | 设计源在 `docs/icons/`（改设计后重新导出 `.ico` 并覆盖 Assets 里那份） |
+| 应用图标 | `docs/icons/sc-browser.svg`；`Assets/sc-browser.ico`（`ApplicationIcon`、窗口 `Icon`、内部标签页、安装器 `SetupIconFile`）；`Assets/ui/common/sc-browser.svg`（新标签页、关于页） | 按 `docs/icons/README.md` 重新导出 PNG/ICO 并同步两份应用资源 |
 | 启动/退出钩子 | `MainWindow.OnSourceInitialized` / `OnLoaded` / `OnClosing` | 会话恢复与保存在这里 |
 
 ### 2.2 标签页（`Browser/BrowserTab.cs` / `Browser/TabManager.cs`）

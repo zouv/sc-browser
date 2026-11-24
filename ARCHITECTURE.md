@@ -62,6 +62,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | 改扩展能力 | `Browser/ExtensionService.cs`、`Browser/CrxPackage.cs`、`Browser/ExtensionManifest.cs`、`Browser/ExtensionStoreClient.cs`、`Browser/ExtensionApiBridge.cs`、`Views/ExtensionPopupWindow.xaml(.cs)`、`Assets/ui/extensions/*` | Views/（除弹窗）、Storage/ | §2.5、arch/flows.md §3.2、docs/03 |
 | 改主题/设置/会话（含「深色影响网页」） | `Services/SettingsService.cs`、`Services/ThemeService.cs`、`Services/SessionStore.cs`、`Browser/WebTheme.cs`、`Themes/*` | Storage/、Views/ | §2.6、arch/flows.md §3.4 |
 | 启动流程 / 单实例 / 命令行参数 | `App.xaml.cs`、`Services/SingleInstance.cs`、`Services/StartupCommandRunner.cs`、`Services/BrowserWindowManager.cs`（`HandleForwardedArgsAsync`） | Storage/、Assets/ | §2.6 |
+| 换应用图标 | `docs/icons/`、`Assets/sc-browser.ico`、`Assets/ui/common/sc-browser.svg`、`installer/ScBrowser.iss`（`SetupIconFile`） | 所有业务代码 | arch/lookup.md §2.1 |
 | 改启停/构建/发布（运维） | `manager.sh`、`*.bat`、`installer/*`、`.gitattributes`、`ScBrowser.csproj`、`docs/02-使用说明.md` | 所有业务代码 | §6 |
 
 > 跨多个区域的任务才需要跨列读；仍遵循「**先定位函数名，再只读那几个函数**」。
@@ -84,7 +85,7 @@ C# 宿主用 SQLite 存历史/书签/下载，用消息桥与 WebUI 双向通信
 | `src/ScBrowser/Themes/Theme.{Light,Dark}.xaml` | 颜色令牌（键名必须成对一致） | 调色 / 加令牌 |
 | `src/ScBrowser/Themes/Controls.xaml` | 控件样式（工具栏按钮/标签/窗口按钮/地址栏/对话框按钮） | 改控件外观 |
 | `src/ScBrowser/Common/Converters.cs` | 值转换器（安全图标、可空、显隐） | 加绑定转换 |
-| `src/ScBrowser/Assets/sc-browser.ico` + `docs/icons/` | 应用图标（exe 内嵌 + 窗口 `Icon`）；`docs/icons/` 是设计源（SVG 为源，附各尺寸导出） | 换图标 |
+| `docs/icons/` + `src/ScBrowser/Assets/sc-browser.ico` + `src/ScBrowser/Assets/ui/common/sc-browser.svg` | 图标 SVG 源文件与各尺寸导出；ICO 用于 exe、窗口、内部标签页和安装器，WebUI 用 SVG 副本 | 换图标 |
 | `src/ScBrowser/Browser/BrowserEnvironmentProvider.cs` | 创建并缓存**唯一**的 WebView2 环境（含扩展总开关、Edge JSON 查看器开关） | 改环境级选项（代理/扩展开关/浏览器参数） |
 | `src/ScBrowser/Browser/BrowserTab.cs` | **单标签页**：全部可观察状态 + **按需创建**的 WebView2 引擎 + 事件接线 + 页内查找（原生/JS 兜底） | 改单页行为（导航/事件/图标/查找）；引擎生命周期见 §7 |
 | `src/ScBrowser/Browser/TabManager.cs` | 标签集合中枢：创建（含惰性）/关闭/切换/相邻选择/历史记录 + **按需初始化引擎** + 网页颜色方案 + Ctrl+单击的右侧插入 | 改标签生命周期语义 |
